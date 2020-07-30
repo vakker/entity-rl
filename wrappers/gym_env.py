@@ -92,6 +92,10 @@ class PlaygroundEnv(gym.Env):
             assert isinstance(multisteps, int)
             self.multisteps = multisteps
 
+    def get_current_timestep(self):
+        return self.game.elapsed_time
+
+
     def step(self, action):
 
         # First, send actions to game engint

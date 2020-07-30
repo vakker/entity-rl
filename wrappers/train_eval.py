@@ -1,11 +1,13 @@
 from simple_playgrounds.controllers import External
 from simple_playgrounds.entities.agents import BaseInteractiveAgent
 from simple_playgrounds.entities.agents.sensors import RgbSensor, DepthSensor, TouchSensor
-from simple_playgrounds.playgrounds.collection import *
+from environments.rl import *
+
 from stable_baselines.common.vec_env import SubprocVecEnv
 from wrappers.gym_env import make_vector_env
 from wrappers.stable_wrappers import CustomPolicy
 from stable_baselines import PPO2
+import yaml
 
 class MyAgent(BaseInteractiveAgent):
 
@@ -24,29 +26,58 @@ class MyAgent(BaseInteractiveAgent):
                 self.add_sensor(TouchSensor(anchor=self.base_platform, normalize=True, **sensor_params))
 
 
-def eval(env, model):
+def eval(env, model, episodes_eval):
 
     # model.learn(total_timesteps=int(1e5))
-    rew = 0
-    obs = env.reset()
-    done = False
-    while not done:
-        action, _states = model.predict(obs)
-        obs, rewards, dones, info = env.step(action)
-        rew += sum(rewards) / 4.0
-        done = any(dones)
+    all_rewards = []
+    all_times = []
 
-    return rew
+    for i in range(episodes_eval):
+        obs = env.reset()
 
-def train_eval( sensors,
+        # Only keep one episode, don't take into account restart.
+        done = [False, False, False, False]
+        end_time = [0, 0, 0, 0]
+        rew = [0, 0, 0, 0]
+
+        while not all(done):
+
+            action, _states = model.predict(obs)
+            obs, rewards, dones, info = env.step(action)
+
+            for env_index in range(4):
+
+                if not done[env_index]:
+                    rew[env_index] += rewards[env_index]
+
+                if dones[env_index] == True :
+                    done[env_index] = True
+
+                if not done[env_index]:
+                    end_time[env_index] = env.env_method('get_current_timestep')[env_index]
+
+
+
+        all_rewards += rew
+        all_times += end_time
+
+    result = {}
+    for i in range(len(all_rewards)):
+        result[i] = { 'duration': all_times[i] , 'cumulated_reward': all_rewards[i]}
+
+    return result
+
+def train_and_eval( sensors,
                 total_timesteps_training,
                 n_multisteps,
                 playground_name,
-                timesteps_eval,
+                freq_eval,
+                episodes_eval,
                 exp_name,
                 ):
 
 
+    results = {}
 
     pg = PlaygroundRegister.playgrounds[playground_name]()
     agent = MyAgent(sensors)
@@ -58,21 +89,29 @@ def train_eval( sensors,
 
     assert pg.time_limit is not None
 
-    n_training_steps = int(total_timesteps_training / timesteps_eval)
+    n_training_steps = int(total_timesteps_training / freq_eval)
 
-    fname = 'logs/' + exp_name + '.dat'
 
     # Eval untrained
-    rew = eval(test_env, model)
-
-    with open(fname, 'a') as f:
-        f.write('0;'+str(rew)+'\n')
+    res = eval(test_env, model, episodes_eval)
+    results[0] = res
+    print(res)
 
     for i in range(1, n_training_steps+1):
 
-        model.learn(timesteps_eval)
+        model.learn(freq_eval)
 
-        rew = eval(test_env, model)
+        res = eval(test_env, model, episodes_eval)
+        results[ i * freq_eval] = res
+        print(res)
 
-        with open(fname, 'a') as f:
-            f.write(str(i*timesteps_eval)+'_' + str(rew) + '\n')
+    test_env.close()
+    train_envs.close()
+
+    for time, res in results.items():
+        print(time, res)
+
+    fname = 'logs/' + exp_name + '.dat'
+
+    with open(fname, 'w') as f:
+        yaml.dump(results, f)
