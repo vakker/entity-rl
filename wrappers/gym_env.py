@@ -3,8 +3,29 @@ from gym import spaces
 from simple_playgrounds.utils import ActionTypes, SensorModality
 from simple_playgrounds import Engine
 import numpy
+from simple_playgrounds.entities.agents import BaseInteractiveAgent
+from simple_playgrounds.controllers import External
+from simple_playgrounds.entities.agents.sensors import RgbSensor, DepthSensor, TouchSensor
 
-import tensorflow as tf
+from stable_baselines.common import set_global_seeds
+from environments.rl import *
+
+
+class MyAgent(BaseInteractiveAgent):
+
+    def __init__(self, sensors):
+        super().__init__(controller=External(), allow_overlapping=False)
+
+        for sensor_name, sensor_params in sensors:
+
+            if sensor_name == 'depth':
+                self.add_sensor(DepthSensor(anchor=self.base_platform, normalize=True, **sensor_params))
+
+            elif sensor_name == 'rgb':
+                self.add_sensor(RgbSensor(anchor=self.base_platform, normalize=True, **sensor_params))
+
+            elif sensor_name == 'touch':
+                self.add_sensor(TouchSensor(anchor=self.base_platform, normalize=True, **sensor_params))
 
 
 class PlaygroundEnv(gym.Env):
@@ -19,6 +40,8 @@ class PlaygroundEnv(gym.Env):
         """
 
         super().__init__()
+
+        self.time_limit = playground.time_limit
 
         self.game = Engine(playground, replay=False, screen=False)
         self.agent = agent
@@ -183,8 +206,9 @@ class PlaygroundEnv(gym.Env):
         self.game.terminate()
 
 
+import random
 
-def make_vector_env(playground, agent, multisteps = None):
+def make_vector_env(playground_name, sensors, multisteps = None, seed=0):
     """
     Utility function for multiprocessed env.
 
@@ -192,12 +216,19 @@ def make_vector_env(playground, agent, multisteps = None):
         pg: Instance of a Playground
         Ag: Agent
     """
+
     def _init():
 
+        random.seed(seed)
+        playground = PlaygroundRegister.playgrounds[playground_name]()
+        agent = MyAgent(sensors)
+
         playground.add_agent(agent)
+
         custom_env = PlaygroundEnv(playground, agent, multisteps=multisteps, continuous_action_space=True)
 
         return custom_env
+
 
     return _init
 

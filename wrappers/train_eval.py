@@ -1,29 +1,10 @@
-from simple_playgrounds.controllers import External
-from simple_playgrounds.entities.agents import BaseInteractiveAgent
-from simple_playgrounds.entities.agents.sensors import RgbSensor, DepthSensor, TouchSensor
-from environments.rl import *
 
-from stable_baselines.common.vec_env import SubprocVecEnv
+from stable_baselines.common.vec_env import SubprocVecEnv, DummyVecEnv
 from wrappers.gym_env import make_vector_env
 from wrappers.stable_wrappers import CustomPolicy
 from stable_baselines import PPO2
 import yaml
 
-class MyAgent(BaseInteractiveAgent):
-
-    def __init__(self, sensors):
-        super().__init__(controller=External(), allow_overlapping=False)
-
-        for sensor_name, sensor_params in sensors:
-
-            if sensor_name == 'depth':
-                self.add_sensor(DepthSensor(anchor=self.base_platform, normalize=True, **sensor_params))
-
-            elif sensor_name == 'rgb':
-                self.add_sensor(RgbSensor(anchor=self.base_platform, normalize=True, **sensor_params))
-
-            elif sensor_name == 'touch':
-                self.add_sensor(TouchSensor(anchor=self.base_platform, normalize=True, **sensor_params))
 
 
 def eval(env, model, episodes_eval):
@@ -67,7 +48,13 @@ def eval(env, model, episodes_eval):
 
     return result
 
-def train_and_eval( sensors,
+
+from .gym_env import MyAgent
+
+import random
+
+
+def train_and_eval( agent_type, sensors,
                 total_timesteps_training,
                 n_multisteps,
                 playground_name,
@@ -79,15 +66,20 @@ def train_and_eval( sensors,
 
     results = {}
 
-    pg = PlaygroundRegister.playgrounds[playground_name]()
-    agent = MyAgent(sensors)
+    agent = MyAgent( sensors)
 
-    train_envs = SubprocVecEnv([make_vector_env(pg, agent, multisteps=n_multisteps) for i in range(4)], start_method='fork')
-    test_env = SubprocVecEnv([make_vector_env(pg, agent, multisteps=n_multisteps) for i in range(4)], start_method='fork')
+    seed = random.randint(0,1000)
+
+    train_envs = SubprocVecEnv([make_vector_env(playground_name, sensors, multisteps=n_multisteps, seed=seed) for i in range(4)], start_method='spawn')
+    test_env = SubprocVecEnv([make_vector_env(playground_name, sensors, multisteps=n_multisteps, seed=seed) for i in range(4)], start_method='spawn')
+
+    # train_envs = DummyVecEnv([make_vector_env(playground_name, sensors, multisteps=n_multisteps) for i in range(4)])
+    # test_env = DummyVecEnv([make_vector_env(playground_name, sensors, multisteps=n_multisteps) for i in range(4)])
 
     model = PPO2(CustomPolicy, train_envs, policy_kwargs={'observation_shape': agent.get_visual_sensor_shapes()}, verbose=0)
 
-    assert pg.time_limit is not None
+    time_limit = train_envs.get_attr('time_limit', indices=0)
+    assert time_limit is not None
 
     n_training_steps = int(total_timesteps_training / freq_eval)
 
