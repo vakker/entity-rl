@@ -208,7 +208,7 @@ class PlaygroundEnv(gym.Env):
 
 import random
 
-def make_vector_env(playground_name, sensors, multisteps = None, seed=0):
+def make_vector_env(playground_name, sensors, rank, multisteps = None, seed=0):
     """
     Utility function for multiprocessed env.
 
@@ -220,7 +220,13 @@ def make_vector_env(playground_name, sensors, multisteps = None, seed=0):
     def _init():
 
         random.seed(seed)
+        numpy.random.seed(seed)
+
         playground = PlaygroundRegister.playgrounds[playground_name]()
+
+        random.seed(seed+rank)
+        numpy.random.seed(seed+rank)
+
         agent = MyAgent(sensors)
 
         playground.add_agent(agent)

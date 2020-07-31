@@ -25,6 +25,7 @@ def eval(env, model, episodes_eval):
 
             action, _states = model.predict(obs)
             obs, rewards, dones, info = env.step(action)
+            # env.render(mode='human')
 
             for env_index in range(4):
 
@@ -70,8 +71,8 @@ def train_and_eval( agent_type, sensors,
 
     seed = random.randint(0,1000)
 
-    train_envs = SubprocVecEnv([make_vector_env(playground_name, sensors, multisteps=n_multisteps, seed=seed) for i in range(4)], start_method='spawn')
-    test_env = SubprocVecEnv([make_vector_env(playground_name, sensors, multisteps=n_multisteps, seed=seed) for i in range(4)], start_method='spawn')
+    train_envs = SubprocVecEnv([make_vector_env(playground_name, sensors, i, multisteps=n_multisteps, seed=seed) for i in range(4)], start_method='spawn')
+    test_env = SubprocVecEnv([make_vector_env(playground_name, sensors, i+4, multisteps=n_multisteps, seed=seed) for i in range(4)], start_method='spawn')
 
     # train_envs = DummyVecEnv([make_vector_env(playground_name, sensors, multisteps=n_multisteps) for i in range(4)])
     # test_env = DummyVecEnv([make_vector_env(playground_name, sensors, multisteps=n_multisteps) for i in range(4)])
