@@ -50,7 +50,7 @@ def eval(env, model, episodes_eval):
     return result
 
 
-from .gym_env import MyAgent
+from .gym_env import Agent_base, Agent_base_arm
 
 import random
 
@@ -67,15 +67,19 @@ def train_and_eval( agent_type, sensors,
 
     results = {}
 
-    agent = MyAgent( sensors)
+    if agent_type == 'base':
+        agent = Agent_base(sensors)
+
+    elif agent_type == 'arm':
+        agent = Agent_base_arm(sensors)
 
     seed = random.randint(0,1000)
 
-    train_envs = SubprocVecEnv([make_vector_env(playground_name, sensors, i, multisteps=n_multisteps, seed=seed) for i in range(4)], start_method='spawn')
-    test_env = SubprocVecEnv([make_vector_env(playground_name, sensors, i+4, multisteps=n_multisteps, seed=seed) for i in range(4)], start_method='spawn')
+    # train_envs = SubprocVecEnv([make_vector_env(playground_name, agent_type, sensors, i, multisteps=n_multisteps, seed=seed) for i in range(4)], start_method='spawn')
+    # test_env = SubprocVecEnv([make_vector_env(playground_name, agent_type, sensors, i+4, multisteps=n_multisteps, seed=seed) for i in range(4)], start_method='spawn')
 
-    # train_envs = DummyVecEnv([make_vector_env(playground_name, sensors, multisteps=n_multisteps) for i in range(4)])
-    # test_env = DummyVecEnv([make_vector_env(playground_name, sensors, multisteps=n_multisteps) for i in range(4)])
+    train_envs = DummyVecEnv([make_vector_env(playground_name, agent_type, sensors, i, multisteps=n_multisteps, seed=seed) for i in range(4)])
+    test_env = DummyVecEnv([make_vector_env(playground_name, agent_type, sensors, i+4, multisteps=n_multisteps, seed=seed) for i in range(4)])
 
     model = PPO2(CustomPolicy, train_envs, policy_kwargs={'observation_shape': agent.get_visual_sensor_shapes()}, verbose=0)
 
@@ -88,7 +92,10 @@ def train_and_eval( agent_type, sensors,
     # Eval untrained
     res = eval(test_env, model, episodes_eval)
     results[0] = res
-    print(res)
+
+    rewards = [ res[i]['cumulated_reward'] for i in res]
+    times = [ res[i]['duration'] for i in res]
+    print('Result: ', 0, sum(rewards)/len(rewards), sum(times)/len(times))
 
     for i in range(1, n_training_steps+1):
 
@@ -96,13 +103,16 @@ def train_and_eval( agent_type, sensors,
 
         res = eval(test_env, model, episodes_eval)
         results[ i * freq_eval] = res
-        print(res)
+
+        rewards = [res[i]['cumulated_reward'] for i in res]
+        times = [res[i]['duration'] for i in res]
+        print('Result: ', i * freq_eval, sum(rewards) / len(rewards), sum(times) / len(times))
 
     test_env.close()
     train_envs.close()
 
-    for time, res in results.items():
-        print(time, res)
+    # for time, res in results.items():
+    #     print(time, res)
 
     fname = 'logs/' + exp_name + '.dat'
 

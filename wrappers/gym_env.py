@@ -3,7 +3,10 @@ from gym import spaces
 from simple_playgrounds.utils import ActionTypes, SensorModality
 from simple_playgrounds import Engine
 import numpy
-from simple_playgrounds.entities.agents import BaseInteractiveAgent
+from simple_playgrounds.entities.agents import BaseInteractiveAgent, BaseAgent
+from simple_playgrounds.entities.agents.agent import Agent
+from simple_playgrounds.entities.agents.parts import HolonomicPlatform, Arm, Hand
+
 from simple_playgrounds.controllers import External
 from simple_playgrounds.entities.agents.sensors import RgbSensor, DepthSensor, TouchSensor
 
@@ -11,7 +14,7 @@ from stable_baselines.common import set_global_seeds
 from environments.rl import *
 
 
-class MyAgent(BaseInteractiveAgent):
+class Agent_base(BaseInteractiveAgent):
 
     def __init__(self, sensors):
         super().__init__(controller=External(), allow_overlapping=False)
@@ -26,6 +29,45 @@ class MyAgent(BaseInteractiveAgent):
 
             elif sensor_name == 'touch':
                 self.add_sensor(TouchSensor(anchor=self.base_platform, normalize=True, **sensor_params))
+
+import math
+
+class Agent_base_arm(Agent):
+    """
+        Agent with two Arms.
+
+        Attributes:
+            head: Head of the agent
+            arm_l: left arm
+            arm_l_2: second segment of left arm
+            arm_r: right arm
+            arm_r_2: second segment of right arm
+        """
+    def __init__(self, sensors):
+
+        base_agent = HolonomicPlatform(can_eat=False, can_grasp=False, can_activate=False, can_absorb=False, radius=8)
+
+        super().__init__(initial_position=None, base_platform=base_agent, controller = External(), allow_overlapping = False)
+
+        self.arm_r = Arm(base_agent, [8, 0], angle_offset=-math.pi / 2, rotation_range=math.pi, width_length=[3, 10])
+        self.add_body_part(self.arm_r)
+
+        self.arm_r_2 = Arm(self.arm_r, self.arm_r.extremity_anchor_point, angle_offset=math.pi / 2, rotation_range=math.pi, width_length=[3, 10])
+        self.add_body_part(self.arm_r_2)
+
+        self.hand_r = Hand(self.arm_r_2, self.arm_r_2.extremity_anchor_point, radius=5, rotation_range=math.pi, can_grasp = True)
+        self.add_body_part(self.hand_r)
+
+        for sensor_name, sensor_params in sensors:
+
+            if sensor_name == 'depth':
+                self.add_sensor(DepthSensor(anchor=self.base_platform, normalize=True, **sensor_params))
+
+            elif sensor_name == 'rgb':
+                self.add_sensor(RgbSensor(anchor=self.base_platform, normalize=True, **sensor_params))
+
+            elif sensor_name == 'touch':
+                self.add_sensor(TouchSensor(anchor=self.hand_r, normalize=True, **sensor_params))
 
 
 class PlaygroundEnv(gym.Env):
@@ -208,7 +250,7 @@ class PlaygroundEnv(gym.Env):
 
 import random
 
-def make_vector_env(playground_name, sensors, rank, multisteps = None, seed=0):
+def make_vector_env(playground_name, agent_type, sensors, rank, multisteps = None, seed=0):
     """
     Utility function for multiprocessed env.
 
@@ -227,7 +269,11 @@ def make_vector_env(playground_name, sensors, rank, multisteps = None, seed=0):
         random.seed(seed+rank)
         numpy.random.seed(seed+rank)
 
-        agent = MyAgent(sensors)
+        if agent_type == 'base':
+            agent = Agent_base(sensors)
+
+        elif agent_type == 'arm':
+            agent = Agent_base_arm(sensors)
 
         playground.add_agent(agent)
 
