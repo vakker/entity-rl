@@ -45,7 +45,7 @@ def eval(env, model, episodes_eval):
 
     result = {}
     for i in range(len(all_rewards)):
-        result[i] = { 'duration': all_times[i] , 'cumulated_reward': all_rewards[i]}
+        result[i] = { 'duration': int(all_times[i]) , 'cumulated_reward': float(all_rewards[i])}
 
     return result
 
@@ -55,7 +55,7 @@ from .gym_env import Agent_base, Agent_base_arm
 import random
 
 
-def train_and_eval( agent_type, sensors,
+def train_and_eval( agent_type, sensors_name,
                 total_timesteps_training,
                 n_multisteps,
                 playground_name,
@@ -66,6 +66,27 @@ def train_and_eval( agent_type, sensors,
 
 
     results = {}
+
+    # Sensors
+
+    if sensors_name == 'rgb':
+        sensors = [('rgb', {'fov': 180, 'range': 300, 'resolution': 64})]
+
+
+    elif sensors_name == 'rgb_depth':
+        sensors = [('depth', {'fov': 180, 'range': 300, 'resolution': 64}),
+                   ('rgb', {'fov': 180, 'range': 300, 'resolution': 64})]
+
+
+    elif sensors_name == 'rgb_touch':
+        sensors = [('rgb', {'fov': 180, 'range': 300, 'resolution': 64}),
+                   ('touch', {'range': 2, 'resolution': 64})]
+
+    elif sensors_name == 'rgb_depth_touch':
+        sensors = [('depth', {'fov': 180, 'range': 300, 'resolution': 64}),
+                   ('rgb', {'fov': 180, 'range': 300, 'resolution': 64}),
+                   ('touch', {'range': 2, 'resolution': 64})]
+
 
     if agent_type == 'base':
         agent = Agent_base(sensors)
@@ -93,10 +114,6 @@ def train_and_eval( agent_type, sensors,
     res = eval(test_env, model, episodes_eval)
     results[0] = res
 
-    rewards = [ res[i]['cumulated_reward'] for i in res]
-    times = [ res[i]['duration'] for i in res]
-    print('Result: ', 0, sum(rewards)/len(rewards), sum(times)/len(times))
-
     for i in range(1, n_training_steps+1):
 
         model.learn(freq_eval)
@@ -104,14 +121,7 @@ def train_and_eval( agent_type, sensors,
         res = eval(test_env, model, episodes_eval)
         results[ i * freq_eval] = res
 
-        rewards = [res[i]['cumulated_reward'] for i in res]
-        times = [res[i]['duration'] for i in res]
-        print('Result: ', i * freq_eval, sum(rewards) / len(rewards), sum(times) / len(times))
-
     test_env.close()
     train_envs.close()
 
-    # fname = 'logs/' + exp_name + '.dat'
-    #
-    # with open(fname, 'w') as f:
-    #     yaml.dump(results, f)
+    return results
