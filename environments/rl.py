@@ -135,34 +135,118 @@ class DispenserEnv(ConnectedRooms2D):
             agent.initial_position = self.agent_starting_area
         super().reset()
         self.place_scene_elements()
+#
+#
+# @PlaygroundRegister.register('spg_coinmaster')
+# class CoinMaster(ConnectedRooms2D):
+#
+#     def __init__(self):
+#
+#         super().__init__(size = (400, 400), n_rooms = (2,2), wall_type='dark')
+#
+#         self.assign_areas()
+#
+#         self.field = Field(Coin, self.area_prod, limit=5, total_limit=1000,
+#                            entity_produced_params={'graspable': True, 'reward': 1,
+#                                                    'allow_overlapping': False})
+#         self.add_scene_element(self.field)
+#
+#         self.vending_machine = VendingMachine(self.area_vm, allow_overlapping=False)
+#         self.add_scene_element(self.vending_machine)
+#
+#         self.time_limit = 2000
+#
+#     def assign_areas(self):
+#         list_room_coordinates = [room_coord for room_coord in self.area_rooms]
+#         random.shuffle(list_room_coordinates)
+#
+#         # Starting area of the agent
+#         area_start_center, area_start_shape = self.area_rooms[list_room_coordinates.pop()]
+#         area_start = PositionAreaSampler(center=area_start_center, area_shape='rectangle',
+#                                          width_length=area_start_shape)
+#
+#         self.agent_starting_area = area_start
+#
+#         # invisible endzone at one corner of the game
+#         vm_center, vm_shape = self.area_rooms[list_room_coordinates.pop()]
+#         prod_center, prod_shape = self.area_rooms[list_room_coordinates.pop()]
+#
+#         self.area_prod = PositionAreaSampler(center=prod_center, area_shape='rectangle', width_length=prod_shape)
+#         self.area_vm = PositionAreaSampler(center=vm_center, area_shape='rectangle',
+#                                              width_length=vm_shape)
+#
+#
+#     def reset(self):
+#         self.assign_areas()
+#
+#         for agent in self.agents:
+#             agent.initial_position = self.agent_starting_area
+#
+#         self.field.location_sampler = self.area_prod
+#         self.vending_machine.initial_position = self.area_vm
+#
+#         super().reset()
+#
+#     def _fields_produce(self):
+#
+#         super()._fields_produce()
+#         self.vending_machine.accepted_coins = self.field.produced_entities
+#
 
 
-@PlaygroundRegister.register('spg_coinmaster')
+@PlaygroundRegister.register('spg_coinmaster_singleroom')
 class CoinMaster(SingleRoom):
 
     def __init__(self):
 
         super().__init__(size = (200, 200), wall_type='dark')
 
-        # Starting area of the agent
-        area_center, _ = self.area_rooms[(0, 0)]
-        area_start = PositionAreaSampler(center=area_center, area_shape='rectangle', width_length=(100, 100))
-        self.agent_starting_area = area_start
+        self.assign_areas()
 
-        self.vending_machine = VendingMachine(area_start, allow_overlapping = False)
-        self.add_scene_element(self.vending_machine)
-
-        self.field = Field(Coin, area_start, limit=5, total_limit=1000, entity_produced_params={'graspable':True, 'reward':1,
-                                                                                                'allow_overlapping': False})
+        self.field = Field(Coin, self.area_prod, limit=5, total_limit=1000,
+                           entity_produced_params={'graspable': True, 'reward': 1})
         self.add_scene_element(self.field)
 
-        self.time_limit = 1000
+        self.vending_machine = VendingMachine(self.area_vm, allow_overlapping=False)
+        self.add_scene_element(self.vending_machine)
+
+        self.time_limit = 2000
+
+    def assign_areas(self):
+
+        list_coord = [ (50, 50), (50, 150), (150,150), (150, 50) ]
+        random.shuffle(list_coord)
+
+        # Starting area of the agent
+        area_start_center = list_coord.pop()
+        area_start = PositionAreaSampler(center=area_start_center, area_shape='rectangle',
+                                         width_length=[80, 80])
+
+        self.agent_starting_area = area_start
+
+        # invisible endzone at one corner of the game
+        vm_center = list_coord.pop()
+        prod_center = list_coord.pop()
+
+        self.area_prod = PositionAreaSampler(center=prod_center, area_shape='rectangle', width_length=[80, 80])
+        self.area_vm = PositionAreaSampler(center=vm_center, area_shape='rectangle',
+                                           width_length=[80, 80])
+
+
+    def reset(self):
+        self.assign_areas()
+
+        for agent in self.agents:
+            agent.initial_position = self.agent_starting_area
+
+        self.field.location_sampler = self.area_prod
+        self.vending_machine.initial_position = self.area_vm
+
+        super().reset()
 
     def _fields_produce(self):
 
         super()._fields_produce()
         self.vending_machine.accepted_coins = self.field.produced_entities
-
-
 
 

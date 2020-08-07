@@ -61,7 +61,7 @@ def train_and_eval( agent_type, sensors,
                 playground_name,
                 freq_eval,
                 episodes_eval,
-                exp_name,
+                entropy,
                 ):
 
 
@@ -75,13 +75,13 @@ def train_and_eval( agent_type, sensors,
 
     seed = random.randint(0,1000)
 
-    # train_envs = SubprocVecEnv([make_vector_env(playground_name, agent_type, sensors, i, multisteps=n_multisteps, seed=seed) for i in range(4)], start_method='spawn')
-    # test_env = SubprocVecEnv([make_vector_env(playground_name, agent_type, sensors, i+4, multisteps=n_multisteps, seed=seed) for i in range(4)], start_method='spawn')
+    train_envs = SubprocVecEnv([make_vector_env(playground_name, agent_type, sensors, i, multisteps=n_multisteps, seed=seed) for i in range(4)], start_method='spawn')
+    test_env = SubprocVecEnv([make_vector_env(playground_name, agent_type, sensors, i+4, multisteps=n_multisteps, seed=seed) for i in range(4)], start_method='spawn')
+    #
+    # train_envs = DummyVecEnv([make_vector_env(playground_name, agent_type, sensors, i, multisteps=n_multisteps, seed=seed) for i in range(4)])
+    # test_env = DummyVecEnv([make_vector_env(playground_name, agent_type, sensors, i+4, multisteps=n_multisteps, seed=seed) for i in range(4)])
 
-    train_envs = DummyVecEnv([make_vector_env(playground_name, agent_type, sensors, i, multisteps=n_multisteps, seed=seed) for i in range(4)])
-    test_env = DummyVecEnv([make_vector_env(playground_name, agent_type, sensors, i+4, multisteps=n_multisteps, seed=seed) for i in range(4)])
-
-    model = PPO2(CustomPolicy, train_envs, policy_kwargs={'observation_shape': agent.get_visual_sensor_shapes()}, verbose=0)
+    model = PPO2(CustomPolicy, train_envs, ent_coef=entropy, policy_kwargs={'observation_shape': agent.get_visual_sensor_shapes()}, verbose=0)
 
     time_limit = train_envs.get_attr('time_limit', indices=0)
     assert time_limit is not None
@@ -111,10 +111,7 @@ def train_and_eval( agent_type, sensors,
     test_env.close()
     train_envs.close()
 
-    # for time, res in results.items():
-    #     print(time, res)
-
-    fname = 'logs/' + exp_name + '.dat'
-
-    with open(fname, 'w') as f:
-        yaml.dump(results, f)
+    # fname = 'logs/' + exp_name + '.dat'
+    #
+    # with open(fname, 'w') as f:
+    #     yaml.dump(results, f)
