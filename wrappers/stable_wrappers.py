@@ -100,13 +100,14 @@ class CustomPolicy(CnnLstmPolicy):
 
 
 
-        # self._setup_init()
+        self._setup_init()
 
 
 
     def feature_extractor(self, input_observations, **kwargs):
 
         activ = tf.nn.relu
+        activ_dense = tf.nn.relu
 
         current_height = 0
 
@@ -131,31 +132,53 @@ class CustomPolicy(CnnLstmPolicy):
                 current_height+=height
 
                 layer_1 = activ(
-                    conv_1d(obs, 'c1_' + str(index_observation), n_filters=32, filter_size=7, stride=3,
+                    conv_1d(obs, 'c1_' + str(index_observation), n_filters=64, filter_size=5, stride=3,
                             init_scale=numpy.sqrt(2)))
+
+                # layer_1 = tf.nn.dropout( layer_1, rate = 0.2)
+                # layer_1 = tf.layers.batch_normalization(layer_1)
 
                 layer_2 = activ(
-                    conv_1d(layer_1, 'c2_' + str(index_observation), n_filters=32, filter_size=5, stride=2,
+                    conv_1d(layer_1, 'c2_' + str(index_observation), n_filters=64, filter_size=3, stride=2,
                             init_scale=numpy.sqrt(2)))
 
-                layer_3 = activ(
-                    conv_1d(layer_2, 'c3_' + str(index_observation), n_filters=32, filter_size=3, stride=1,
-                            init_scale=numpy.sqrt(2)))
+                # layer_2 = tf.nn.dropout(layer_2, rate = 0.2)
+                # layer_2 = tf.layers.batch_normalization(layer_2)
 
-                layer_3 = conv_to_fc(layer_3)
+                # layer_3 = activ(
+                #     conv_1d(layer_2, 'c3_' + str(index_observation), n_filters=64, filter_size=3, stride=1,
+                #             init_scale=numpy.sqrt(2)))
 
-                dense_1 = activ(linear(layer_3, 'fc1_'+ str(index_observation), n_hidden=128, init_scale=numpy.sqrt(2)))
+                # layer_3 = tf.nn.dropout(layer_3, rate = 0.3)
+                # layer_3 = tf.layers.batch_normalization(layer_3)
 
-                dense_2 = activ(linear(dense_1, 'fc2_'+ str(index_observation), n_hidden=128, init_scale=numpy.sqrt(2)))
 
-                features.append(dense_2)
+                layer_3 = conv_to_fc(layer_2)
+
+                dense_1 = activ_dense(linear(layer_3, 'fc1_'+ str(index_observation), n_hidden=128, init_scale=numpy.sqrt(2)))
+                # dense_1 = tf.nn.dropout(dense_1, rate = 0.2)
+                # dense_1 = tf.layers.batch_normalization(dense_1)
+
+
+                # dense_2 = activ(linear(dense_1, 'fc2_'+ str(index_observation), n_hidden=128, init_scale=numpy.sqrt(2)))
+                # dense_2 = tf.nn.dropout(dense_2, rate = 0.3)
+                # dense_2 = tf.layers.batch_normalization(dense_2)
+
+
+                features.append(dense_1)
 
             h_concat = tf.concat(features, 1)
 
-            h_out_1 = activ(linear(h_concat, 'dense_1', n_hidden=128, init_scale=numpy.sqrt(2)))
-            h_out_2 = activ(linear(h_out_1, 'dense_2', n_hidden=128, init_scale=numpy.sqrt(2)))
+            h_out_1 = activ_dense(linear(h_concat, 'dense_1', n_hidden=128, init_scale=numpy.sqrt(2)))
+            # h_out_1 = tf.nn.dropout(h_out_1, rate = 0.2)
+            # h_out_1 = tf.layers.batch_normalization(h_out_1)
+            #
+            # h_out_2 = activ(linear(h_out_1, 'dense_2', n_hidden=128, init_scale=numpy.sqrt(2)))
+            # h_out_2 = tf.nn.dropout(h_out_2, rate = 0.2)
+            # h_out_2 = tf.layers.batch_normalization(h_out_2)
 
-        return h_out_2
+
+        return h_out_1
 
 
 from stable_baselines.common.callbacks import EventCallback, BaseCallback

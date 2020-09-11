@@ -101,8 +101,21 @@ class PlaygroundEnv(gym.Env):
             highs = []
 
             for action in actions:
-                lows.append(action.min)
-                highs.append(action.max)
+
+                if action.action_type is ActionTypes.DISCRETE:
+                    lows.append(-1)
+                    highs.append(1)
+
+                elif action.action_type is ActionTypes.CONTINUOUS_CENTERED:
+                    lows.append(action.min)
+                    highs.append(action.max)
+
+                elif action.action_type is ActionTypes.CONTINUOUS_NOT_CENTERED:
+                    lows.append(action.min)
+                    highs.append(action.max)
+
+                # lows.append(action.min)
+                # highs.append(action.max)
 
                 if action.body_part not in self.actions_dict:
                     self.actions_dict[action.body_part] = {}
@@ -178,7 +191,7 @@ class PlaygroundEnv(gym.Env):
 
             # convert discrete action to binry
             if self.continuous_action_space and action_type is ActionTypes.DISCRETE:
-                converted_action = 0 if converted_action < 0.5 else 1
+                converted_action = 0 if converted_action < 0 else 1
 
             # convert continuous actions in [-1, 1]
             elif not self.continuous_action_space and action_type is ActionTypes.CONTINUOUS_CENTERED:

@@ -207,7 +207,7 @@ class CoinMaster(SingleRoom):
                            entity_produced_params={'graspable': True, 'reward': 1})
         self.add_scene_element(self.field)
 
-        self.vending_machine = VendingMachine(self.area_vm, allow_overlapping=False)
+        self.vending_machine = VendingMachine(self.area_vm, allow_overlapping=False, reward= 1)
         self.add_scene_element(self.vending_machine)
 
         self.time_limit = 2000
