@@ -1,36 +1,43 @@
 import gym
-from gym import spaces
-from simple_playgrounds.utils import ActionTypes, SensorModality
-from simple_playgrounds import Engine
 import numpy
-from simple_playgrounds.entities.agents import BaseInteractiveAgent, BaseAgent
-from simple_playgrounds.entities.agents.agent import Agent
-from simple_playgrounds.entities.agents.parts import HolonomicPlatform, Arm, Hand
-
-from simple_playgrounds.controllers import External
-from simple_playgrounds.entities.agents.sensors import RgbSensor, DepthSensor, TouchSensor
-
-from stable_baselines.common import set_global_seeds
 from environments.rl import *
+from gym import spaces
+from simple_playgrounds import Engine
+from simple_playgrounds.controllers import External
+from simple_playgrounds.entities.agents import BaseAgent, BaseInteractiveAgent
+from simple_playgrounds.entities.agents.agent import Agent
+from simple_playgrounds.entities.agents.parts import (Arm, Hand, HolonomicPlatform)
+from simple_playgrounds.entities.agents.sensors import (DepthSensor, RgbSensor,
+                                                        TouchSensor)
+from simple_playgrounds.utils import ActionTypes, SensorModality
+from stable_baselines.common import set_global_seeds
 
 
 class Agent_base(BaseInteractiveAgent):
-
     def __init__(self, sensors):
         super().__init__(controller=External(), allow_overlapping=False)
 
         for sensor_name, sensor_params in sensors:
 
             if sensor_name == 'depth':
-                self.add_sensor(DepthSensor(anchor=self.base_platform, normalize=True, **sensor_params))
+                self.add_sensor(
+                    DepthSensor(anchor=self.base_platform,
+                                normalize=True,
+                                **sensor_params))
 
             elif sensor_name == 'rgb':
-                self.add_sensor(RgbSensor(anchor=self.base_platform, normalize=True, **sensor_params))
+                self.add_sensor(
+                    RgbSensor(anchor=self.base_platform, normalize=True, **sensor_params))
 
             elif sensor_name == 'touch':
-                self.add_sensor(TouchSensor(anchor=self.base_platform, normalize=True, **sensor_params))
+                self.add_sensor(
+                    TouchSensor(anchor=self.base_platform,
+                                normalize=True,
+                                **sensor_params))
+
 
 import math
+
 
 class Agent_base_arm(Agent):
     """
@@ -45,36 +52,59 @@ class Agent_base_arm(Agent):
         """
     def __init__(self, sensors):
 
-        base_agent = HolonomicPlatform(can_eat=False, can_grasp=False, can_activate=False, can_absorb=False, radius=8)
+        base_agent = HolonomicPlatform(can_eat=False,
+                                       can_grasp=False,
+                                       can_activate=False,
+                                       can_absorb=False,
+                                       radius=8)
 
-        super().__init__(initial_position=None, base_platform=base_agent, controller = External(), allow_overlapping = False)
+        super().__init__(initial_position=None,
+                         base_platform=base_agent,
+                         controller=External(),
+                         allow_overlapping=False)
 
-        self.arm_r = Arm(base_agent, [8, 0], angle_offset=-math.pi / 2, rotation_range=math.pi, width_length=[3, 10])
+        self.arm_r = Arm(base_agent, [8, 0],
+                         angle_offset=-math.pi / 2,
+                         rotation_range=math.pi,
+                         width_length=[3, 10])
         self.add_body_part(self.arm_r)
 
-        self.arm_r_2 = Arm(self.arm_r, self.arm_r.extremity_anchor_point, angle_offset=math.pi / 2, rotation_range=math.pi, width_length=[3, 10])
+        self.arm_r_2 = Arm(self.arm_r,
+                           self.arm_r.extremity_anchor_point,
+                           angle_offset=math.pi / 2,
+                           rotation_range=math.pi,
+                           width_length=[3, 10])
         self.add_body_part(self.arm_r_2)
 
-        self.hand_r = Hand(self.arm_r_2, self.arm_r_2.extremity_anchor_point, radius=5, rotation_range=math.pi, can_grasp = True)
+        self.hand_r = Hand(self.arm_r_2,
+                           self.arm_r_2.extremity_anchor_point,
+                           radius=5,
+                           rotation_range=math.pi,
+                           can_grasp=True)
         self.add_body_part(self.hand_r)
 
         for sensor_name, sensor_params in sensors:
 
             if sensor_name == 'depth':
-                self.add_sensor(DepthSensor(anchor=self.base_platform, normalize=True, **sensor_params))
+                self.add_sensor(
+                    DepthSensor(anchor=self.base_platform,
+                                normalize=True,
+                                **sensor_params))
 
             elif sensor_name == 'rgb':
-                self.add_sensor(RgbSensor(anchor=self.base_platform, normalize=True, **sensor_params))
+                self.add_sensor(
+                    RgbSensor(anchor=self.base_platform, normalize=True, **sensor_params))
 
             elif sensor_name == 'touch':
-                self.add_sensor(TouchSensor(anchor=self.hand_r, normalize=True, **sensor_params))
+                self.add_sensor(
+                    TouchSensor(anchor=self.hand_r, normalize=True, **sensor_params))
 
 
 class PlaygroundEnv(gym.Env):
     """Custom Environment that follows gym interface"""
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, playground, agent, continuous_action_space = True, multisteps = None):
+    def __init__(self, playground, agent, continuous_action_space=True, multisteps=None):
         """
         Args:
             game_engine: Engine to run the
@@ -146,7 +176,7 @@ class PlaygroundEnv(gym.Env):
         for sensor in self.agent.sensors:
 
             if sensor.sensor_modality is SensorModality.SEMANTIC:
-                raise ValueError( 'Semantic sensors not supported')
+                raise ValueError('Semantic sensors not supported')
             sensor.normalize = True
 
             if isinstance(sensor.shape, int):
@@ -161,7 +191,11 @@ class PlaygroundEnv(gym.Env):
                 width_all_sensors = max(width_all_sensors, sensor.shape[0])
                 height_all_sensors += sensor.shape[1]
 
-        self.observation_space = spaces.Box(low=0, high=1, shape=(height_all_sensors, width_all_sensors, 3), dtype=numpy.float32)
+        self.observation_space = spaces.Box(low=0,
+                                            high=1,
+                                            shape=(height_all_sensors, width_all_sensors,
+                                                   3),
+                                            dtype=numpy.float32)
         self.observations = numpy.zeros((height_all_sensors, width_all_sensors, 3))
 
         # Multisteps
@@ -173,7 +207,6 @@ class PlaygroundEnv(gym.Env):
     def get_current_timestep(self):
         return self.game.elapsed_time
 
-
     def step(self, action):
 
         # First, send actions to game engint
@@ -181,7 +214,8 @@ class PlaygroundEnv(gym.Env):
         actions_to_game_engine = {}
 
         # Convert Stable-baselines actions into game engine actions
-        for index_action, available_action in enumerate(self.agent.get_all_available_actions()):
+        for index_action, available_action in enumerate(
+                self.agent.get_all_available_actions()):
 
             body_part = available_action.body_part
             action_ = available_action.action
@@ -211,11 +245,10 @@ class PlaygroundEnv(gym.Env):
         if self.multisteps is None:
             reset, terminate = self.game.step(actions_to_game_engine)
         else:
-            reset, terminate = self.game.multiple_steps(actions_to_game_engine, n_steps=self.multisteps)
+            reset, terminate = self.game.multiple_steps(actions_to_game_engine,
+                                                        n_steps=self.multisteps)
 
         self.game.update_observations()
-
-
 
         # Concatenate the observations in a format that stable-baselines understands
 
@@ -223,17 +256,19 @@ class PlaygroundEnv(gym.Env):
         for sensor in self.agent.sensors:
 
             if isinstance(sensor.shape, int):
-                self.observations[current_height, :sensor.shape, 0] = sensor.sensor_value[:]
+                self.observations[current_height, :sensor.shape,
+                                  0] = sensor.sensor_value[:]
                 current_height += 1
 
             elif len(sensor.shape) == 2:
-                self.observations[current_height, :sensor.shape[0], :] = sensor.sensor_value[:, :]
+                self.observations[
+                    current_height, :sensor.shape[0], :] = sensor.sensor_value[:, :]
                 current_height += 1
 
             else:
-                self.observations[:sensor.shape[0], :sensor.shape[1], :] = sensor.sensor_value[:, :, :]
+                self.observations[:sensor.shape[0], :sensor.
+                                  shape[1], :] = sensor.sensor_value[:, :, :]
                 current_height += sensor.shape[0]
-
 
         reward = self.agent.reward
 
@@ -244,7 +279,6 @@ class PlaygroundEnv(gym.Env):
             done = False
 
         return (self.observations, reward, done, {})
-
 
     def reset(self):
 
@@ -263,7 +297,8 @@ class PlaygroundEnv(gym.Env):
 
 import random
 
-def make_vector_env(playground_name, agent_type, sensors, rank, multisteps = None, seed=0):
+
+def make_vector_env(playground_name, agent_type, sensors, rank, multisteps=None, seed=0):
     """
     Utility function for multiprocessed env.
 
@@ -271,7 +306,6 @@ def make_vector_env(playground_name, agent_type, sensors, rank, multisteps = Non
         pg: Instance of a Playground
         Ag: Agent
     """
-
     def _init():
 
         random.seed(seed)
@@ -279,8 +313,8 @@ def make_vector_env(playground_name, agent_type, sensors, rank, multisteps = Non
 
         playground = PlaygroundRegister.playgrounds[playground_name]()
 
-        random.seed(seed+rank)
-        numpy.random.seed(seed+rank)
+        random.seed(seed + rank)
+        numpy.random.seed(seed + rank)
 
         if agent_type == 'base':
             agent = Agent_base(sensors)
@@ -290,10 +324,11 @@ def make_vector_env(playground_name, agent_type, sensors, rank, multisteps = Non
 
         playground.add_agent(agent)
 
-        custom_env = PlaygroundEnv(playground, agent, multisteps=multisteps, continuous_action_space=True)
+        custom_env = PlaygroundEnv(playground,
+                                   agent,
+                                   multisteps=multisteps,
+                                   continuous_action_space=True)
 
         return custom_env
 
-
     return _init
-

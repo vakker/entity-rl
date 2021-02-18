@@ -1,17 +1,16 @@
 import gym
-from gym import spaces
-from simple_playgrounds.utils import ActionTypes, SensorModality
-from simple_playgrounds import Engine
 import numpy
-
 import tensorflow as tf
-from stable_baselines.common.policies import LstmPolicy, CnnLstmPolicy, CnnLnLstmPolicy, CnnPolicy, RecurrentActorCriticPolicy
-
-
+from gym import spaces
+from simple_playgrounds import Engine
+from simple_playgrounds.utils import ActionTypes, SensorModality
+from stable_baselines.common.input import observation_input
+from stable_baselines.common.policies import (CnnLnLstmPolicy, CnnLstmPolicy, CnnPolicy,
+                                              LstmPolicy, RecurrentActorCriticPolicy)
+from stable_baselines.common.tf_layers import conv_to_fc, linear, ortho_init
 # from stable_baselines.sac.policies import LnCnnPolicy
 from stable_baselines.ddpg.policies import LnCnnPolicy
-from stable_baselines.common.input import observation_input
-from stable_baselines.common.tf_layers import linear, conv_to_fc, ortho_init
+
 
 def ortho_init_1d(scale=1.0):
     """
@@ -45,8 +44,17 @@ def ortho_init_1d(scale=1.0):
 
     return _ortho_init
 
-def conv_1d(input_tensor, scope, *, n_filters, filter_size, stride,
-            pad='VALID', init_scale=1.0, data_format='NHWC', one_dim_bias=False):
+
+def conv_1d(input_tensor,
+            scope,
+            *,
+            n_filters,
+            filter_size,
+            stride,
+            pad='VALID',
+            init_scale=1.0,
+            data_format='NHWC',
+            one_dim_bias=False):
     """
     Creates a 2d convolutional layer for TensorFlow
     :param input_tensor: (TensorFlow Tensor) The input tensor for the convolution
@@ -73,18 +81,25 @@ def conv_1d(input_tensor, scope, *, n_filters, filter_size, stride,
     wshape = [filter_width, n_input, n_filters]
     with tf.variable_scope(scope):
         weight = tf.get_variable("w", wshape, initializer=ortho_init_1d(init_scale))
-        bias = tf.get_variable("b", bias_var_shape, initializer=tf.constant_initializer(0.0))
+        bias = tf.get_variable("b",
+                               bias_var_shape,
+                               initializer=tf.constant_initializer(0.0))
         bias = tf.reshape(bias, bshape)
 
         # return bias + tf.nn.conv1d(input_tensor, weight, strides=strides, padding=pad, data_format='NWC')
         return bias + tf.nn.conv1d(input_tensor, weight, stride=stride, padding=pad)
 
 
-
 class CustomPolicy(CnnLstmPolicy):
-
-
-    def __init__(self, sess, ob_space, ac_space, n_env, n_steps, n_batch, reuse=False, **_kwargs):
+    def __init__(self,
+                 sess,
+                 ob_space,
+                 ac_space,
+                 n_env,
+                 n_steps,
+                 n_batch,
+                 reuse=False,
+                 **_kwargs):
 
         activ = 'relu'
 
@@ -93,16 +108,20 @@ class CustomPolicy(CnnLstmPolicy):
 
         self.reuse = reuse
 
-        super(CustomPolicy, self).__init__(sess, ob_space, ac_space, n_env, n_steps, n_batch, reuse=reuse, scale=False,
-                                           n_lstm=128, cnn_extractor=self.feature_extractor, feature_extractiom='cnn',
-
-                                            **_kwargs)
-
-
+        super(CustomPolicy, self).__init__(sess,
+                                           ob_space,
+                                           ac_space,
+                                           n_env,
+                                           n_steps,
+                                           n_batch,
+                                           reuse=reuse,
+                                           scale=False,
+                                           n_lstm=128,
+                                           cnn_extractor=self.feature_extractor,
+                                           feature_extractiom='cnn',
+                                           **_kwargs)
 
         self._setup_init()
-
-
 
     def feature_extractor(self, input_observations, **kwargs):
 
@@ -118,28 +137,36 @@ class CustomPolicy(CnnLstmPolicy):
 
         with tf.variable_scope("model", reuse=self.reuse):
 
-
             for index_observation, shape in enumerate(self.observation_shape):
 
                 height, width, channel = shape
 
                 # Get observation
 
-                obs = input_observations[:, current_height: current_height + height, :width, :channel]
+                obs = input_observations[:, current_height:current_height +
+                                         height, :width, :channel]
 
                 if height == 1:
-                    obs = tf.squeeze(obs, axis = [1])
-                current_height+=height
+                    obs = tf.squeeze(obs, axis=[1])
+                current_height += height
 
                 layer_1 = activ(
-                    conv_1d(obs, 'c1_' + str(index_observation), n_filters=64, filter_size=5, stride=3,
+                    conv_1d(obs,
+                            'c1_' + str(index_observation),
+                            n_filters=64,
+                            filter_size=5,
+                            stride=3,
                             init_scale=numpy.sqrt(2)))
 
                 # layer_1 = tf.nn.dropout( layer_1, rate = 0.2)
                 # layer_1 = tf.layers.batch_normalization(layer_1)
 
                 layer_2 = activ(
-                    conv_1d(layer_1, 'c2_' + str(index_observation), n_filters=64, filter_size=3, stride=2,
+                    conv_1d(layer_1,
+                            'c2_' + str(index_observation),
+                            n_filters=64,
+                            filter_size=3,
+                            stride=2,
                             init_scale=numpy.sqrt(2)))
 
                 # layer_2 = tf.nn.dropout(layer_2, rate = 0.2)
@@ -152,24 +179,26 @@ class CustomPolicy(CnnLstmPolicy):
                 # layer_3 = tf.nn.dropout(layer_3, rate = 0.3)
                 # layer_3 = tf.layers.batch_normalization(layer_3)
 
-
                 layer_3 = conv_to_fc(layer_2)
 
-                dense_1 = activ_dense(linear(layer_3, 'fc1_'+ str(index_observation), n_hidden=128, init_scale=numpy.sqrt(2)))
+                dense_1 = activ_dense(
+                    linear(layer_3,
+                           'fc1_' + str(index_observation),
+                           n_hidden=128,
+                           init_scale=numpy.sqrt(2)))
                 # dense_1 = tf.nn.dropout(dense_1, rate = 0.2)
                 # dense_1 = tf.layers.batch_normalization(dense_1)
-
 
                 # dense_2 = activ(linear(dense_1, 'fc2_'+ str(index_observation), n_hidden=128, init_scale=numpy.sqrt(2)))
                 # dense_2 = tf.nn.dropout(dense_2, rate = 0.3)
                 # dense_2 = tf.layers.batch_normalization(dense_2)
 
-
                 features.append(dense_1)
 
             h_concat = tf.concat(features, 1)
 
-            h_out_1 = activ_dense(linear(h_concat, 'dense_1', n_hidden=128, init_scale=numpy.sqrt(2)))
+            h_out_1 = activ_dense(
+                linear(h_concat, 'dense_1', n_hidden=128, init_scale=numpy.sqrt(2)))
             # h_out_1 = tf.nn.dropout(h_out_1, rate = 0.2)
             # h_out_1 = tf.layers.batch_normalization(h_out_1)
             #
@@ -177,14 +206,14 @@ class CustomPolicy(CnnLstmPolicy):
             # h_out_2 = tf.nn.dropout(h_out_2, rate = 0.2)
             # h_out_2 = tf.layers.batch_normalization(h_out_2)
 
-
         return h_out_1
 
 
-from stable_baselines.common.callbacks import EventCallback, BaseCallback
 import os
+from typing import Any, Dict, List, Optional, Union
+
+from stable_baselines.common.callbacks import BaseCallback, EventCallback
 from stable_baselines.common.evaluation import evaluate_policy
-from typing import Union, List, Dict, Any, Optional
 
 
 class CustomEvalCallBack(EventCallback):
@@ -204,7 +233,8 @@ class CustomEvalCallBack(EventCallback):
     :param render: (bool) Whether to render or not the environment during evaluation
     :param verbose: (int)
     """
-    def __init__(self, eval_env,
+    def __init__(self,
+                 eval_env,
                  n_eval_episodes: int = 5,
                  eval_freq: int = 10000,
                  log_path: str = None,
@@ -240,23 +270,29 @@ class CustomEvalCallBack(EventCallback):
         if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0:
             # Sync training and eval env if there is VecNormalize
 
-            episode_rewards, episode_lengths = evaluate_policy(self.model, self.eval_env,
-                                                               n_eval_episodes=self.n_eval_episodes,
-                                                               render=self.render,
-                                                               deterministic=self.deterministic,
-                                                               return_episode_rewards=True)
+            episode_rewards, episode_lengths = evaluate_policy(
+                self.model,
+                self.eval_env,
+                n_eval_episodes=self.n_eval_episodes,
+                render=self.render,
+                deterministic=self.deterministic,
+                return_episode_rewards=True)
 
-            mean_reward, std_reward = numpy.mean(episode_rewards), numpy.std(episode_rewards)
-            mean_ep_length, std_ep_length = numpy.mean(episode_lengths), numpy.std(episode_lengths)
+            mean_reward, std_reward = numpy.mean(episode_rewards), numpy.std(
+                episode_rewards)
+            mean_ep_length, std_ep_length = numpy.mean(episode_lengths), numpy.std(
+                episode_lengths)
 
-            print( self.num_timesteps, mean_reward)
+            print(self.num_timesteps, mean_reward)
             # Keep track of the last evaluation, useful for classes that derive from this callback
             self.last_mean_reward = mean_reward
 
             if self.verbose > 0:
                 print("Eval num_timesteps={}, "
-                      "episode_reward={:.2f} +/- {:.2f}".format(self.num_timesteps, mean_reward, std_reward))
-                print("Episode length: {:.2f} +/- {:.2f}".format(mean_ep_length, std_ep_length))
+                      "episode_reward={:.2f} +/- {:.2f}".format(
+                          self.num_timesteps, mean_reward, std_reward))
+                print("Episode length: {:.2f} +/- {:.2f}".format(
+                    mean_ep_length, std_ep_length))
 
             if mean_reward > self.best_mean_reward:
                 if self.verbose > 0:
@@ -273,7 +309,7 @@ def test(scaled_images, **kwargs):
 
     activ = tf.nn.relu
 
-    obs_shape = [ [1,64,3], [1,64,1], [1,64,1]]
+    obs_shape = [[1, 64, 3], [1, 64, 1], [1, 64, 1]]
     current_height = 0
 
     features = []
@@ -284,29 +320,49 @@ def test(scaled_images, **kwargs):
 
         # Get observation
 
-        obs = scaled_images[:, current_height: current_height + height, :width, :channel]
+        obs = scaled_images[:, current_height:current_height + height, :width, :channel]
 
         if height == 1:
-            obs = tf.squeeze(obs, axis = [1])
-        current_height+=height
+            obs = tf.squeeze(obs, axis=[1])
+        current_height += height
 
         layer_1 = activ(
-            conv_1d(obs, 'c1_' + str(index_observation), n_filters=32, filter_size=7, stride=3,
+            conv_1d(obs,
+                    'c1_' + str(index_observation),
+                    n_filters=32,
+                    filter_size=7,
+                    stride=3,
                     init_scale=numpy.sqrt(2)))
 
         layer_2 = activ(
-            conv_1d(layer_1, 'c2_' + str(index_observation), n_filters=32, filter_size=5, stride=2,
+            conv_1d(layer_1,
+                    'c2_' + str(index_observation),
+                    n_filters=32,
+                    filter_size=5,
+                    stride=2,
                     init_scale=numpy.sqrt(2)))
 
         layer_3 = activ(
-            conv_1d(layer_2, 'c3_' + str(index_observation), n_filters=32, filter_size=3, stride=1,
+            conv_1d(layer_2,
+                    'c3_' + str(index_observation),
+                    n_filters=32,
+                    filter_size=3,
+                    stride=1,
                     init_scale=numpy.sqrt(2)))
 
         layer_3 = conv_to_fc(layer_3)
 
-        dense_1 = activ(linear(layer_3, 'fc1_'+ str(index_observation), n_hidden=128, init_scale=numpy.sqrt(2)))
+        dense_1 = activ(
+            linear(layer_3,
+                   'fc1_' + str(index_observation),
+                   n_hidden=128,
+                   init_scale=numpy.sqrt(2)))
 
-        dense_2 = activ(linear(dense_1, 'fc2_'+ str(index_observation), n_hidden=128, init_scale=numpy.sqrt(2)))
+        dense_2 = activ(
+            linear(dense_1,
+                   'fc2_' + str(index_observation),
+                   n_hidden=128,
+                   init_scale=numpy.sqrt(2)))
 
         features.append(dense_2)
 
