@@ -8,17 +8,8 @@ from spg_experiments.wrappers.train_eval import train_and_eval
 def main(args):
     # eval params
 
-    fname = (
-        args.environment
-        + "_"
-        + args.sensors
-        + "_"
-        + str(args.entropy)
-        + "_"
-        + str(args.multistep)
-        + "_"
-        + str(args.index_exp)
-    )
+    fname = (args.environment + "_" + args.sensors + "_" + str(args.entropy) + "_" +
+             str(args.multistep) + "_" + str(args.index_exp))
 
     agent_type = "base"
 
