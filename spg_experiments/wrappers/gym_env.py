@@ -14,14 +14,15 @@ class PlaygroundEnv(gym.Env):
     """Custom Environment that follows gym interface"""
     metadata = {'render.modes': ['human']}
 
-    def __init__(self,
-                 playground_name,
-                 agent_type,
-                 sensors_name,
-                 seed=0,
-                 continuous_action_space=True,
-                 multisteps=None):
+    def __init__(self, config):
         super().__init__()
+
+        playground_name = config['playground_name']
+        agent_type = config['agent_type']
+        sensors_name = config['sensors_name']
+        seed = config.get('seed', 0)
+        continuous_action_space = config.get('seed', True)
+        multisteps = config.get('multisteps')
 
         self.playground = PlaygroundRegister.playgrounds[playground_name]()
 
