@@ -91,10 +91,14 @@ class PlaygroundEnv(gym.Env):
                     lows.append(actuator.min)
                     highs.append(actuator.max)
 
-                lows.append(actuator.min)
-                highs.append(actuator.max)
+                else:
+                    raise ValueError(f"Action type {actuator.action_type} unknown")
 
-            self.action_space = spaces.Box(low=numpy.array(lows), high=numpy.array(highs))
+                # lows.append(actuator.min)
+                # highs.append(actuator.max)
+
+            self.action_space = spaces.Box(low=np.array(lows).astype(np.float32),
+                                           high=np.array(highs).astype(np.float32))
 
         else:
 
@@ -105,6 +109,8 @@ class PlaygroundEnv(gym.Env):
                     dims.append(2)
                 elif actuator.action_type is ActionTypes.CONTINUOUS_NOT_CENTERED:
                     dims.append(2)
+                else:
+                    raise ValueError(f"Action type {actuator.action_type} unknown")
 
             self.action_space = spaces.MultiDiscrete(dims)
 
