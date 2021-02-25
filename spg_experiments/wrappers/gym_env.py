@@ -1,7 +1,7 @@
 import random
 
 import gym
-import numpy
+import numpy as np
 from gym import spaces
 from simple_playgrounds import Engine
 from simple_playgrounds.agents import agents, controllers, sensors
@@ -29,7 +29,7 @@ class PlaygroundEnv(gym.Env):
 
         seed = (seed + id(self)) % (2**32)
         random.seed(seed)
-        numpy.random.seed(seed)
+        np.random.seed(seed)
 
         if agent_type == 'base':
             agent_cls = agents.BaseAgent
@@ -38,8 +38,7 @@ class PlaygroundEnv(gym.Env):
         else:
             raise ValueError(f"Wrong agent_type: {agent_type}")
 
-        agent = agent_cls(platform=ForwardBackwardPlatform,
-                          controller=controllers.External())
+        agent = agent_cls(platform=ForwardBackwardPlatform, controller=controller)
 
         for sensor_name, sensor_params in get_sensor_params(sensors_name):
             if sensor_name == 'depth':
@@ -135,8 +134,8 @@ class PlaygroundEnv(gym.Env):
                                             high=1,
                                             shape=(height_all_sensors, width_all_sensors,
                                                    3),
-                                            dtype=numpy.float32)
-        self.observations = numpy.zeros((height_all_sensors, width_all_sensors, 3))
+                                            dtype=np.float32)
+        self.observations = np.zeros((height_all_sensors, width_all_sensors, 3))
 
         # Multisteps
         self.multisteps = None
@@ -221,7 +220,7 @@ class PlaygroundEnv(gym.Env):
         self.game.reset()
         self.game.elapsed_time = 0
 
-        return numpy.zeros(self.observations.shape)
+        return np.zeros(self.observations.shape)
 
     def render(self, mode='human'):
         img = self.game.generate_playground_image()
