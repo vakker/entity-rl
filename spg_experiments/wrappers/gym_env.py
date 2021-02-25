@@ -21,8 +21,9 @@ class PlaygroundEnv(gym.Env):
         agent_type = config['agent_type']
         sensors_name = config['sensors_name']
         seed = config.get('seed', 0)
-        continuous_action_space = config.get('seed', True)
+        continuous_action_space = config.get('continuous_action_space', True)
         multisteps = config.get('multisteps')
+        controller = config.get('controller', controllers.External())
 
         self.playground = PlaygroundRegister.playgrounds[playground_name]()
 
