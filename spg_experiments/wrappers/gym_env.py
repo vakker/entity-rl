@@ -6,8 +6,8 @@ from gym import spaces
 from simple_playgrounds import Engine
 from simple_playgrounds.agents import agents, controllers, sensors
 from simple_playgrounds.agents.parts.platform import ForwardBackwardPlatform
-from simple_playgrounds.playgrounds import PlaygroundRegister
-from simple_playgrounds.utils import ActionTypes, SensorModality
+from simple_playgrounds.playground import PlaygroundRegister
+from simple_playgrounds.utils.definitions import ActionTypes, SensorTypes
 
 
 class PlaygroundEnv(gym.Env):
@@ -25,7 +25,8 @@ class PlaygroundEnv(gym.Env):
         multisteps = config.get('multisteps')
         controller = config.get('controller', controllers.External())
 
-        self.playground = PlaygroundRegister.playgrounds[playground_name]()
+        self.playground = PlaygroundRegister.playgrounds[playground_name[0]][
+            playground_name[1]]()
 
         seed = (seed + id(self)) % (2**32)
         random.seed(seed)
@@ -79,20 +80,20 @@ class PlaygroundEnv(gym.Env):
 
             for actuator in actuators:
 
-                if actuator.action_type is ActionTypes.DISCRETE:
+                if actuator.action_range is ActionTypes.DISCRETE:
                     lows.append(-1)
                     highs.append(1)
 
-                elif actuator.action_type is ActionTypes.CONTINUOUS_CENTERED:
+                elif actuator.action_range is ActionTypes.CONTINUOUS_CENTERED:
                     lows.append(actuator.min)
                     highs.append(actuator.max)
 
-                elif actuator.action_type is ActionTypes.CONTINUOUS_NOT_CENTERED:
+                elif actuator.action_range is ActionTypes.CONTINUOUS_NOT_CENTERED:
                     lows.append(actuator.min)
                     highs.append(actuator.max)
 
                 else:
-                    raise ValueError(f"Action type {actuator.action_type} unknown")
+                    raise ValueError(f"Action type {actuator.action} unknown")
 
                 # lows.append(actuator.min)
                 # highs.append(actuator.max)
@@ -105,12 +106,12 @@ class PlaygroundEnv(gym.Env):
             dims = []
 
             for actuator in actuators:
-                if actuator.action_type is ActionTypes.DISCRETE:
+                if actuator.action_range is ActionTypes.DISCRETE:
                     dims.append(2)
-                elif actuator.action_type is ActionTypes.CONTINUOUS_NOT_CENTERED:
+                elif actuator.action_range is ActionTypes.CONTINUOUS_NOT_CENTERED:
                     dims.append(2)
                 else:
-                    raise ValueError(f"Action type {actuator.action_type} unknown")
+                    raise ValueError(f"Action type {actuator.action} unknown")
 
             self.action_space = spaces.MultiDiscrete(dims)
 
