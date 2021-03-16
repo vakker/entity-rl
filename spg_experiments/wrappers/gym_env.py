@@ -118,31 +118,33 @@ class PlaygroundEnv(gym.Env):
         # Define observation space
 
         # Normalize all sensors to make sure they are in the same range
-        width_all_sensors, height_all_sensors = 0, 0
+        height_all_sensors, width_all_sensors, depth_all_sensors = 1, 0, 0
         for sensor in self.agent.sensors:
 
-            if sensor.sensor_modality is SensorModality.SEMANTIC:
+            if sensor.sensor_modality is SensorTypes.SEMANTIC:
                 raise ValueError('Semantic sensors not supported')
             sensor.normalize = True
 
             if isinstance(sensor.shape, int):
                 width_all_sensors = max(width_all_sensors, sensor.shape)
-                height_all_sensors += 1
+                depth_all_sensors += 1
 
             elif len(sensor.shape) == 2:
                 width_all_sensors = max(width_all_sensors, sensor.shape[0])
-                height_all_sensors += 1
+                depth_all_sensors += sensor.shape[1]
 
             else:
-                width_all_sensors = max(width_all_sensors, sensor.shape[0])
-                height_all_sensors += sensor.shape[1]
+                raise NotImplementedError
+                # width_all_sensors = max(width_all_sensors, sensor.shape[0])
+                # height_all_sensors += sensor.shape[1]
 
         self.observation_space = spaces.Box(low=0,
                                             high=1,
-                                            shape=(height_all_sensors, width_all_sensors,
-                                                   3),
+                                            shape=(1, width_all_sensors,
+                                                   depth_all_sensors),
                                             dtype=np.float32)
-        self.observations = np.zeros((height_all_sensors, width_all_sensors, 3))
+        self.observations = np.zeros(
+            (height_all_sensors, width_all_sensors, depth_all_sensors))
 
         # Multisteps
         self.multisteps = None
@@ -166,7 +168,7 @@ class PlaygroundEnv(gym.Env):
 
         # Convert Stable-baselines actions into game engine actions
         for actuator, action in zip(self.agent.get_all_actuators(), actions):
-            action_type = actuator.action_type
+            action_type = actuator.action
             converted_action = action
 
             # convert discrete action to binry
@@ -199,24 +201,28 @@ class PlaygroundEnv(gym.Env):
 
         # Concatenate the observations in a format that stable-baselines understands
 
-        current_height = 0
+        sensor_values = []
         for sensor in self.agent.sensors:
 
             if isinstance(sensor.shape, int):
-                self.observations[current_height, :sensor.shape,
-                                  0] = sensor.sensor_value[:]
-                current_height += 1
+                sensor_values.append(sensor.sensor_values[np.newaxis, :, np.newaxis])
+                # self.observations[0, :sensor.shape,
+                #                   current_channel] = sensor.sensor_values[:]
+                # current_channel += 1
 
             elif len(sensor.shape) == 2:
-                self.observations[
-                    current_height, :sensor.shape[0], :] = sensor.sensor_values[:, :]
-                current_height += 1
+                sensor_values.append(sensor.sensor_values[np.newaxis, :])
+                # self.observations[0, :sensor.shape[0],
+                #                   current_channel] = sensor.sensor_values[:, :]
+                # current_channel += sensor.shape[1]
 
             else:
-                self.observations[:sensor.shape[0], :sensor.
-                                  shape[1], :] = sensor.sensor_values[:, :, :]
-                current_height += sensor.shape[0]
+                raise NotImplementedError
+                # self.observations[:sensor.shape[0], :sensor.
+                #                   shape[1], :] = sensor.sensor_values[:, :, :]
+                # current_channel += sensor.shape[2]
 
+        self.observations = np.concatenate(sensor_values, axis=2)
         reward = self.agent.reward
         done = self.playground.done or terminate
 
