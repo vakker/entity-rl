@@ -27,6 +27,7 @@ class PlaygroundEnv(gym.Env):
 
         self.playground = PlaygroundRegister.playgrounds[playground_name[0]][
             playground_name[1]]()
+        self.playground.time_limit = 1000
 
         seed = (seed + id(self)) % (2**32)
         random.seed(seed)
@@ -193,10 +194,10 @@ class PlaygroundEnv(gym.Env):
         # Now that we have all ctions, run the engine, and get the observations
 
         if self.multisteps is None:
-            terminate = self.game.step(actions_to_game_engine)
+            self.game.step(actions_to_game_engine)
         else:
-            terminate = self.game.multiple_steps(actions_to_game_engine,
-                                                 n_steps=self.multisteps)
+            self.game.multiple_steps(actions_to_game_engine,
+                                     n_steps=self.multisteps)
 
         self.game.update_observations()
 
@@ -225,7 +226,7 @@ class PlaygroundEnv(gym.Env):
 
         self.observations = np.concatenate(sensor_values, axis=2)
         reward = self.agent.reward
-        done = self.playground.done or terminate
+        done = self.playground.done or not self.game.game_on
 
         return (self.observations, reward, done, {})
 
