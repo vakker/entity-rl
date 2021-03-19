@@ -1,5 +1,8 @@
+import os
 import random
+from os import path as osp
 
+import cv2
 import gym
 import numpy as np
 from gym import spaces
@@ -12,7 +15,7 @@ from simple_playgrounds.utils.definitions import ActionSpaces, SensorTypes
 
 class PlaygroundEnv(gym.Env):
     """Custom Environment that follows gym interface"""
-    metadata = {'render.modes': ['human']}
+    metadata = {'render.modes': ['human', 'rgb_array']}
 
     def __init__(self, config):
         super().__init__()
@@ -24,10 +27,12 @@ class PlaygroundEnv(gym.Env):
         continuous_action_space = config.get('continuous_action_space', True)
         multisteps = config.get('multisteps')
         controller = config.get('controller', controllers.External())
+        self.video_dir = config.get('video_dir')
 
         self.playground = PlaygroundRegister.playgrounds[playground_name[0]][
             playground_name[1]]()
         self.playground.time_limit = 1000
+        self.episodes = 0
 
         seed = (seed + id(self)) % (2**32)
         random.seed(seed)
@@ -237,11 +242,29 @@ class PlaygroundEnv(gym.Env):
 
         self.game.reset()
         self.game.elapsed_time = 0
+        self.episodes += 1
 
         return np.zeros(self.observations.shape)
 
     def render(self, mode='human'):
-        img = self.game.generate_playground_image()
+        if self.video_dir is None:
+            return None
+
+        # img = self.game.generate_agent_image(self.agent)
+
+        # FIXME: this is temoporary until the one above is fixed
+        topdown_img = self.game.generate_playground_image()
+        sensor_img = self.agent.generate_sensor_image()
+        img = np.concatenate([topdown_img, sensor_img], axis=0)
+        img = (255 * img).astype(np.uint8)
+
+        step_id = self.game.elapsed_time
+        video_dir = osp.join(self.video_dir, str(id(self)), str(self.episodes))
+        frame_path = osp.join(video_dir, f"f-{step_id:03d}.png")
+        if not osp.exists(video_dir):
+            os.makedirs(video_dir, exist_ok=True)
+
+        cv2.imwrite(frame_path, img)
         return img
 
     def close(self):
