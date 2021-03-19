@@ -7,7 +7,7 @@ from simple_playgrounds import Engine
 from simple_playgrounds.agents import agents, controllers, sensors
 from simple_playgrounds.agents.parts.platform import ForwardBackwardPlatform
 from simple_playgrounds.playground import PlaygroundRegister
-from simple_playgrounds.utils.definitions import ActionTypes, SensorTypes
+from simple_playgrounds.utils.definitions import ActionSpaces, SensorTypes
 
 
 class PlaygroundEnv(gym.Env):
@@ -80,15 +80,15 @@ class PlaygroundEnv(gym.Env):
 
             for actuator in actuators:
 
-                if actuator.action_range is ActionTypes.DISCRETE:
+                if actuator.action_range is ActionSpaces.DISCRETE:
                     lows.append(-1)
                     highs.append(1)
 
-                elif actuator.action_range is ActionTypes.CONTINUOUS_CENTERED:
+                elif actuator.action_range is ActionSpaces.CONTINUOUS_CENTERED:
                     lows.append(actuator.min)
                     highs.append(actuator.max)
 
-                elif actuator.action_range is ActionTypes.CONTINUOUS_NOT_CENTERED:
+                elif actuator.action_range is ActionSpaces.CONTINUOUS_NOT_CENTERED:
                     lows.append(actuator.min)
                     highs.append(actuator.max)
 
@@ -106,9 +106,9 @@ class PlaygroundEnv(gym.Env):
             dims = []
 
             for actuator in actuators:
-                if actuator.action_range is ActionTypes.DISCRETE:
+                if actuator.action_range is ActionSpaces.DISCRETE:
                     dims.append(2)
-                elif actuator.action_range is ActionTypes.CONTINUOUS_NOT_CENTERED:
+                elif actuator.action_range is ActionSpaces.CONTINUOUS_NOT_CENTERED:
                     dims.append(2)
                 else:
                     raise ValueError(f"Action type {actuator.action} unknown")
@@ -172,12 +172,13 @@ class PlaygroundEnv(gym.Env):
             converted_action = action
 
             # convert discrete action to binry
-            if self.continuous_action_space and action_type is ActionTypes.DISCRETE:
+            if self.continuous_action_space and \
+               (action_type is ActionSpaces.DISCRETE):
                 converted_action = 0 if converted_action < 0 else 1
 
             # convert continuous actions in [-1, 1]
-            elif (not self.continuous_action_space) and (action_type is
-                                                         ActionTypes.CONTINUOUS_CENTERED):
+            elif (not self.continuous_action_space) and \
+                    (action_type is ActionSpaces.CONTINUOUS_CENTERED):
                 converted_action = converted_action - 1
 
             actions_dict[actuator] = converted_action
