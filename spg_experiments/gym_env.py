@@ -40,7 +40,8 @@ class PlaygroundEnv(gym.Env):
         else:
             raise ValueError(f"Wrong agent_type: {agent_type}")
 
-        agent = agent_cls(platform=ForwardBackwardPlatform, controller=controller)
+        agent = agent_cls(platform=ForwardBackwardPlatform,
+                          controller=controller)
 
         for sensor_name, sensor_params in get_sensor_params(sensors_name):
             if sensor_name == 'depth':
@@ -189,7 +190,8 @@ class PlaygroundEnv(gym.Env):
         # Generate actions for other agents
         for agent in self.game.agents:
             if agent is not self.agent:
-                actions_to_game_engine[agent] = agent.controller.generate_actions()
+                actions_to_game_engine[agent] = \
+                    agent.controller.generate_actions()
 
         # Now that we have all ctions, run the engine, and get the observations
 
@@ -207,7 +209,8 @@ class PlaygroundEnv(gym.Env):
         for sensor in self.agent.sensors:
 
             if isinstance(sensor.shape, int):
-                sensor_values.append(sensor.sensor_values[np.newaxis, :, np.newaxis])
+                sensor_values.append(
+                    sensor.sensor_values[np.newaxis, :, np.newaxis])
                 # self.observations[0, :sensor.shape,
                 #                   current_channel] = sensor.sensor_values[:]
                 # current_channel += 1
