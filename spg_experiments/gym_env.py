@@ -67,6 +67,11 @@ class PlaygroundEnv(gym.Env):
                                   normalize=True,
                                   **sensor_params))
 
+            elif sensor_name == 'blind':
+                agent.add_sensor(
+                    sensors.BlindCamera(anchor=agent.base_platform,
+                                        **sensor_params))
+
         self.playground.add_agent(agent)
         self.time_limit = self.playground.time_limit
 
@@ -309,6 +314,8 @@ def get_sensor_params(sensors_name):
             'range': 2,
             'resolution': 64
         })]
+    elif sensors_name == 'blind':
+        sensors = [('blind', {})]
     else:
         raise ValueError(f"Wrong sensors_name: {sensors_name}")
 
