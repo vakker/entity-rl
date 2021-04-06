@@ -258,12 +258,7 @@ class PlaygroundEnv(gym.Env):
         if self.video_dir is None:
             return None
 
-        # img = self.game.generate_agent_image(self.agent)
-
-        # FIXME: this is temoporary until the one above is fixed
-        topdown_img = self.game.generate_playground_image()
-        sensor_img = self.agent.generate_sensor_image()
-        img = np.concatenate([topdown_img, sensor_img], axis=0)
+        img = self.game.generate_agent_image(self.agent)
         img = (255 * img).astype(np.uint8)
 
         step_id = self.game.elapsed_time
