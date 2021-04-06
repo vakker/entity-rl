@@ -4,6 +4,7 @@ import gym
 import numpy as np
 import torch
 from ray.rllib.models import ModelCatalog
+from ray.rllib.models.modelv2 import restore_original_dimensions
 from ray.rllib.models.torch.fcnet import FullyConnectedNetwork as TorchFC
 from ray.rllib.models.torch.misc import SlimFC, normc_initializer
 from ray.rllib.models.torch.torch_modelv2 import TorchModelV2
@@ -37,7 +38,8 @@ def same_padding_1d(
 
     out_width = np.ceil(float(in_width) / float(stride_width))
 
-    pad_along_width = int(((out_width - 1) * stride_width + filter_width - in_width))
+    pad_along_width = int(
+        ((out_width - 1) * stride_width + filter_width - in_width))
     pad_left = pad_along_width // 2
     pad_right = pad_along_width - pad_left
     padding = (pad_left, pad_right)
@@ -77,67 +79,29 @@ def same_padding_1d(
 
 #     return _ortho_init
 
-# def conv_1d(input_tensor,
-#             scope,
-#             *,
-#             n_filters,
-#             filter_size,
-#             stride,
-#             pad='VALID',
-#             init_scale=1.0,
-#             data_format='NHWC',
-#             one_dim_bias=False):
-#     """
-#     Creates a 2d convolutional layer for TensorFlow
-#     :param input_tensor: (TensorFlow Tensor) The input tensor for the convolution
-#     :param scope: (str) The TensorFlow variable scope
-#     :param n_filters: (int) The number of filters
-#     :param filter_size:  (Union[int, [int], tuple<int, int>]) The filter size for the squared kernel matrix,
-#     or the height and width of kernel filter if the input is a list or tuple
-#     :param stride: (int) The stride of the convolution
-#     :param pad: (str) The padding type ('VALID' or 'SAME')
-#     :param init_scale: (int) The initialization scale
-#     :param data_format: (str) The data format for the convolution weights
-#     :param one_dim_bias: (bool) If the bias should be one dimentional or not
-#     :return: (TensorFlow Tensor) 2d convolutional layer
-#     """
-
-#     channel_ax = 2
-#     strides = [1, stride, 1]
-#     bshape = [1, n_filters]
-
-#     filter_width = filter_size
-
-#     bias_var_shape = [n_filters] if one_dim_bias else [1, n_filters, 1]
-#     n_input = input_tensor.get_shape()[channel_ax].value
-#     wshape = [filter_width, n_input, n_filters]
-#     with tf.variable_scope(scope):
-#         weight = tf.get_variable("w", wshape, initializer=ortho_init_1d(init_scale))
-#         bias = tf.get_variable("b",
-#                                bias_var_shape,
-#                                initializer=tf.constant_initializer(0.0))
-#         bias = tf.reshape(bias, bshape)
-
-#         # return bias + tf.nn.conv1d(input_tensor, weight, strides=strides, padding=pad, data_format='NWC')
-#         return bias + tf.nn.conv1d(input_tensor, weight, stride=stride, padding=pad)
-
 
 class CustomFC(TorchModelV2, nn.Module):
-    def __init__(self, obs_space, action_space, num_outputs, model_config, name):
-        TorchModelV2.__init__(self, obs_space, action_space, num_outputs, model_config,
-                              name)
+    def __init__(self, obs_space, action_space, num_outputs, model_config,
+                 name):
+        TorchModelV2.__init__(self, obs_space, action_space, num_outputs,
+                              model_config, name)
         nn.Module.__init__(self)
 
-        self.torch_sub_model = TorchFC(obs_space, action_space, num_outputs, model_config,
-                                       name)
+        self.torch_sub_model = TorchFC(obs_space, action_space, num_outputs,
+                                       model_config, name)
 
     def forward(self, input_dict, state, seq_lens):
-        input_dict["obs"] = input_dict["obs"].float()
         fc_out, _ = self.torch_sub_model(input_dict, state, seq_lens)
         return fc_out, []
 
     def value_function(self):
         return torch.reshape(self.torch_sub_model.value_function(), [-1])
+
+    def sum_params(self):
+        s = 0
+        for p in self.parameters():
+            s += p.sum()
+        return s.item()
 
 
 class SlimConv1d(nn.Module):
@@ -201,12 +165,13 @@ class SlimConv1d(nn.Module):
 
 class VisionNetwork1D(TorchModelV2, nn.Module):
     """Generic vision network."""
-    def __init__(self, obs_space: gym.spaces.Space, action_space: gym.spaces.Space,
-                 num_outputs: int, model_config: ModelConfigDict, name: str):
+    def __init__(self, obs_space: gym.spaces.Space,
+                 action_space: gym.spaces.Space, num_outputs: int,
+                 model_config: ModelConfigDict, name: str):
         if not model_config.get("conv_filters"):
-            model_config["conv_filters"] = get_filter_config(obs_space.shape)
-        TorchModelV2.__init__(self, obs_space, action_space, num_outputs, model_config,
-                              name)
+            raise ValueError("Config for conv_filters is required")
+        TorchModelV2.__init__(self, obs_space, action_space, num_outputs,
+                              model_config, name)
         nn.Module.__init__(self)
 
         activation = self.model_config.get("conv_activation")
@@ -222,8 +187,8 @@ class VisionNetwork1D(TorchModelV2, nn.Module):
         self._logits = None
 
         layers = []
-        (h, w, in_channels) = obs_space.shape
-        assert h == 1
+        # FIXME add stacking here
+        (w, in_channels) = obs_space.shape
         in_size = w
         for out_channels, kernel, stride in filters[:-1]:
             padding, out_size = same_padding_1d(in_size, kernel, stride)
@@ -329,9 +294,10 @@ class VisionNetwork1D(TorchModelV2, nn.Module):
         self._features = None
 
     @override(TorchModelV2)
-    def forward(self, input_dict: Dict[str, TensorType], state: List[TensorType],
+    def forward(self, input_dict: Dict[str,
+                                       TensorType], state: List[TensorType],
                 seq_lens: TensorType) -> (TensorType, List[TensorType]):
-        self._features = input_dict["obs"].float().permute(0, 3, 1, 2)
+        self._features = input_dict["obs"].float().permute(0, 2, 1)
         conv_out = self._convs(self._features)
         # Store features to save forward pass when getting value_function out.
         if not self._value_branch_separate:
@@ -341,11 +307,12 @@ class VisionNetwork1D(TorchModelV2, nn.Module):
             if self._logits:
                 conv_out = self._logits(conv_out)
             if conv_out.shape[2] != 1:
-                raise ValueError("Given `conv_filters` ({}) do not result in a [B, {} "
-                                 "(`num_outputs`), 1] shape (but in {})! Please adjust "
-                                 "your Conv1D stack such that the last dim is "
-                                 "1.".format(self.model_config["conv_filters"],
-                                             self.num_outputs, list(conv_out.shape)))
+                raise ValueError(
+                    "Given `conv_filters` ({}) do not result in a [B, {} "
+                    "(`num_outputs`), 1] shape (but in {})! Please adjust "
+                    "your Conv1D stack such that the last dim is "
+                    "1.".format(self.model_config["conv_filters"],
+                                self.num_outputs, list(conv_out.shape)))
             logits = conv_out.squeeze(2)
             # logits = logits.squeeze(1)
 
@@ -376,193 +343,121 @@ class VisionNetwork1D(TorchModelV2, nn.Module):
         return res
 
 
-# class CustomCNN(TorchModelV2, nn.Module):
-#     def __init__(self, obs_space, action_space, num_outputs, model_config, name):
-#         TorchModelV2.__init__(self, obs_space, action_space, num_outputs, model_config,
-#                               name)
-#         nn.Module.__init__(self)
+class CustomCNN(TorchModelV2, nn.Module):
+    def __init__(self, obs_space, action_space, num_outputs, model_config,
+                 name):
+        TorchModelV2.__init__(self, obs_space, action_space, num_outputs,
+                              model_config, name)
+        nn.Module.__init__(self)
 
-#         self.activ = 'ReLU'
+        self.activ = 'ReLU'
 
-#         self.custom_layers = []
-#         self.observation_shape = obs_space
+        self.custom_layers = []
+        self.obs_shape = obs_space
+        self.num_outputs = num_outputs
 
-#     def feature_extractor(self, input_observations, **kwargs):
+        self.feature_extractor = None
+        self.final_layer = None
+        self.create_layers()
 
-#         activ = getattr(nn, self.activ)
-#         activ_dense = getattr(nn, self.activ)
+    def create_layers(self):
+        activ = getattr(nn, self.activ)
+        activ_dense = getattr(nn, self.activ)
 
-#         current_height = 0
+        branches = {}
+        for obs_name, space in self.obs_shape.original_space.spaces.items():
+            layers = []
+            width, channel = space.shape
 
-#         features = []
+            layers.append(nn.Conv1d(channel, 64, kernel_size=5, stride=3))
+            layers.append(activ())
+            # layer_1 = activ(
+            #     conv_1d(obs,
+            #             'c1_' + str(index_observation),
+            #             n_filters=64,
+            #             filter_size=5,
+            #             stride=3,
+            #             init_scale=numpy.sqrt(2)))
 
-#         # if input_observations.shape[0] != 128:
-#         #     print(input_observations.shape)
+            # layer_1 = tf.nn.dropout( layer_1, rate = 0.2)
+            # layer_1 = tf.layers.batch_normalization(layer_1)
 
-#         for index_observation, shape in enumerate(self.observation_shape):
+            layers.append(nn.Conv1d(64, 64, kernel_size=3, stride=2))
+            layers.append(activ())
+            # layer_2 = activ(
+            #     conv_1d(layer_1,
+            #             'c2_' + str(index_observation),
+            #             n_filters=64,
+            #             filter_size=3,
+            #             stride=2,
+            #             init_scale=numpy.sqrt(2)))
 
-#             height, width, channel = shape
+            # layer_2 = tf.nn.dropout(layer_2, rate = 0.2)
+            # layer_2 = tf.layers.batch_normalization(layer_2)
 
-#             # Get observation
+            # layer_3 = activ(
+            #     conv_1d(layer_2, 'c3_' + str(index_observation), n_filters=64, filter_size=3, stride=1,
+            #             init_scale=numpy.sqrt(2)))
 
-#             obs = input_observations[:, current_height:current_height +
-#                                      height, :width, :channel]
+            # layer_3 = tf.nn.dropout(layer_3, rate = 0.3)
+            # layer_3 = tf.layers.batch_normalization(layer_3)
 
-#             if height == 1:
-#                 obs = tf.squeeze(obs, axis=[1])
-#             current_height += height
+            layers.append(nn.Flatten(1))
+            # layer_3 = conv_to_fc(layer_2)
 
-#             layer_1 = activ(
-#                 conv_1d(obs,
-#                         'c1_' + str(index_observation),
-#                         n_filters=64,
-#                         filter_size=5,
-#                         stride=3,
-#                         init_scale=numpy.sqrt(2)))
+            layers.append(nn.Linear(576, 128))
+            layers.append(activ_dense())
+            # dense_1 = activ_dense(
+            #     linear(layer_3,
+            #            'fc1_' + str(index_observation),
+            #            n_hidden=128,
+            #            init_scale=numpy.sqrt(2)))
+            # dense_1 = tf.nn.dropout(dense_1, rate = 0.2)
+            # dense_1 = tf.layers.batch_normalization(dense_1)
 
-#             # layer_1 = tf.nn.dropout( layer_1, rate = 0.2)
-#             # layer_1 = tf.layers.batch_normalization(layer_1)
+            # dense_2 = activ(linear(dense_1, 'fc2_'+ str(index_observation), n_hidden=128, init_scale=numpy.sqrt(2)))
+            # dense_2 = tf.nn.dropout(dense_2, rate = 0.3)
+            # dense_2 = tf.layers.batch_normalization(dense_2)
 
-#             layer_2 = activ(
-#                 conv_1d(layer_1,
-#                         'c2_' + str(index_observation),
-#                         n_filters=64,
-#                         filter_size=3,
-#                         stride=2,
-#                         init_scale=numpy.sqrt(2)))
+            # features.append(dense_1)
+            branches[obs_name] = nn.Sequential(*layers)
+        self.feature_extractor = nn.ModuleDict(branches)
 
-#             # layer_2 = tf.nn.dropout(layer_2, rate = 0.2)
-#             # layer_2 = tf.layers.batch_normalization(layer_2)
+        # h_concat = tf.concat(features, 1)
 
-#             # layer_3 = activ(
-#             #     conv_1d(layer_2, 'c3_' + str(index_observation), n_filters=64, filter_size=3, stride=1,
-#             #             init_scale=numpy.sqrt(2)))
+        self._logits = nn.Sequential(
+            nn.Linear(128 * len(branches), self.num_outputs), activ_dense())
+        self._value_branch = nn.Sequential(nn.Linear(128 * len(branches), 1),
+                                           activ_dense())
+        # h_out_1 = activ_dense(
+        #     linear(h_concat, 'dense_1', n_hidden=128,
+        #            init_scale=numpy.sqrt(2)))
+        # h_out_1 = tf.nn.dropout(h_out_1, rate = 0.2)
+        # h_out_1 = tf.layers.batch_normalization(h_out_1)
+        #
+        # h_out_2 = activ(linear(h_out_1, 'dense_2', n_hidden=128, init_scale=numpy.sqrt(2)))
+        # h_out_2 = tf.nn.dropout(h_out_2, rate = 0.2)
+        # h_out_2 = tf.layers.batch_normalization(h_out_2)
 
-#             # layer_3 = tf.nn.dropout(layer_3, rate = 0.3)
-#             # layer_3 = tf.layers.batch_normalization(layer_3)
+    @override(TorchModelV2)
+    def forward(self, input_dict: Dict[str,
+                                       TensorType], state: List[TensorType],
+                seq_lens: TensorType) -> (TensorType, List[TensorType]):
+        features = []
+        for obs_name, obs in input_dict['obs'].items():
+            features.append(self.feature_extractor[obs_name](obs.permute(
+                0, 2, 1)))
+        self._features = torch.cat(features, dim=1)
+        logits = self._logits(self._features)
 
-#             layer_3 = conv_to_fc(layer_2)
+        return logits, state
 
-#             dense_1 = activ_dense(
-#                 linear(layer_3,
-#                        'fc1_' + str(index_observation),
-#                        n_hidden=128,
-#                        init_scale=numpy.sqrt(2)))
-#             # dense_1 = tf.nn.dropout(dense_1, rate = 0.2)
-#             # dense_1 = tf.layers.batch_normalization(dense_1)
+    @override(TorchModelV2)
+    def value_function(self) -> TensorType:
+        assert self._features is not None, "must call forward() first"
+        return self._value_branch(self._features).squeeze(1)
 
-#             # dense_2 = activ(linear(dense_1, 'fc2_'+ str(index_observation), n_hidden=128, init_scale=numpy.sqrt(2)))
-#             # dense_2 = tf.nn.dropout(dense_2, rate = 0.3)
-#             # dense_2 = tf.layers.batch_normalization(dense_2)
-
-#             features.append(dense_1)
-
-#         h_concat = tf.concat(features, 1)
-
-#         h_out_1 = activ_dense(
-#             linear(h_concat, 'dense_1', n_hidden=128, init_scale=numpy.sqrt(2)))
-#         # h_out_1 = tf.nn.dropout(h_out_1, rate = 0.2)
-#         # h_out_1 = tf.layers.batch_normalization(h_out_1)
-#         #
-#         # h_out_2 = activ(linear(h_out_1, 'dense_2', n_hidden=128, init_scale=numpy.sqrt(2)))
-#         # h_out_2 = tf.nn.dropout(h_out_2, rate = 0.2)
-#         # h_out_2 = tf.layers.batch_normalization(h_out_2)
-
-#         return h_out_1
-
-# import os
-# from typing import Any, Dict, List, Optional, Union
-
-# from stable_baselines.common.callbacks import BaseCallback, EventCallback
-# from stable_baselines.common.evaluation import evaluate_policy
-
-# class CustomEvalCallBack(EventCallback):
-#     """
-#     Callback for evaluating an agent.
-#     :param eval_env: (Union[gym.Env, VecEnv]) The environment used for initialization
-#     :param callback_on_new_best: (Optional[BaseCallback]) Callback to trigger
-#         when there is a new best model according to the `mean_reward`
-#     :param n_eval_episodes: (int) The number of episodes to test the agent
-#     :param eval_freq: (int) Evaluate the agent every eval_freq call of the callback.
-#     :param log_path: (str) Path to a folder where the evaluations (`evaluations.npz`)
-#         will be saved. It will be updated at each evaluation.
-#     :param best_model_save_path: (str) Path to a folder where the best model
-#         according to performance on the eval env will be saved.
-#     :param deterministic: (bool) Whether the evaluation should
-#         use a stochastic or deterministic actions.
-#     :param render: (bool) Whether to render or not the environment during evaluation
-#     :param verbose: (int)
-#     """
-#     def __init__(self,
-#                  eval_env,
-#                  n_eval_episodes: int = 5,
-#                  eval_freq: int = 10000,
-#                  log_path: str = None,
-#                  deterministic: bool = True,
-#                  callback_on_new_best: Optional[BaseCallback] = None,
-#                  render: bool = False,
-#                  verbose: int = 1):
-#         super(CustomEvalCallBack, self).__init__(callback_on_new_best, verbose=verbose)
-#         self.n_eval_episodes = n_eval_episodes
-#         self.eval_freq = eval_freq
-#         self.best_mean_reward = -numpy.inf
-#         self.last_mean_reward = -numpy.inf
-#         self.deterministic = deterministic
-#         self.render = render
-
-#         self.eval_env = eval_env
-#         # Logs will be written in `evaluations.npz`
-#         if log_path is not None:
-#             log_path = os.path.join(log_path, 'evaluations')
-#         self.log_path = log_path
-#         self.evaluations_results = []
-#         self.evaluations_timesteps = []
-#         self.evaluations_length = []
-
-#     def _init_callback(self):
-#         # Does not work in some corner cases, where the wrapper is not the same
-
-#         if self.log_path is not None:
-#             os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
-
-#     def _on_step(self) -> bool:
-
-#         if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0:
-#             # Sync training and eval env if there is VecNormalize
-
-#             episode_rewards, episode_lengths = evaluate_policy(
-#                 self.model,
-#                 self.eval_env,
-#                 n_eval_episodes=self.n_eval_episodes,
-#                 render=self.render,
-#                 deterministic=self.deterministic,
-#                 return_episode_rewards=True)
-
-#             mean_reward, std_reward = numpy.mean(episode_rewards), numpy.std(
-#                 episode_rewards)
-#             mean_ep_length, std_ep_length = numpy.mean(episode_lengths), numpy.std(
-#                 episode_lengths)
-
-#             print(self.num_timesteps, mean_reward)
-#             # Keep track of the last evaluation, useful for classes that derive from this callback
-#             self.last_mean_reward = mean_reward
-
-#             if self.verbose > 0:
-#                 print("Eval num_timesteps={}, "
-#                       "episode_reward={:.2f} +/- {:.2f}".format(
-#                           self.num_timesteps, mean_reward, std_reward))
-#                 print("Episode length: {:.2f} +/- {:.2f}".format(
-#                     mean_ep_length, std_ep_length))
-
-#             if mean_reward > self.best_mean_reward:
-#                 if self.verbose > 0:
-#                     print("New best mean reward!")
-#                 self.best_mean_reward = mean_reward
-#                 # Trigger callback if needed
-#                 if self.callback is not None:
-#                     return self._on_event()
-
-#         return True
 
 ModelCatalog.register_custom_model("custom-fc", CustomFC)
+ModelCatalog.register_custom_model("custom-cnn", CustomCNN)
 ModelCatalog.register_custom_model("vision-1d", VisionNetwork1D)
