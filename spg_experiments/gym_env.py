@@ -7,10 +7,10 @@ import gym
 import numpy as np
 from gym import spaces
 from simple_playgrounds import Engine
-from simple_playgrounds.agents import agents, controllers, sensors
-from simple_playgrounds.agents.parts.platform import ForwardBackwardPlatform
+from simple_playgrounds.agents import agents, sensors
+from simple_playgrounds.agents.parts import controllers
 from simple_playgrounds.playground import PlaygroundRegister
-from simple_playgrounds.utils.definitions import ActionSpaces, SensorTypes
+from simple_playgrounds.utils.definitions import SensorTypes
 
 
 class PlaygroundEnv(gym.Env):
@@ -45,32 +45,35 @@ class PlaygroundEnv(gym.Env):
         else:
             raise ValueError(f"Wrong agent_type: {agent_type}")
 
-        agent = agent_cls(platform=ForwardBackwardPlatform,
-                          controller=controller)
+        agent = agent_cls(controller=controller)
 
         for sensor_name, sensor_params in get_sensor_params(sensors_name):
             if sensor_name == 'depth':
-                agent.add_sensor(
-                    sensors.Lidar(anchor=agent.base_platform,
-                                  normalize=True,
-                                  **sensor_params))
+                sensor_cls = sensors.Lidar
+                sensor_name = 'depth_0'
 
             elif sensor_name == 'rgb':
-                agent.add_sensor(
-                    sensors.RgbCamera(anchor=agent.base_platform,
-                                      normalize=True,
-                                      **sensor_params))
+                sensor_cls = sensors.RgbCamera
+                sensor_name = 'rgb_0'
 
             elif sensor_name == 'touch':
-                agent.add_sensor(
-                    sensors.Touch(anchor=agent.base_platform,
-                                  normalize=True,
-                                  **sensor_params))
+                sensor_cls = sensors.Touch
+                sensor_name = 'touch_0'
 
             elif sensor_name == 'blind':
-                agent.add_sensor(
-                    sensors.BlindCamera(anchor=agent.base_platform,
-                                        **sensor_params))
+                sensor_cls = sensors.BlindCamera
+                sensor_name = 'blind_0'
+
+            else:
+                raise NotImplementedError(
+                    f'Sensor {sensor_name} not implemented')
+
+            agent.add_sensor(
+                sensor_cls(anchor=agent.base_platform,
+                           normalize=True,
+                           invisible_elements=agent.parts,
+                           name=sensor_name,
+                           **sensor_params))
 
         self.playground.add_agent(agent)
         self.time_limit = self.playground.time_limit
@@ -280,6 +283,9 @@ def get_sensor_params(sensors_name):
     if sensors_name == 'rgb':
         sensors = [('rgb', {'fov': 180, 'range': 300, 'resolution': 64})]
 
+    elif sensors_name == 'depth':
+        sensors = [('depth', {'fov': 180, 'range': 300, 'resolution': 64})]
+
     elif sensors_name == 'rgb_depth':
         sensors = [('depth', {
             'fov': 180,
@@ -315,7 +321,7 @@ def get_sensor_params(sensors_name):
             'resolution': 64
         })]
     elif sensors_name == 'blind':
-        sensors = [('blind', {})]
+        sensors = [('blind', {'resolution': 64})]
     else:
         raise ValueError(f"Wrong sensors_name: {sensors_name}")
 
