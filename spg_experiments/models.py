@@ -178,7 +178,6 @@ class VisionNetwork1D(TorchModelV2, nn.Module):
         filters = self.model_config["conv_filters"]
         assert len(filters) > 0,\
             "Must provide at least 1 entry in `conv_filters`!"
-        no_final_linear = self.model_config.get("no_final_linear")
 
         # Whether the last layer is the output of a Flattened (rather than
         # a n x (1,1) Conv2D).
@@ -189,61 +188,36 @@ class VisionNetwork1D(TorchModelV2, nn.Module):
         # FIXME add stacking here
         (w, in_channels) = obs_space.shape
         in_size = w
-        for out_channels, kernel, stride in filters[:-1]:
+        for i, (out_channels, kernel, stride) in enumerate(filters):
             padding, out_size = same_padding_1d(in_size, kernel, stride)
             layers.append(
                 SlimConv1d(in_channels,
                            out_channels,
                            kernel,
                            stride,
-                           padding,
+                           None if i == (len(filters) - 1) else padding,
                            activation_fn=activation))
             in_channels = out_channels
             in_size = out_size
 
-        out_channels, kernel, stride = filters[-1]
+        # num_outputs defined. Use that to create an exact
+        # `num_output`-sized (1,1)-Conv2D.
+        if num_outputs:
+            in_size = np.ceil((in_size - kernel) / stride)
 
-        # No final linear: Last layer is a Conv2D and uses num_outputs.
-        if no_final_linear and num_outputs:
-            layers.append(
-                SlimConv1d(
-                    in_channels,
-                    num_outputs,
-                    kernel,
-                    stride,
-                    None,  # padding=valid
-                    activation_fn=activation))
-            out_channels = num_outputs
-        # Finish network normally (w/o overriding last layer size with
-        # `num_outputs`), then add another linear one of size `num_outputs`.
+            padding, _ = same_padding_1d(in_size, 1, 1)
+            self._logits = SlimConv1d(out_channels,
+                                      num_outputs,
+                                      1,
+                                      1,
+                                      padding,
+                                      activation_fn=None)
+        # num_outputs not known -> Flatten, then set self.num_outputs
+        # to the resulting number of nodes.
         else:
-            layers.append(
-                SlimConv1d(
-                    in_channels,
-                    out_channels,
-                    kernel,
-                    stride,
-                    None,  # padding=valid
-                    activation_fn=activation))
-
-            # num_outputs defined. Use that to create an exact
-            # `num_output`-sized (1,1)-Conv2D.
-            if num_outputs:
-                in_size = np.ceil((in_size - kernel) / stride)
-
-                padding, _ = same_padding_1d(in_size, 1, 1)
-                self._logits = SlimConv1d(out_channels,
-                                          num_outputs,
-                                          1,
-                                          1,
-                                          padding,
-                                          activation_fn=None)
-            # num_outputs not known -> Flatten, then set self.num_outputs
-            # to the resulting number of nodes.
-            else:
-                self.last_layer_is_flattened = True
-                layers.append(nn.Flatten())
-                self.num_outputs = out_channels
+            self.last_layer_is_flattened = True
+            layers.append(nn.Flatten())
+            self.num_outputs = out_channels
 
         self._convs = nn.Sequential(*layers)
 
@@ -292,7 +266,7 @@ class VisionNetwork1D(TorchModelV2, nn.Module):
         return self._value_branch(features).squeeze(1)
 
     def _hidden_layers(self, obs: TensorType) -> TensorType:
-        res = self._convs(obs.permute(0, 3, 1, 2))  # switch to channel-major
+        res = self._convs(obs.permute(0, 2, 1))  # switch to channel-major
         # res = res.squeeze(3)
         res = res.squeeze(2)
         return res
