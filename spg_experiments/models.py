@@ -183,31 +183,48 @@ class VisionNetwork1D(TorchModelV2, nn.Module):
         # a n x (1,1) Conv2D).
         self.last_layer_is_flattened = False
         self._logits = None
+        # Holds the current "base" output (before logits layer).
+        self._features = None
+        self.num_outputs = num_outputs
+        self.filters = filters
+        self.activation = activation
+        self.obs_space = obs_space
 
-        layers = []
-        # FIXME add stacking here
-        (w, in_channels) = obs_space.shape
-        in_size = w
-        for i, (out_channels, kernel, stride) in enumerate(filters):
-            padding, out_size = same_padding_1d(in_size, kernel, stride)
-            layers.append(
-                SlimConv1d(in_channels,
-                           out_channels,
-                           kernel,
-                           stride,
-                           None if i == (len(filters) - 1) else padding,
-                           activation_fn=activation))
-            in_channels = out_channels
-            in_size = out_size
+        self._create_model()
 
+    def _create_model(self):
+        filters = self.filters
+        activation = self.activation
+        branches = {}
+        for obs_name, space in self.obs_space.original_space.spaces.items():
+            layers = []
+            w, in_channels = space.shape
+            in_size = w
+            for i, (out_channels, kernel, stride) in enumerate(filters):
+                padding, out_size = same_padding_1d(in_size, kernel, stride)
+                layers.append(
+                    SlimConv1d(in_channels,
+                               out_channels,
+                               kernel,
+                               stride,
+                               None if i == (len(filters) - 1) else padding,
+                               activation_fn=activation))
+                in_channels = out_channels
+                in_size = out_size
+
+            branches[obs_name] = nn.Sequential(*layers)
+
+        self._convs = nn.ModuleDict(branches)
+
+        out_channels *= len(self._convs)
         # num_outputs defined. Use that to create an exact
         # `num_output`-sized (1,1)-Conv2D.
-        if num_outputs:
+        if self.num_outputs:
             in_size = np.ceil((in_size - kernel) / stride)
 
             padding, _ = same_padding_1d(in_size, 1, 1)
             self._logits = SlimConv1d(out_channels,
-                                      num_outputs,
+                                      self.num_outputs,
                                       1,
                                       1,
                                       padding,
@@ -219,55 +236,36 @@ class VisionNetwork1D(TorchModelV2, nn.Module):
             layers.append(nn.Flatten())
             self.num_outputs = out_channels
 
-        self._convs = nn.Sequential(*layers)
-
         # Build the value layers
         self._value_branch = SlimFC(out_channels,
                                     1,
                                     initializer=normc_initializer(0.01),
                                     activation_fn=None)
 
-        # Holds the current "base" output (before logits layer).
-        self._features = None
-
     @override(TorchModelV2)
     def forward(self, input_dict: Dict[str,
                                        TensorType], state: List[TensorType],
                 seq_lens: TensorType) -> (TensorType, List[TensorType]):
-        self._features = input_dict["obs"].float().permute(0, 2, 1)
-        conv_out = self._convs(self._features)
-        self._features = conv_out
+        features = []
+        for obs_name, obs in input_dict['obs'].items():
+            features.append(self._convs[obs_name](obs.permute(0, 2, 1)))
+        self._features = torch.cat(features, dim=1)
 
-        if not self.last_layer_is_flattened:
-            if self._logits:
-                conv_out = self._logits(conv_out)
-            if conv_out.shape[2] != 1:
-                raise ValueError(
-                    "Given `conv_filters` ({}) do not result in a [B, {} "
-                    "(`num_outputs`), 1] shape (but in {})! Please adjust "
-                    "your Conv1D stack such that the last dim is "
-                    "1.".format(self.model_config["conv_filters"],
-                                self.num_outputs, list(conv_out.shape)))
-            logits = conv_out.squeeze(2)
-            # logits = logits.squeeze(1)
+        logits = self._logits(self._features).squeeze(2)
+        assert logits.shape[1] == self.num_outputs
+        assert logits.shape[0] == input_dict['obs_flat'].shape[0]
 
-            return logits, state
-        else:
-            return conv_out, state
+        return logits, state
 
     @override(TorchModelV2)
     def value_function(self) -> TensorType:
         assert self._features is not None, "must call forward() first"
-        if not self.last_layer_is_flattened:
-            features = self._features.squeeze(2)
-            # features = features.squeeze(2)
-        else:
-            features = self._features
+
+        features = self._features.squeeze(2)
         return self._value_branch(features).squeeze(1)
 
     def _hidden_layers(self, obs: TensorType) -> TensorType:
         res = self._convs(obs.permute(0, 2, 1))  # switch to channel-major
-        # res = res.squeeze(3)
         res = res.squeeze(2)
         return res
 
