@@ -179,7 +179,6 @@ class VisionNetwork1D(TorchModelV2, nn.Module):
         assert len(filters) > 0,\
             "Must provide at least 1 entry in `conv_filters`!"
         no_final_linear = self.model_config.get("no_final_linear")
-        vf_share_layers = self.model_config.get("vf_share_layers")
 
         # Whether the last layer is the output of a Flattened (rather than
         # a n x (1,1) Conv2D).
@@ -249,46 +248,10 @@ class VisionNetwork1D(TorchModelV2, nn.Module):
         self._convs = nn.Sequential(*layers)
 
         # Build the value layers
-        self._value_branch_separate = self._value_branch = None
-        if vf_share_layers:
-            self._value_branch = SlimFC(out_channels,
-                                        1,
-                                        initializer=normc_initializer(0.01),
-                                        activation_fn=None)
-        else:
-            vf_layers = []
-            (h, w, in_channels) = obs_space.shape
-            assert h == 1
-            in_size = w
-            for out_channels, kernel, stride in filters[:-1]:
-                padding, out_size = same_padding_1d(in_size, kernel, stride)
-                vf_layers.append(
-                    SlimConv1d(in_channels,
-                               out_channels,
-                               kernel,
-                               stride,
-                               padding,
-                               activation_fn=activation))
-                in_channels = out_channels
-                in_size = out_size
-
-            out_channels, kernel, stride = filters[-1]
-            vf_layers.append(
-                SlimConv1d(in_channels,
-                           out_channels,
-                           kernel,
-                           stride,
-                           None,
-                           activation_fn=activation))
-
-            vf_layers.append(
-                SlimConv1d(in_channels=out_channels,
-                           out_channels=1,
-                           kernel=1,
-                           stride=1,
-                           padding=None,
-                           activation_fn=None))
-            self._value_branch_separate = nn.Sequential(*vf_layers)
+        self._value_branch = SlimFC(out_channels,
+                                    1,
+                                    initializer=normc_initializer(0.01),
+                                    activation_fn=None)
 
         # Holds the current "base" output (before logits layer).
         self._features = None
@@ -299,9 +262,7 @@ class VisionNetwork1D(TorchModelV2, nn.Module):
                 seq_lens: TensorType) -> (TensorType, List[TensorType]):
         self._features = input_dict["obs"].float().permute(0, 2, 1)
         conv_out = self._convs(self._features)
-        # Store features to save forward pass when getting value_function out.
-        if not self._value_branch_separate:
-            self._features = conv_out
+        self._features = conv_out
 
         if not self.last_layer_is_flattened:
             if self._logits:
@@ -323,18 +284,12 @@ class VisionNetwork1D(TorchModelV2, nn.Module):
     @override(TorchModelV2)
     def value_function(self) -> TensorType:
         assert self._features is not None, "must call forward() first"
-        if self._value_branch_separate:
-            value = self._value_branch_separate(self._features)
-            value = value.squeeze(2)
-            value = value.squeeze(1)
-            return value
+        if not self.last_layer_is_flattened:
+            features = self._features.squeeze(2)
+            # features = features.squeeze(2)
         else:
-            if not self.last_layer_is_flattened:
-                features = self._features.squeeze(2)
-                # features = features.squeeze(2)
-            else:
-                features = self._features
-            return self._value_branch(features).squeeze(1)
+            features = self._features
+        return self._value_branch(features).squeeze(1)
 
     def _hidden_layers(self, obs: TensorType) -> TensorType:
         res = self._convs(obs.permute(0, 3, 1, 2))  # switch to channel-major
