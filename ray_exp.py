@@ -45,11 +45,10 @@ def main(args):
             "agent_type": "base",
             # "index_exp": grid_search([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]),
             "playground_name": grid_search([
-                ['basic_rl', "candy_collect"],
-                ["basic_rl", "endgoal_cue"],
-                ["basic_rl", "endgoal_9rooms"],
-                ["basic_rl", "dispenser_6rooms"],
-                ["basic_rl", "coinmaster_singleroom"],
+                ["foraging", "candy_collect"],
+                ["foraging", "candy_fireballs"],
+                ['navigation', 'endgoal_cue'],
+                ['sequential', 'door_dispenser_coin'],
             ]),
             "sensors_name": grid_search([
                 "blind",
@@ -64,8 +63,8 @@ def main(args):
         },
         "num_gpus": 0.5 if args.gpu else 0,
         "framework": "torch",
-        "gamma": grid_search([0.1, 0.2, 0.5, 0.8, 0.99]),  # checked
-        "lr": grid_search([0.001, 0.0001, 0.00001]),
+        # "gamma": grid_search([0.1, 0.2, 0.5, 0.8, 0.99]),  # checked
+        # "lr": grid_search([0.001, 0.0001, 0.00001]),
         "lambda": 0.95,  # checked
         # "kl_coeff": 0.5,  # ?
         "clip_rewards": False,
@@ -73,16 +72,15 @@ def main(args):
         "grad_clip": 0.5,  # checked
         # "vf_clip_param": 10,  # checked, it's None in SB, 10 in RLlib
         "vf_loss_coeff": 0.0001,  # checked
-        "entropy_coeff": grid_search([0.05, 0.01, 0.005, 0.001]),  # checked
+        # "entropy_coeff": grid_search([0.05, 0.01, 0.005, 0.001]),  # checked
         "train_batch_size": 128 * 10 * 8,  # checked, but check the *4*2
         "sgd_minibatch_size": 128,  # could be larger
         "num_sgd_iter": 4,  # checked?
         "batch_mode": "truncate_episodes",
         "observation_filter": "NoFilter",
         "model": {
-            "custom_model": "custom-cnn",
-            "vf_share_layers": True, # TODO: this needs to be checked
-            "conv_filters": [ # TODO: currently fixed model
+            "custom_model": "vision-1d",
+            "conv_filters": [
                 [64, 5, 3],
                 [64, 3, 2],
                 [64, 3, 2],
@@ -93,11 +91,11 @@ def main(args):
         },
     }
 
-    stop = {
-        "training_iteration": args.stop_iters,
-        "timesteps_total": args.stop_timesteps,
-        "episode_reward_mean": args.stop_reward,
-    }
+    stop = {"timesteps_total": args.stop_timesteps}
+    if args.stop_iters:
+        stop.update({"training_iteration": args.stop_iters})
+    if args.stop_reward:
+        stop.update({"episode_reward_mean": args.stop_reward})
 
     name = exp_name('PPO')
     reporter = CLIReporter(parameter_columns=E({"_": "_"}))
