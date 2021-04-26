@@ -20,11 +20,11 @@ class E(dict):
 
 
 def trial_str_creator(trial):
-    name = '-'.join([
-        p[-1] if isinstance(p, list) else str(p)
+    params = {
+        k.split('/')[-1]: p[-1] if isinstance(p, list) else str(p)
         for k, p in trial.evaluated_params.items()
-    ])
-    # return f'trial-{trial.trial_id}'
+    }
+    name = '-'.join([f'{k}:{p}' for k, p in params.items()])
     return f'trial-{name}'
 
 
