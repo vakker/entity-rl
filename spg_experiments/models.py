@@ -185,7 +185,7 @@ class VisionNetwork1D(TorchModelV2, nn.Module):
         self._logits = None
         # Holds the current "base" output (before logits layer).
         self._features = None
-        self.num_outputs = num_outputs
+        self.num_outputs = num_outputs if num_outputs else action_space.shape[0]
         self.filters = filters
         self.activation = activation
         self.obs_space = obs_space
@@ -252,7 +252,6 @@ class VisionNetwork1D(TorchModelV2, nn.Module):
         self._features = torch.cat(features, dim=1)
 
         logits = self._logits(self._features).squeeze(2)
-        assert logits.shape[1] == self.num_outputs
         assert logits.shape[0] == input_dict['obs_flat'].shape[0]
 
         return logits, state
