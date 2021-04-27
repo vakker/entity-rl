@@ -112,8 +112,7 @@ def main(args):
         trial_dirname_creator=trial_str_creator,
         progress_reporter=reporter,
         name=name,
-        # max_failures=5,
-        fail_fast=True,
+        max_failures=3,
         verbose=1)
 
 
