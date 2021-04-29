@@ -20,11 +20,11 @@ class E(dict):
 
 
 def trial_str_creator(trial):
-    name = '-'.join([
-        p[-1] if isinstance(p, list) else str(p)
+    params = {
+        k.split('/')[-1]: p[-1] if isinstance(p, list) else str(p)
         for k, p in trial.evaluated_params.items()
-    ])
-    # return f'trial-{trial.trial_id}'
+    }
+    name = '-'.join([f'{k}:{p}' for k, p in params.items()])
     return f'trial-{name}'
 
 
@@ -45,11 +45,10 @@ def main(args):
             "agent_type": "base",
             # "index_exp": grid_search([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]),
             "playground_name": grid_search([
-                ['basic_rl', "candy_collect"],
-                ["basic_rl", "endgoal_cue"],
-                ["basic_rl", "endgoal_9rooms"],
-                ["basic_rl", "dispenser_6rooms"],
-                ["basic_rl", "coinmaster_singleroom"],
+                ["foraging", "candy_collect"],
+                ["foraging", "candy_fireballs"],
+                ['navigation', 'endgoal_cue'],
+                ['sequential', 'door_dispenser_coin'],
             ]),
             "sensors_name": grid_search([
                 "blind",
@@ -80,9 +79,8 @@ def main(args):
         "batch_mode": "truncate_episodes",
         "observation_filter": "NoFilter",
         "model": {
-            "custom_model": "custom-cnn",
-            "vf_share_layers": True, # TODO: this needs to be checked
-            "conv_filters": [ # TODO: currently fixed model
+            "custom_model": "vision-1d",
+            "conv_filters": [
                 [64, 5, 3],
                 [64, 3, 2],
                 [64, 3, 2],
@@ -90,14 +88,15 @@ def main(args):
                 [128, 3, 2],
                 # [128, 3, 2],
             ],
+            "use_lstm": grid_search([True, False]),
         },
     }
 
-    stop = {
-        "training_iteration": args.stop_iters,
-        "timesteps_total": args.stop_timesteps,
-        "episode_reward_mean": args.stop_reward,
-    }
+    stop = {"timesteps_total": args.stop_timesteps}
+    if args.stop_iters:
+        stop.update({"training_iteration": args.stop_iters})
+    if args.stop_reward:
+        stop.update({"episode_reward_mean": args.stop_reward})
 
     name = exp_name('PPO')
     reporter = CLIReporter(parameter_columns=E({"_": "_"}))
@@ -113,8 +112,7 @@ def main(args):
         trial_dirname_creator=trial_str_creator,
         progress_reporter=reporter,
         name=name,
-        # max_failures=5,
-        fail_fast=True,
+        max_failures=3,
         verbose=1)
 
 
