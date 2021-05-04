@@ -432,7 +432,7 @@ class SemanticNetwork(TorchModelV2, nn.Module):
         self.feat_size = out_channels
 
         # num_outputs defined. Use that to create an exact
-        # `num_output`-sized (1,1)-Conv2D.
+        # `num_output`-sized mlp.
         if self.num_outputs:
             self._logits = SlimFC(out_channels,
                                   self.num_outputs,
