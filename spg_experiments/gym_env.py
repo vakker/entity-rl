@@ -1,5 +1,6 @@
 import os
 import random
+from collections import OrderedDict
 from os import path as osp
 
 import cv2
@@ -213,12 +214,31 @@ class PlaygroundEnvSemantic(PlaygroundEnv):
         super()._create_agent(agent_type, sensors_name)
 
     def _set_obs_space(self):
+        type_shape = (len(self.playground.entity_types_map), )
         elements_space = gym.spaces.Dict({
-            "location": gym.spaces.Box(-200, 200, shape=(2, )),
-            "color": gym.spaces.Box(0, 1, shape=(3, )),
+            "location": gym.spaces.Box(-1, 1, shape=(3, )),
+            "type": gym.spaces.Box(0, 1, shape=type_shape),
         })
         max_elements = 100
         self.observation_space = Repeated(elements_space, max_len=max_elements)
+
+    @property
+    def observations(self):
+        sensor_values = []
+
+        for detection in self.agent.sensors[0].sensor_values:
+            location = np.array([
+                detection.distance,
+                np.cos(detection.angle),
+                np.sin(detection.angle)
+            ])
+            ent_type = np.zeros((len(self.playground.entity_types_map), ),
+                                dtype=np.float32)
+            ent_type[self.playground.entity_types_map[type(
+                detection.entity)]] = 1
+            sensor_values.append(
+                OrderedDict([("location", location), ("type", ent_type)]))
+        return sensor_values
 
 
 def get_sensor_params(sensors_name):
