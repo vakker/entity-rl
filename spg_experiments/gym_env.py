@@ -3,9 +3,9 @@ import random
 from collections import OrderedDict
 from os import path as osp
 
-import cv2
 import gym
 import numpy as np
+import skimage.io
 from gym import spaces
 from ray.rllib.utils.spaces.repeated import Repeated
 from simple_playgrounds import Engine
@@ -46,6 +46,7 @@ class PlaygroundEnv(gym.Env):
         if multisteps is not None:
             assert isinstance(multisteps, int)
             self.multisteps = multisteps
+        self.time_steps = 0
 
     def _set_obs_space(self):
         d = {}
@@ -170,6 +171,7 @@ class PlaygroundEnv(gym.Env):
 
         reward = self.agent.reward
         done = self.playground.done or not self.game.game_on
+        # done = self.time_steps > 1000
 
         return (self.observations, reward, done, {})
 
@@ -185,6 +187,7 @@ class PlaygroundEnv(gym.Env):
         self.game.elapsed_time = 0
         self.episodes += 1
         self.game.update_observations()
+        self.time_steps = 0
 
         return self.observations
 
@@ -201,7 +204,7 @@ class PlaygroundEnv(gym.Env):
         if not osp.exists(video_dir):
             os.makedirs(video_dir, exist_ok=True)
 
-        cv2.imwrite(frame_path, img)
+        skimage.io.imsave(frame_path, img)
         return img
 
     def close(self):
@@ -286,7 +289,8 @@ def get_sensor_params(sensors_name):
         sensors = [('blind', {'resolution': 64})]
 
     elif sensors_name == 'semantic':
-        sensors = [('semantic', {'range': 300})]
+        # sensors = [('semantic', {'range': 1000})]
+        sensors = [('semantic', {'range': 1000, 'resolution': 1000})]
 
     else:
         raise ValueError(f"Wrong sensors_name: {sensors_name}")
