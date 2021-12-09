@@ -16,7 +16,7 @@ from torch import nn
 from torch_geometric.data import DataLoader
 from torch_geometric.nn import GINConv, global_mean_pool
 
-from . import graphs
+from spg_experiments import graphs
 
 
 def sum_params(module):
@@ -50,8 +50,7 @@ def same_padding_1d(
 
     out_width = np.ceil(float(in_width) / float(stride_width))
 
-    pad_along_width = int(
-        ((out_width - 1) * stride_width + filter_width - in_width))
+    pad_along_width = int(((out_width - 1) * stride_width + filter_width - in_width))
     pad_left = pad_along_width // 2
     pad_right = pad_along_width - pad_left
     padding = (pad_left, pad_right)
@@ -60,14 +59,15 @@ def same_padding_1d(
 
 
 class CustomFC(TorchModelV2, nn.Module):
-    def __init__(self, obs_space, action_space, num_outputs, model_config,
-                 name):
-        TorchModelV2.__init__(self, obs_space, action_space, num_outputs,
-                              model_config, name)
+    def __init__(self, obs_space, action_space, num_outputs, model_config, name):
+        TorchModelV2.__init__(
+            self, obs_space, action_space, num_outputs, model_config, name
+        )
         nn.Module.__init__(self)
 
-        self.torch_sub_model = TorchFC(obs_space, action_space, num_outputs,
-                                       model_config, name)
+        self.torch_sub_model = TorchFC(
+            obs_space, action_space, num_outputs, model_config, name
+        )
 
     def forward(self, input_dict, state, seq_lens):
         fc_out, state = self.torch_sub_model(input_dict, state, seq_lens)
@@ -79,32 +79,34 @@ class CustomFC(TorchModelV2, nn.Module):
 
 class SlimConv1d(nn.Module):
     """Simple mock of tf.slim Conv2d"""
+
     def __init__(
-            self,
-            in_channels: int,
-            out_channels: int,
-            kernel: int,
-            stride: int,
-            padding: Tuple[int, int],
-            # Defaulting these to nn.[..] will break soft torch import.
-            initializer: Any = "default",
-            activation_fn: Any = "default",
-            bias_init: float = 0):
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel: int,
+        stride: int,
+        padding: Tuple[int, int],
+        # Defaulting these to nn.[..] will break soft torch import.
+        initializer: Any = "default",
+        activation_fn: Any = "default",
+        bias_init: float = 0,
+    ):
         """Creates a standard Conv2d layer, similar to torch.nn.Conv2d
 
-            Args:
-                in_channels(int): Number of input channels
-                out_channels (int): Number of output channels
-                kernel (Union[int, Tuple[int, int]]): If int, the kernel is
-                    a tuple(x,x). Elsewise, the tuple can be specified
-                stride (Union[int, Tuple[int, int]]): Controls the stride
-                    for the cross-correlation. If int, the stride is a
-                    tuple(x,x). Elsewise, the tuple can be specified
-                padding (Union[int, Tuple[int, int]]): Controls the amount
-                    of implicit zero-paddings during the conv operation
-                initializer (Any): Initializer function for kernel weights
-                activation_fn (Any): Activation function at the end of layer
-                bias_init (float): Initalize bias weights to bias_init const
+        Args:
+            in_channels(int): Number of input channels
+            out_channels (int): Number of output channels
+            kernel (Union[int, Tuple[int, int]]): If int, the kernel is
+                a tuple(x,x). Elsewise, the tuple can be specified
+            stride (Union[int, Tuple[int, int]]): Controls the stride
+                for the cross-correlation. If int, the stride is a
+                tuple(x,x). Elsewise, the tuple can be specified
+            padding (Union[int, Tuple[int, int]]): Controls the amount
+                of implicit zero-paddings during the conv operation
+            initializer (Any): Initializer function for kernel weights
+            activation_fn (Any): Activation function at the end of layer
+            bias_init (float): Initalize bias weights to bias_init const
         """
         super().__init__()
         layers = []
@@ -138,19 +140,25 @@ class SlimConv1d(nn.Module):
 
 class CustomCNN(TorchModelV2, nn.Module):
     """Generic vision network."""
-    def __init__(self, obs_space: gym.spaces.Space,
-                 action_space: gym.spaces.Space, num_outputs: int,
-                 model_config: ModelConfigDict, name: str):
+
+    def __init__(
+        self,
+        obs_space: gym.spaces.Space,
+        action_space: gym.spaces.Space,
+        num_outputs: int,
+        model_config: ModelConfigDict,
+        name: str,
+    ):
         if not model_config.get("conv_filters"):
             raise ValueError("Config for conv_filters is required")
-        TorchModelV2.__init__(self, obs_space, action_space, num_outputs,
-                              model_config, name)
+        TorchModelV2.__init__(
+            self, obs_space, action_space, num_outputs, model_config, name
+        )
         nn.Module.__init__(self)
 
         activation = self.model_config.get("conv_activation")
         filters = self.model_config["conv_filters"]
-        assert len(filters) > 0,\
-            "Must provide at least 1 entry in `conv_filters`!"
+        assert len(filters) > 0, "Must provide at least 1 entry in `conv_filters`!"
 
         # Whether the last layer is the output of a Flattened (rather than
         # a n x (1,1) Conv2D).
@@ -166,22 +174,23 @@ class CustomCNN(TorchModelV2, nn.Module):
         self._create_model()
 
     def _create_model(self):
-        filters = self.filters
-        activation = self.activation
         branches = {}
         for obs_name, space in self.obs_space.original_space.spaces.items():
             layers = []
             w, in_channels = space.shape
             in_size = w
-            for i, (out_channels, kernel, stride) in enumerate(filters):
+            for i, (out_channels, kernel, stride) in enumerate(self.filters):
                 padding, out_size = same_padding_1d(in_size, kernel, stride)
                 layers.append(
-                    SlimConv1d(in_channels,
-                               out_channels,
-                               kernel,
-                               stride,
-                               None if i == (len(filters) - 1) else padding,
-                               activation_fn=activation))
+                    SlimConv1d(
+                        in_channels,
+                        out_channels,
+                        kernel,
+                        stride,
+                        None if i == (len(self.filters) - 1) else padding,
+                        activation_fn=self.activation,
+                    )
+                )
                 in_channels = out_channels
                 in_size = out_size
 
@@ -196,12 +205,9 @@ class CustomCNN(TorchModelV2, nn.Module):
             in_size = np.ceil((in_size - kernel) / stride)
 
             padding, _ = same_padding_1d(in_size, 1, 1)
-            self._logits = SlimConv1d(out_channels,
-                                      self.num_outputs,
-                                      1,
-                                      1,
-                                      padding,
-                                      activation_fn=None)
+            self._logits = SlimConv1d(
+                out_channels, self.num_outputs, 1, 1, padding, activation_fn=None
+            )
         # num_outputs not known -> Flatten, then set self.num_outputs
         # to the resulting number of nodes.
         else:
@@ -210,22 +216,24 @@ class CustomCNN(TorchModelV2, nn.Module):
             self.num_outputs = out_channels
 
         # Build the value layers
-        self._value_branch = SlimFC(out_channels,
-                                    1,
-                                    initializer=normc_initializer(0.01),
-                                    activation_fn=None)
+        self._value_branch = SlimFC(
+            out_channels, 1, initializer=normc_initializer(0.01), activation_fn=None
+        )
 
     @override(TorchModelV2)
-    def forward(self, input_dict: Dict[str,
-                                       TensorType], state: List[TensorType],
-                seq_lens: TensorType) -> (TensorType, List[TensorType]):
+    def forward(
+        self,
+        input_dict: Dict[str, TensorType],
+        state: List[TensorType],
+        seq_lens: TensorType,
+    ) -> (TensorType, List[TensorType]):
         features = []
-        for obs_name, obs in input_dict['obs'].items():
+        for obs_name, obs in input_dict["obs"].items():
             features.append(self._convs[obs_name](obs.permute(0, 2, 1)))
         self._features = torch.cat(features, dim=1)
 
         logits = self._logits(self._features).squeeze(2)
-        assert logits.shape[0] == input_dict['obs_flat'].shape[0]
+        assert logits.shape[0] == input_dict["obs_flat"].shape[0]
 
         return logits, state
 
@@ -243,19 +251,26 @@ class CustomCNN(TorchModelV2, nn.Module):
 
 
 class SemanticNetwork(TorchModelV2, nn.Module):
-    def __init__(self, obs_space: gym.spaces.Space,
-                 action_space: gym.spaces.Space, num_outputs: int,
-                 model_config: ModelConfigDict, name: str):
+    def __init__(
+        self,
+        obs_space: gym.spaces.Space,
+        action_space: gym.spaces.Space,
+        num_outputs: int,
+        model_config: ModelConfigDict,
+        name: str,
+    ):
         if not model_config.get("fcnet_hiddens"):
             raise ValueError("Config for fcnet_hiddens is required")
-        TorchModelV2.__init__(self, obs_space, action_space, num_outputs,
-                              model_config, name)
+        TorchModelV2.__init__(
+            self, obs_space, action_space, num_outputs, model_config, name
+        )
         nn.Module.__init__(self)
 
         activation = self.model_config.get("fcnet_activation")
         hidden_sizes = self.model_config["fcnet_hiddens"]
-        assert len(hidden_sizes) > 0,\
-            "Must provide at least 1 entry in `fcnet_hiddens`!"
+        assert (
+            len(hidden_sizes) > 0
+        ), "Must provide at least 1 entry in `fcnet_hiddens`!"
 
         # Whether the last layer is the output of a Flattened (rather than
         # a n x (1,1) Conv2D).
@@ -273,16 +288,21 @@ class SemanticNetwork(TorchModelV2, nn.Module):
     def _create_model(self):
         activation = self.activation
         layers = []
-        in_channels = sum([
-            v.shape[0] for k, v in
-            self.obs_space.original_space.child_space.spaces.items()
-        ])
-        for i, out_channels in enumerate(self.hidden_sizes):
+        in_channels = sum(
+            [
+                v.shape[0]
+                for k, v in self.obs_space.original_space.child_space.spaces.items()
+            ]
+        )
+        for out_channels in self.hidden_sizes:
             layers.append(
-                SlimFC(in_channels,
-                       out_channels,
-                       initializer=normc_initializer(0.01),
-                       activation_fn=activation))
+                SlimFC(
+                    in_channels,
+                    out_channels,
+                    initializer=normc_initializer(0.01),
+                    activation_fn=activation,
+                )
+            )
             in_channels = out_channels
 
         self._layers = nn.Sequential(*layers)
@@ -291,10 +311,12 @@ class SemanticNetwork(TorchModelV2, nn.Module):
         # num_outputs defined. Use that to create an exact
         # `num_output`-sized mlp.
         if self.num_outputs:
-            self._logits = SlimFC(out_channels,
-                                  self.num_outputs,
-                                  initializer=normc_initializer(0.01),
-                                  activation_fn=None)
+            self._logits = SlimFC(
+                out_channels,
+                self.num_outputs,
+                initializer=normc_initializer(0.01),
+                activation_fn=None,
+            )
         # num_outputs not known -> Flatten, then set self.num_outputs
         # to the resulting number of nodes.
         else:
@@ -303,17 +325,19 @@ class SemanticNetwork(TorchModelV2, nn.Module):
             self.num_outputs = out_channels
 
         # Build the value layers
-        self._value_branch = SlimFC(out_channels,
-                                    1,
-                                    initializer=normc_initializer(0.01),
-                                    activation_fn=None)
+        self._value_branch = SlimFC(
+            out_channels, 1, initializer=normc_initializer(0.01), activation_fn=None
+        )
 
     @override(TorchModelV2)
-    def forward(self, input_dict: Dict[str,
-                                       TensorType], state: List[TensorType],
-                seq_lens: TensorType) -> (TensorType, List[TensorType]):
+    def forward(
+        self,
+        input_dict: Dict[str, TensorType],
+        state: List[TensorType],
+        seq_lens: TensorType,
+    ) -> (TensorType, List[TensorType]):
         features = []
-        for elements in input_dict['obs'].unbatch_all():
+        for elements in input_dict["obs"].unbatch_all():
             if elements:
                 elem_tensor = []
                 for elem in elements:
@@ -321,14 +345,15 @@ class SemanticNetwork(TorchModelV2, nn.Module):
                 elem_tensor = torch.stack(elem_tensor)
                 print(elem_tensor)
                 features.append(
-                    torch.mean(self._layers(elem_tensor), dim=0, keepdim=True))
+                    torch.mean(self._layers(elem_tensor), dim=0, keepdim=True)
+                )
             else:
                 features.append(torch.zeros((1, self.feat_size)))
 
         self._features = torch.cat(features, dim=0)
 
         logits = self._logits(self._features)
-        assert logits.shape[0] == input_dict['obs_flat'].shape[0]
+        assert logits.shape[0] == input_dict["obs_flat"].shape[0]
 
         return logits, state
 
@@ -345,19 +370,26 @@ class SemanticNetwork(TorchModelV2, nn.Module):
 
 
 class GraphNetwork(TorchModelV2, nn.Module):
-    def __init__(self, obs_space: gym.spaces.Space,
-                 action_space: gym.spaces.Space, num_outputs: int,
-                 model_config: ModelConfigDict, name: str):
+    def __init__(
+        self,
+        obs_space: gym.spaces.Space,
+        action_space: gym.spaces.Space,
+        num_outputs: int,
+        model_config: ModelConfigDict,
+        name: str,
+    ):
         if not model_config.get("fcnet_hiddens"):
             raise ValueError("Config for fcnet_hiddens is required")
-        TorchModelV2.__init__(self, obs_space, action_space, num_outputs,
-                              model_config, name)
+        TorchModelV2.__init__(
+            self, obs_space, action_space, num_outputs, model_config, name
+        )
         nn.Module.__init__(self)
 
         activation = self.model_config.get("fcnet_activation")
         hidden_sizes = self.model_config["fcnet_hiddens"]
-        assert len(hidden_sizes) > 0,\
-            "Must provide at least 1 entry in `fcnet_hiddens`!"
+        assert (
+            len(hidden_sizes) > 0
+        ), "Must provide at least 1 entry in `fcnet_hiddens`!"
 
         # Whether the last layer is the output of a Flattened (rather than
         # a n x (1,1) Conv2D).
@@ -373,24 +405,27 @@ class GraphNetwork(TorchModelV2, nn.Module):
         self._create_model()
 
     def _create_model(self):
-        in_channels = sum([
-            v.shape[0] for k, v in
-            self.obs_space.original_space.child_space.spaces.items()
-        ])
+        in_channels = sum(
+            [
+                v.shape[0]
+                for k, v in self.obs_space.original_space.child_space.spaces.items()
+            ]
+        )
 
         self.in_channels = in_channels
         features_dim = 512
-        self._gnn = GINFeatures(n_input_features=in_channels,
-                                features_dim=features_dim)
+        self._gnn = GINFeatures(n_input_features=in_channels, features_dim=features_dim)
         self.feat_size = features_dim
 
         # num_outputs defined. Use that to create an exact
         # `num_output`-sized mlp.
         if self.num_outputs:
-            self._logits = SlimFC(features_dim,
-                                  self.num_outputs,
-                                  initializer=normc_initializer(0.01),
-                                  activation_fn=None)
+            self._logits = SlimFC(
+                features_dim,
+                self.num_outputs,
+                initializer=normc_initializer(0.01),
+                activation_fn=None,
+            )
         # num_outputs not known -> Flatten, then set self.num_outputs
         # to the resulting number of nodes.
         else:
@@ -400,23 +435,26 @@ class GraphNetwork(TorchModelV2, nn.Module):
             # self.num_outputs = out_channels
 
         # Build the value layers
-        self._value_branch = SlimFC(features_dim,
-                                    1,
-                                    initializer=normc_initializer(0.01),
-                                    activation_fn=None)
+        self._value_branch = SlimFC(
+            features_dim, 1, initializer=normc_initializer(0.01), activation_fn=None
+        )
 
     @override(TorchModelV2)
-    def forward(self, input_dict: Dict[str,
-                                       TensorType], state: List[TensorType],
-                seq_lens: TensorType) -> (TensorType, List[TensorType]):
+    def forward(
+        self,
+        input_dict: Dict[str, TensorType],
+        state: List[TensorType],
+        seq_lens: TensorType,
+    ) -> (TensorType, List[TensorType]):
 
         g_batch = []
-        for elements in input_dict['obs'].unbatch_all():
+        for elements in input_dict["obs"].unbatch_all():
             # print('elements')
             # for e in elements:
             #     print(e)
             nx_graph = graphs.build_fc_graph(
-                elements, np.zeros((self.in_channels, ), dtype=np.float32))
+                elements, np.zeros((self.in_channels,), dtype=np.float32)
+            )
             tg_graph = torch_geometric.utils.convert.from_networkx(nx_graph)
             g_batch.append(tg_graph)
         # sp = sum_params(self)
@@ -430,14 +468,14 @@ class GraphNetwork(TorchModelV2, nn.Module):
 
         dl = DataLoader(g_batch, batch_size=len(g_batch), shuffle=False)
         data = next(iter(dl))
-        data = data.to(input_dict['obs_flat'].device)
+        data = data.to(input_dict["obs_flat"].device)
         self._features = self._gnn(data.x, data.edge_index, data.batch)
 
         # if torch.any(torch.isnan(self._features)):
         #     import ipdb; ipdb.set_trace()
 
         logits = self._logits(self._features)
-        assert logits.shape[0] == input_dict['obs_flat'].shape[0]
+        assert logits.shape[0] == input_dict["obs_flat"].shape[0]
 
         # if torch.any(torch.isnan(logits)):
         #     import ipdb; ipdb.set_trace()
@@ -473,28 +511,43 @@ class GINFeatures(nn.Module):
         # self.act = F.selu
         self.act = F.relu
 
-        nn1 = nn.Sequential(nn.Linear(n_input_features, features_dim),
-                            nn.ReLU(), nn.Linear(features_dim, features_dim))
+        nn1 = nn.Sequential(
+            nn.Linear(n_input_features, features_dim),
+            nn.ReLU(),
+            nn.Linear(features_dim, features_dim),
+        )
         self.conv1 = GINConv(nn1)
         self.bn1 = torch.nn.BatchNorm1d(features_dim)
 
-        nn2 = nn.Sequential(nn.Linear(features_dim, features_dim), nn.ReLU(),
-                            nn.Linear(features_dim, features_dim))
+        nn2 = nn.Sequential(
+            nn.Linear(features_dim, features_dim),
+            nn.ReLU(),
+            nn.Linear(features_dim, features_dim),
+        )
         self.conv2 = GINConv(nn2)
         self.bn2 = torch.nn.BatchNorm1d(features_dim)
 
-        nn3 = nn.Sequential(nn.Linear(features_dim, features_dim), nn.ReLU(),
-                            nn.Linear(features_dim, features_dim))
+        nn3 = nn.Sequential(
+            nn.Linear(features_dim, features_dim),
+            nn.ReLU(),
+            nn.Linear(features_dim, features_dim),
+        )
         self.conv3 = GINConv(nn3)
         self.bn3 = torch.nn.BatchNorm1d(features_dim)
 
-        nn4 = nn.Sequential(nn.Linear(features_dim, features_dim), nn.ReLU(),
-                            nn.Linear(features_dim, features_dim))
+        nn4 = nn.Sequential(
+            nn.Linear(features_dim, features_dim),
+            nn.ReLU(),
+            nn.Linear(features_dim, features_dim),
+        )
         self.conv4 = GINConv(nn4)
         self.bn4 = torch.nn.BatchNorm1d(features_dim)
 
-        nn5 = nn.Sequential(nn.Linear(features_dim, features_dim), nn.ReLU(),
-                            nn.Linear(features_dim, features_dim))
+        nn5 = nn.Sequential(
+            nn.Linear(features_dim, features_dim),
+            nn.ReLU(),
+            nn.Linear(features_dim, features_dim),
+        )
         self.conv5 = GINConv(nn5)
         self.bn5 = torch.nn.BatchNorm1d(features_dim)
 
