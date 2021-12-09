@@ -66,39 +66,32 @@ def main(args):
         },
         "num_gpus": 0.5 if args.gpu else 0,
         "framework": "torch",
-        # "gamma": grid_search([0.1, 0.2, 0.5, 0.8, 0.99]),  # checked
-        # "lr": grid_search([0.001, 0.0001, 0.00001]),
-        "lr": 0.001,
+        "gamma": grid_search([0.1, 0.2, 0.5, 0.8, 0.99]),  # checked
+        "lr": grid_search([0.001, 0.0001, 0.00001]),
         "lambda": 0.95,  # checked
         # "kl_coeff": 0.5,  # ?
         "clip_rewards": False,
         "clip_param": 0.2,  # checked?
-        # "grad_clip": 0.5,  # checked
-        "grad_clip": 10,  # checked
+        "grad_clip": 0.5,  # checked
         # "vf_clip_param": 10,  # checked, it's None in SB, 10 in RLlib
         "vf_loss_coeff": 0.0001,  # checked
-        # "entropy_coeff": grid_search([0.05, 0.01, 0.005, 0.001]),  # checked
-        # "train_batch_size": 128 * 10 * 8,  # checked, but check the *4*2
-        "train_batch_size": 8,  # checked, but check the *4*2
-        # "sgd_minibatch_size": 128,  # could be larger
-        "sgd_minibatch_size": 8,  # could be larger
+        "entropy_coeff": grid_search([0.05, 0.01, 0.005, 0.001]),  # checked
+        "train_batch_size": 128 * 10 * 8,  # checked, but check the *4*2
+        "sgd_minibatch_size": 128,  # could be larger
         "num_sgd_iter": 4,  # checked?
         "batch_mode": "truncate_episodes",
         "observation_filter": "NoFilter",
         "model": {
-            "custom_model": "graph",
-            # "custom_model": "semantic",
-            # "custom_model": "vision-1d",
-            # "conv_filters": [
-            #     [64, 5, 3],
-            #     [64, 3, 2],
-            #     [64, 3, 2],
-            #     [128, 3, 2],
-            #     [128, 3, 2],
-            #     # [128, 3, 2],
-            # ],
-            "fcnet_hiddens": [64, 64, 64],
-            # "use_lstm": grid_search([True, False]),
+            "custom_model": "vision-1d",
+            "conv_filters": [
+                [64, 5, 3],
+                [64, 3, 2],
+                [64, 3, 2],
+                [128, 3, 2],
+                [128, 3, 2],
+                # [128, 3, 2],
+            ],
+            "use_lstm": grid_search([True, False]),
         },
     }
 
