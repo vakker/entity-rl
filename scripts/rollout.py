@@ -1,14 +1,13 @@
-from ray.rllib.rollout import *
+from ray.rllib import rollout
 from ray.tune.registry import register_env
 
-from spg_experiments import models
 from spg_experiments.gym_env import PlaygroundEnv
 
-register_env("spg-v0", lambda config: PlaygroundEnv(config))
+register_env("spg-v0", PlaygroundEnv)
 
 
 if __name__ == "__main__":
-    parser = create_parser()
+    parser = rollout.create_parser()
     args = parser.parse_args()
 
     # --use_shelve w/o --out option.
@@ -24,4 +23,4 @@ if __name__ == "__main__":
             "--out as well!"
         )
 
-    run(args, parser)
+    rollout.run(args, parser)
