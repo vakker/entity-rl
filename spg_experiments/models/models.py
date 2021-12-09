@@ -1,3 +1,4 @@
+# pylint: disable=undefined-loop-variable
 from typing import Any, Dict, List, Tuple
 
 import gym
@@ -59,6 +60,8 @@ def same_padding_1d(
 
 
 class CustomFC(TorchModelV2, nn.Module):
+    # pylint: disable=abstract-method
+
     def __init__(self, obs_space, action_space, num_outputs, model_config, name):
         TorchModelV2.__init__(
             self, obs_space, action_space, num_outputs, model_config, name
@@ -139,7 +142,7 @@ class SlimConv1d(nn.Module):
 
 
 class CustomCNN(TorchModelV2, nn.Module):
-    """Generic vision network."""
+    # pylint: disable=abstract-method
 
     def __init__(
         self,
@@ -251,6 +254,8 @@ class CustomCNN(TorchModelV2, nn.Module):
 
 
 class SemanticNetwork(TorchModelV2, nn.Module):
+    # pylint: disable=abstract-method
+
     def __init__(
         self,
         obs_space: gym.spaces.Space,
@@ -370,6 +375,8 @@ class SemanticNetwork(TorchModelV2, nn.Module):
 
 
 class GraphNetwork(TorchModelV2, nn.Module):
+    # pylint: disable=abstract-method
+
     def __init__(
         self,
         obs_space: gym.spaces.Space,
