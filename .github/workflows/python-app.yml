@@ -30,6 +30,7 @@ jobs:
 
     - name: Install dependencies
       run: |
+        pip install wheel
         pip install flake8 pylint pytest pytest-cov
         pip install -r requirements.txt
         pip install -e .
