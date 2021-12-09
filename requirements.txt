@@ -1,0 +1,9 @@
+ray[all] ~= 1.9.0
+torch ~= 1.10.0
+simple-playgrounds @ git+https://github.com/gaorkl/simple-playgrounds@master
+
+
+-f https://data.pyg.org/whl/torch-1.10.0+cu102.html
+torch-scatter
+torch-sparse
+torch-geometric
