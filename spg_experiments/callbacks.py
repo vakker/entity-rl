@@ -22,7 +22,7 @@ class CustomCallbacks(DefaultCallbacks):
         # Running metrics -> keep all values
         # Final metrics -> only keep the current value
         for data_type, data_subset in episode.user_data.items():
-            data = episode.last_info_for().get("data", {}).get(data_type)
+            data = episode.last_info_for().get("data", {}).get(data_type, {})
             for name, value in data.items():
                 if data_type == "running":
                     data_subset[name].append(value)

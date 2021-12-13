@@ -19,6 +19,7 @@ def main(args):
         configure_logging=True,
         logging_level="DEBUG" if args.verbose else "INFO",
     )
+    utils.register()
 
     args_dict["max_iters"] = (
         min(2, args_dict["max_iters"]) if args_dict["smoke"] else args_dict["max_iters"]

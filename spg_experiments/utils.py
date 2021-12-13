@@ -4,17 +4,36 @@ from os import path as osp
 
 import yaml
 from ray import tune
+from ray.rllib.models import ModelCatalog
+from ray.tune.registry import ENV_CREATOR, _global_registry, register_env
 from ray.tune.schedulers import AsyncHyperBandScheduler
 from ray.tune.suggest import ConcurrencyLimiter
 from ray.tune.suggest.ax import AxSearch
 from ray.tune.suggest.hyperopt import HyperOptSearch
 
+from . import envs, models
 from .callbacks import CustomCallbacks
 
 
 class E(dict):
     def keys(self):
         return []
+
+
+def register():
+    register_env("spg-flat", envs.PgFlat)
+    register_env("spg-dict", envs.PgDict)
+    # register_env("spg-graph", gym.PlaygroundEnv)
+    # register_env("spg-set", gym.PlaygroundEnv)
+
+    ModelCatalog.register_custom_model("fc-net", models.FcNetwork)
+    ModelCatalog.register_custom_model("cnn-net", models.CnnNetwork)
+    ModelCatalog.register_custom_model("attn-net", models.AttnNetwork)
+    ModelCatalog.register_custom_model("gnn-net", models.GnnNetwork)
+
+
+def get_env_creator(env_name):
+    return _global_registry.get(ENV_CREATOR, env_name)
 
 
 def exp_name(prefix):
@@ -72,27 +91,25 @@ def update_recursive(d, target_key, value):
         update_recursive(d[target_key[0]], target_key[1:], value)
 
 
-def parse_tune_configs(configs):
+def parse_tune_configs(configs, use_tune=False):
     exp = configs["base"]
+
+    is_grid_search = False
+    if not use_tune:
+        return exp, is_grid_search
+
     for k, v in configs.get("tune", {}).items():
+        if v["type"] == "grid_search":
+            is_grid_search = True
+
         value = getattr(tune, v["type"])(*v["args"])
         update_recursive(exp, k, value)
 
-    return exp
+    return exp, is_grid_search
 
 
 def get_tune_params(args):
-    conf_yaml = get_configs(args["logdir"])
-    if args["tune"]:
-        configs = parse_tune_configs(conf_yaml)
-    else:
-        configs = conf_yaml["base"]
-
-    # Hack to make serving easier
-    configs["env_config"]["__run"] = conf_yaml["run"]
-    configs["env_config"]["logdir"] = osp.realpath(args["logdir"])
-
-    extra = {
+    configs_base = {
         "num_workers": args["num_workers"],
         "evaluation_config": {
             "env_config": {"is_eval": True},
@@ -101,14 +118,21 @@ def get_tune_params(args):
         "evaluation_num_episodes": 10,
         "num_cpus_per_worker": 0.5 if args["eval_int"] else 1,
         "evaluation_num_workers": args["num_workers"] if args["eval_int"] else 0,
-        "num_gpus": 0 if args["no_gpu"] else conf_yaml["gpu_per_worker"],
+        "num_gpus": 0 if args["no_gpu"] else 1,
         "framework": "torch",
         "num_envs_per_worker": 1,
         "batch_mode": "truncate_episodes",
         "observation_filter": "NoFilter",
     }
 
-    configs.update(extra)
+    conf_yaml = get_configs(args["logdir"])
+    configs, is_grid_search = parse_tune_configs(conf_yaml, args["tune"])
+
+    # Hack to make serving easier
+    configs["env_config"]["__run"] = conf_yaml["run"]
+    configs["env_config"]["logdir"] = osp.realpath(args["logdir"])
+
+    configs.update(configs_base)
     configs["callbacks"] = CustomCallbacks
 
     tune_params = {
@@ -116,7 +140,7 @@ def get_tune_params(args):
         "run_or_experiment": conf_yaml["run"],
     }
     if args["tune"]:
-        tune_params.update(get_search_alg_sched(conf_yaml, args))
+        tune_params.update(get_search_alg_sched(conf_yaml, args, is_grid_search))
     else:
         tune_params["num_samples"] = 1
 
@@ -137,11 +161,13 @@ def get_tune_params(args):
     return tune_params
 
 
-def get_search_alg_sched(conf_yaml, args):
+def get_search_alg_sched(conf_yaml, args, is_grid_search):
     alg_name = conf_yaml.get("search_alg")
     metric = conf_yaml["metric"]
-    if alg_name is None:
+
+    if alg_name is None or is_grid_search:
         search_alg = None
+
     else:
         if alg_name == "hyperopt":
             search_alg = HyperOptSearch(metric=metric, mode="max")
@@ -149,10 +175,12 @@ def get_search_alg_sched(conf_yaml, args):
             search_alg = AxSearch(metric=metric, mode="max")
         else:
             raise NotImplementedError(f"Search alg {alg_name} not implemented")
+
         search_alg = ConcurrencyLimiter(search_alg, max_concurrent=args["concurrency"])
 
     if args["no_sched"]:
         scheduler = None
+
     else:
         scheduler = AsyncHyperBandScheduler(
             time_attr="training_iteration",
