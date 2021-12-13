@@ -94,36 +94,12 @@ class PlaygroundEnv(gym.Env):
 
         agent = agent_cls(controller=controllers.External())
 
-        for sensor_name, sensor_params in get_sensor_config(sensors_name):
-            if sensor_name == "depth":
-                sensor_cls = sensors.Lidar
-                sensor_name = "depth_0"
-
-            elif sensor_name == "rgb":
-                sensor_cls = sensors.RgbCamera
-                sensor_name = "rgb_0"
-
-            elif sensor_name == "touch":
-                sensor_cls = sensors.Touch
-                sensor_name = "touch_0"
-
-            elif sensor_name == "blind":
-                sensor_cls = sensors.BlindCamera
-                sensor_name = "blind_0"
-
-            elif sensor_name == "semantic":
-                sensor_cls = sensors.SemanticRay
-                sensor_name = "semantic_0"
-
-            else:
-                raise NotImplementedError(f"Sensor {sensor_name} not implemented")
-
+        for sensor_cls, sensor_params in get_sensor_config(sensors_name):
             agent.add_sensor(
                 sensor_cls(
                     anchor=agent.base_platform,
                     normalize=True,
                     invisible_elements=agent.parts,
-                    name=sensor_name,
                     **sensor_params,
                 )
             )
@@ -194,7 +170,6 @@ class PlaygroundEnv(gym.Env):
             return None
 
         img = self.full_scenario()
-        img = (255 * img).astype(np.uint8)
 
         step_id = self.engine.elapsed_time
         video_dir = osp.join(self.video_dir, str(id(self)), str(self.episodes))
@@ -244,37 +219,28 @@ class PlaygroundEnvSemantic(PlaygroundEnv):
 
 
 def get_sensor_config(sensors_name):
-    if sensors_name == "rgb":
-        sensor_config = [("rgb", {"fov": 180, "range": 300, "resolution": 64})]
+    if sensors_name == "blind":
+        return [(sensors.BlindCamera, {"resolution": 64})]
 
-    elif sensors_name == "depth":
-        sensor_config = [("depth", {"fov": 180, "range": 300, "resolution": 64})]
+    if sensors_name == "semantic":
+        return [(sensors.SemanticRay, {"range": 1000, "resolution": 1000})]
 
-    elif sensors_name == "rgb_depth":
-        sensor_config = [
-            ("depth", {"fov": 180, "range": 300, "resolution": 64}),
-            ("rgb", {"fov": 180, "range": 300, "resolution": 64}),
-        ]
+    sensors_name = sensors_name.split("_")
+    sensor_config = []
+    for name in sensors_name:
+        if name == "rgb":
+            sensor_config.append(
+                (sensors.RgbCamera, {"fov": 180, "range": 300, "resolution": 64}),
+            )
 
-    elif sensors_name == "rgb_touch":
-        sensor_config = [
-            ("rgb", {"fov": 180, "range": 300, "resolution": 64}),
-            ("touch", {"range": 2, "resolution": 64}),
-        ]
+        if name == "depth":
+            sensor_config.append(
+                (sensors.Lidar, {"fov": 180, "range": 300, "resolution": 64}),
+            )
 
-    elif sensors_name == "rgb_depth_touch":
-        sensor_config = [
-            ("depth", {"fov": 180, "range": 300, "resolution": 64}),
-            ("rgb", {"fov": 180, "range": 300, "resolution": 64}),
-            ("touch", {"range": 2, "resolution": 64}),
-        ]
-    elif sensors_name == "blind":
-        sensor_config = [("blind", {"resolution": 64})]
-
-    elif sensors_name == "semantic":
-        sensor_config = [("semantic", {"range": 1000, "resolution": 1000})]
-
-    else:
-        raise ValueError(f"Wrong sensors_name: {sensors_name}")
+        if name == "touch":
+            sensor_config.append(
+                (sensors.Touch, {"range": 2, "resolution": 64}),
+            )
 
     return sensor_config
