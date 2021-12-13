@@ -6,7 +6,6 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import torch_geometric
-from ray.rllib.models import ModelCatalog
 from ray.rllib.models.torch.fcnet import FullyConnectedNetwork as TorchFC
 from ray.rllib.models.torch.misc import SlimFC, normc_initializer
 from ray.rllib.models.torch.torch_modelv2 import TorchModelV2
@@ -575,9 +574,3 @@ class GINFeatures(nn.Module):
         # x = self.fc1(x)
         x = torch.tanh(self.fc1(x))
         return x
-
-
-ModelCatalog.register_custom_model("custom-fc", CustomFC)
-ModelCatalog.register_custom_model("custom-cnn", CustomCNN)
-ModelCatalog.register_custom_model("semantic", SemanticNetwork)
-ModelCatalog.register_custom_model("graph", GraphNetwork)
