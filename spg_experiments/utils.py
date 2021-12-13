@@ -25,10 +25,10 @@ def register():
     # register_env("spg-graph", gym.PlaygroundEnv)
     # register_env("spg-set", gym.PlaygroundEnv)
 
-    ModelCatalog.register_custom_model("custom-fc", models.CustomFC)
-    # ModelCatalog.register_custom_model("custom-cnn", models.CustomCNN)
-    # ModelCatalog.register_custom_model("semantic", models.SemanticNetwork)
-    # ModelCatalog.register_custom_model("graph", models.GraphNetwork)
+    ModelCatalog.register_custom_model("fc-net", models.FcNetwork)
+    ModelCatalog.register_custom_model("cnn-net", models.CnnNetwork)
+    ModelCatalog.register_custom_model("attn-net", models.AttnNetwork)
+    ModelCatalog.register_custom_model("gnn-net", models.GnnNetwork)
 
 
 def get_env_creator(env_name):
