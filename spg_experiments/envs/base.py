@@ -1,12 +1,11 @@
 import os
 import random
-from collections import OrderedDict
+from abc import ABC, abstractmethod
 from os import path as osp
 
 import gym
 import numpy as np
 from gym import spaces
-from ray.rllib.utils.spaces.repeated import Repeated
 from simple_playgrounds.agent import agents, controllers
 from simple_playgrounds.device import sensors
 from simple_playgrounds.engine import Engine
@@ -18,14 +17,13 @@ from skimage import io as skio
 _ = foraging
 
 
-class PlaygroundEnv(gym.Env):
+class PlaygroundEnv(gym.Env, ABC):
     """Custom Environment that follows gym interface"""
 
     metadata = {"render.modes": ["human", "rgb_array"]}
 
     def __init__(self, config):
-        playground_name = config["pg_name"]
-        sensors_name = config["sensors"]
+        sensors_name = config["sensors_name"]
         multisteps = config.get("multisteps")
         continuous_action_space = True
 
@@ -36,9 +34,8 @@ class PlaygroundEnv(gym.Env):
 
         self.video_dir = config.get("video_dir")
 
-        self.playground = PlaygroundRegister.playgrounds[playground_name[0]][
-            playground_name[1]
-        ]()
+        pg_name = config["pg_name"].split("/")
+        self.playground = PlaygroundRegister.playgrounds[pg_name[0]][pg_name[1]]()
         self.playground.time_limit = 1000
         self.time_limit = self.playground.time_limit
         self.episodes = 0
@@ -53,17 +50,9 @@ class PlaygroundEnv(gym.Env):
             self.multisteps = multisteps
         self.time_steps = 0
 
+    @abstractmethod
     def _set_obs_space(self):
-        d = {}
-        for sensor in self.agent.sensors:
-            if isinstance(sensor.shape, int):
-                shape = (sensor.shape, 1)
-            else:
-                shape = sensor.shape
-
-            d[sensor.name] = spaces.Box(low=0, high=1, shape=shape, dtype=np.float32)
-
-        self.observation_space = spaces.Dict(d)
+        pass
 
     def _set_action_space(self, continuous_action_space):
         actuators = self.agent.controller.controlled_actuators
@@ -79,8 +68,9 @@ class PlaygroundEnv(gym.Env):
                 highs.append(actuator.max)
 
             self.action_space = spaces.Box(
-                low=np.array(lows).astype(np.float32),
-                high=np.array(highs).astype(np.float32),
+                low=np.array(lows).astype(np.float64),
+                high=np.array(highs).astype(np.float64),
+                dtype=np.float64,
             )
 
         else:
@@ -152,7 +142,7 @@ class PlaygroundEnv(gym.Env):
         sensor_values = {}
         for sensor in self.agent.sensors:
             sensor_values[sensor.name] = sensor.sensor_values
-        return sensor_values
+        return self.process_obs(sensor_values)
 
     def reset(self):
         self.engine.reset()
@@ -183,39 +173,55 @@ class PlaygroundEnv(gym.Env):
     def close(self):
         self.engine.terminate()
 
+    @abstractmethod
+    def process_obs(self, obs):
+        pass
 
-class PlaygroundEnvSemantic(PlaygroundEnv):
-    def _create_agent(self, agent_type, sensors_name):
-        assert sensors_name == "semantic"
-        super()._create_agent(agent_type, sensors_name)
+
+class PgFlat(PlaygroundEnv):
+    def process_obs(self, obs):
+        obs_vec = []
+        for _, v in obs.items():
+            obs_vec.append(v.ravel())
+
+        return np.concatenate(obs_vec)
 
     def _set_obs_space(self):
-        type_shape = (len(self.playground.entity_types_map),)
-        elements_space = gym.spaces.Dict(
-            {
-                "location": gym.spaces.Box(-1, 1, shape=(3,)),
-                "type": gym.spaces.Box(0, 1, shape=type_shape),
-            }
+        elems = 0
+        for sensor in self.agent.sensors:
+            if isinstance(sensor.shape, int):
+                elems += sensor.shape
+            else:
+                elems += np.prod(sensor.shape)
+
+        self.observation_space = spaces.Box(
+            low=0,
+            high=1,
+            shape=(elems,),
+            dtype=np.float64,
         )
-        max_elements = 100
-        self.observation_space = Repeated(elements_space, max_len=max_elements)
 
-    @property
-    def observations(self):
-        sensor_values = []
 
-        for detection in self.agent.sensors[0].sensor_values:
-            location = np.array(
-                [detection.distance, np.cos(detection.angle), np.sin(detection.angle)]
+class PgDict(PlaygroundEnv):
+    def process_obs(self, obs):
+        return obs
+
+    def _set_obs_space(self):
+        d = {}
+        for sensor in self.agent.sensors:
+            if isinstance(sensor.shape, int):
+                shape = (sensor.shape, 1)
+            else:
+                shape = sensor.shape
+
+            d[sensor.name] = spaces.Box(
+                low=0,
+                high=1,
+                shape=shape,
+                dtype=np.float64,
             )
-            ent_type = np.zeros(
-                (len(self.playground.entity_types_map),), dtype=np.float32
-            )
-            ent_type[self.playground.entity_types_map[type(detection.entity)]] = 1
-            sensor_values.append(
-                OrderedDict([("location", location), ("type", ent_type)])
-            )
-        return sensor_values
+
+        self.observation_space = spaces.Dict(d)
 
 
 def get_sensor_config(sensors_name):

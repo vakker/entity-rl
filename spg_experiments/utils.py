@@ -5,13 +5,13 @@ from os import path as osp
 import yaml
 from ray import tune
 from ray.rllib.models import ModelCatalog
-from ray.tune.registry import register_env
+from ray.tune.registry import ENV_CREATOR, _global_registry, register_env
 from ray.tune.schedulers import AsyncHyperBandScheduler
 from ray.tune.suggest import ConcurrencyLimiter
 from ray.tune.suggest.ax import AxSearch
 from ray.tune.suggest.hyperopt import HyperOptSearch
 
-from . import gym, models
+from . import envs, models
 from .callbacks import CustomCallbacks
 
 
@@ -21,7 +21,8 @@ class E(dict):
 
 
 def register():
-    register_env("spg-v0", gym.PlaygroundEnv)
+    register_env("spg-flat", envs.PgFlat)
+    register_env("spg-dict", envs.PgDict)
     # register_env("spg-graph", gym.PlaygroundEnv)
     # register_env("spg-set", gym.PlaygroundEnv)
 
@@ -32,10 +33,7 @@ def register():
 
 
 def get_env_creator(env_name):
-    if env_name == "spg-v0":
-        return gym.PlaygroundEnv
-
-    raise NotImplementedError()
+    return _global_registry.get(ENV_CREATOR, env_name)
 
 
 def exp_name(prefix):

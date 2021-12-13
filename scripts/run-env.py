@@ -23,7 +23,7 @@ def get_action(obs, port):
 
 def main(args):
     env_creator = utils.get_env_creator(args.env)
-    env = env_creator({"pg_name": args.pg.split("/"), "sensors": "rgb_depth_touch"})
+    env = env_creator({"pg_name": args.pg, "sensors_name": "rgb_depth_touch"})
 
     if args.save:
         if osp.exists("frames"):
