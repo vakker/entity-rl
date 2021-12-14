@@ -1,14 +1,12 @@
 from ray.rllib import rollout
-from ray.tune.registry import register_env
 
-from spg_experiments.gym_env import PlaygroundEnv
-
-register_env("spg-v0", PlaygroundEnv)
-
+from spg_experiments import utils
 
 if __name__ == "__main__":
     parser = rollout.create_parser()
     args = parser.parse_args()
+
+    utils.register()
 
     # --use_shelve w/o --out option.
     if args.use_shelve and not args.out:
