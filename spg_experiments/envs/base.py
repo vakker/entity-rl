@@ -113,7 +113,7 @@ class PlaygroundEnv(gym.Env, ABC):
 
         actuators = self.agent.controller.controlled_actuators
         for actuator, act in zip(actuators, action):
-            actuator.apply_action(act)
+            actions_dict[actuator] = act
 
         actions_to_game_engine[self.agent] = actions_dict
 
