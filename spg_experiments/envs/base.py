@@ -132,6 +132,9 @@ class PlaygroundEnv(gym.Env, ABC):
         done = self.playground.done or not self.engine.game_on
         # done = self.time_steps > 1000
 
+        if self.video_dir is not None:
+            self.render()
+
         return (self.observations, reward, done, {})
 
     def full_scenario(self):
@@ -154,8 +157,6 @@ class PlaygroundEnv(gym.Env, ABC):
         return self.observations
 
     def render(self, mode="human"):
-        # TODO: verify this
-
         if self.video_dir is None:
             return None
 
@@ -163,12 +164,16 @@ class PlaygroundEnv(gym.Env, ABC):
 
         step_id = self.engine.elapsed_time
         video_dir = osp.join(self.video_dir, str(id(self)), str(self.episodes))
-        frame_path = osp.join(video_dir, f"f-{step_id:03d}.png")
+        frame_path = osp.join(video_dir, f"f-{step_id:06d}.png")
         if not osp.exists(video_dir):
             os.makedirs(video_dir, exist_ok=True)
 
         skio.imsave(frame_path, img)
-        return img
+
+        if mode == "human":
+            return img
+
+        return None
 
     def close(self):
         self.engine.terminate()
