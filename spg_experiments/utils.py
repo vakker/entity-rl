@@ -27,7 +27,7 @@ def register():
     # register_env("spg-set", gym.PlaygroundEnv)
 
     ModelCatalog.register_custom_model("fc-net", models.FcNetwork)
-    ModelCatalog.register_custom_model("cnn-net", models.CnnNetwork)
+    ModelCatalog.register_custom_model("cnn1d-net", models.Cnn1DNetwork)
     ModelCatalog.register_custom_model("attn-net", models.AttnNetwork)
     ModelCatalog.register_custom_model("gnn-net", models.GnnNetwork)
 

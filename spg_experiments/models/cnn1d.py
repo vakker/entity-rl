@@ -105,7 +105,7 @@ class SlimConv1d(nn.Module):
         return self._model(x)
 
 
-class CnnNetwork(TorchModelV2, nn.Module):
+class Cnn1DNetwork(TorchModelV2, nn.Module):
     # pylint: disable=abstract-method
 
     def __init__(
