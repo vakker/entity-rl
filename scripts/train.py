@@ -21,15 +21,6 @@ def main(args):
     )
     utils.register()
 
-    args_dict["max_iters"] = (
-        min(2, args_dict["max_iters"]) if args_dict["smoke"] else args_dict["max_iters"]
-    )
-    args_dict["num_samples"] = (
-        min(2, args_dict["num_samples"])
-        if args_dict["smoke"]
-        else args_dict["num_samples"]
-    )
-
     tune_params = utils.get_tune_params(args_dict)
     if args_dict["resume_from"]:
         name = args_dict["resume_from"]

@@ -110,6 +110,13 @@ def parse_tune_configs(configs, use_tune=False):
 
 
 def get_tune_params(args):
+    args["max_iters"] = (
+        min(2, args["max_iters"]) if args["smoke"] else args["max_iters"]
+    )
+    args["num_samples"] = (
+        min(2, args["num_samples"]) if args["smoke"] else args["num_samples"]
+    )
+
     configs_base = {
         "num_workers": args["num_workers"],
         "evaluation_config": {
@@ -179,7 +186,7 @@ def get_search_alg_sched(conf_yaml, args, is_grid_search):
 
         search_alg = ConcurrencyLimiter(search_alg, max_concurrent=args["concurrency"])
 
-    if args["no_sched"]:
+    if args["no_sched"] or args["smoke"]:
         scheduler = None
 
     else:
