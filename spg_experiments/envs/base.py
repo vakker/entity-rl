@@ -204,7 +204,7 @@ class PgFlat(PlaygroundEnv):
 
 class PgChannels(PlaygroundEnv):
     def process_obs(self, obs):
-        obs_stacked = np.concatenate([v for k, v in obs.items()])
+        obs_stacked = np.concatenate([v for k, v in obs.items()], axis=1)
         return obs_stacked
 
     def _set_obs_space(self):
