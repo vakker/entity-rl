@@ -1,3 +1,3 @@
-from .base import PgDict, PgFlat
+from .base import PgChannels, PgDict, PgFlat
 
-__all__ = ["PgFlat", "PgDict"]
+__all__ = ["PgFlat", "PgDict", "PgChannels"]

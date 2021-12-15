@@ -202,6 +202,37 @@ class PgFlat(PlaygroundEnv):
         )
 
 
+class PgChannels(PlaygroundEnv):
+    def process_obs(self, obs):
+        obs_stacked = np.concatenate([v for k, v in obs.items()])
+        return obs_stacked
+
+    def _set_obs_space(self):
+        channel_size = 0
+        width = None
+        for sensor in self.agent.sensors:
+            if isinstance(sensor.shape, int):
+                shape = (sensor.shape, 1)
+            else:
+                shape = sensor.shape
+
+            assert len(shape) == 2
+
+            if width is None:
+                width = shape[0]
+            else:
+                assert width == shape[0], "Inconsistent obs width."
+
+            channel_size += shape[1]
+
+        self.observation_space = spaces.Box(
+            low=0,
+            high=1,
+            shape=(width, channel_size),
+            dtype=np.float64,
+        )
+
+
 class PgDict(PlaygroundEnv):
     def process_obs(self, obs):
         return obs
