@@ -6,10 +6,37 @@ import numpy as np
 import torch
 from ray.rllib.models.torch.misc import SlimFC, normc_initializer
 from ray.rllib.models.torch.torch_modelv2 import TorchModelV2
-from ray.rllib.models.utils import get_activation_fn, get_filter_config
+from ray.rllib.models.utils import get_activation_fn
 from ray.rllib.utils.annotations import override
 from ray.rllib.utils.typing import ModelConfigDict, TensorType
 from torch import nn
+
+
+def create_branch(filters, activation, space):
+    layers = []
+    w, in_channels = space.shape
+    in_size = w
+    for i, (out_channels, kernel, stride) in enumerate(filters):
+        padding, out_size = same_padding_1d(in_size, kernel, stride)
+        layers.append(
+            SlimConv1d(
+                in_channels,
+                out_channels,
+                kernel,
+                stride,
+                None if i == (len(filters) - 1) else padding,
+                activation_fn=activation,
+            )
+        )
+        in_channels = out_channels
+        in_size = out_size
+
+    layers.append(nn.Flatten())
+
+    out_channels *= out_size
+    out_size = 1
+
+    return nn.Sequential(*layers), out_size, out_channels
 
 
 def same_padding_1d(
@@ -106,8 +133,7 @@ class SlimConv1d(nn.Module):
 
 
 class Cnn1DNetwork(TorchModelV2, nn.Module):
-    # pylint: disable=abstract-method,too-many-locals
-    # pylint: disable=too-many-branches,too-many-statements
+    # pylint: disable=abstract-method
 
     def __init__(
         self,
@@ -117,9 +143,8 @@ class Cnn1DNetwork(TorchModelV2, nn.Module):
         model_config: ModelConfigDict,
         name: str,
     ):
-
         if not model_config.get("conv_filters"):
-            model_config["conv_filters"] = get_filter_config(obs_space.shape)
+            raise ValueError("Config for conv_filters is required")
 
         TorchModelV2.__init__(
             self, obs_space, action_space, num_outputs, model_config, name
@@ -130,110 +155,52 @@ class Cnn1DNetwork(TorchModelV2, nn.Module):
         filters = self.model_config["conv_filters"]
         assert len(filters) > 0, "Must provide at least 1 entry in `conv_filters`!"
 
+        # TODO
         # Post FC net config.
-        post_fcnet_hiddens = model_config.get("post_fcnet_hiddens", [])
-        post_fcnet_activation = get_activation_fn(
-            model_config.get("post_fcnet_activation"), framework="torch"
-        )
+        # post_fcnet_hiddens = model_config.get("post_fcnet_hiddens", [])
+        # post_fcnet_activation = get_activation_fn(
+        #     model_config.get("post_fcnet_activation"), framework="torch"
+        # )
 
-        # Whether the last layer is the output of a Flattened (rather than
-        # a n x (1) Conv1D).
-        self.last_layer_is_flattened = False
+        branches = {}
+        out_channels_all = 0
+        for obs_name, space in obs_space.original_space.spaces.items():
+            branch, out_size, out_channels = create_branch(filters, activation, space)
+            assert out_size == 1
+
+            out_channels_all += out_channels
+            branches[obs_name] = branch
+
+            # TODO: add fix for inconsistent size, i.e. a final linear
+            # layer or something that makes the out_size consistent.
+            # Currently the flatten makes it consistent anyway.
+
+        self._convs = nn.ModuleDict(branches)
+
         self._logits = None
-
-        layers = []
-        (w, in_channels) = obs_space.shape
-
-        in_size = w
-        for out_channels, kernel, stride in filters[:-1]:
-            padding, out_size = same_padding_1d(in_size, kernel, stride)
-            layers.append(
-                SlimConv1d(
-                    in_channels,
-                    out_channels,
-                    kernel,
-                    stride,
-                    padding,
-                    activation_fn=activation,
-                )
-            )
-            in_channels = out_channels
-            in_size = out_size
-
-        out_channels, kernel, stride = filters[-1]
-
-        # Finish network normally (w/o overriding last layer size with
-        # `num_outputs`), then add another linear one of size `num_outputs`.
-        layers.append(
-            SlimConv1d(
-                in_channels,
-                out_channels,
-                kernel,
-                stride,
-                None,  # padding=valid
-                activation_fn=activation,
-            )
-        )
-
         # num_outputs defined. Use that to create an exact
-        # `num_output`-sized (1,1)-Conv2D.
+        # `num_output`-sized (1)-Conv1D.
+        # TODO: add post_fcnet_hiddens
         if num_outputs:
-            in_size = np.ceil((in_size - kernel) / stride)
-            padding, _ = same_padding_1d(in_size, 1, 1)
-            if post_fcnet_hiddens:
-                layers.append(nn.Flatten())
-                in_size = out_channels
-                # Add (optional) post-fc-stack after last Conv2D layer.
-                for i, out_size in enumerate(post_fcnet_hiddens + [num_outputs]):
-                    layers.append(
-                        SlimFC(
-                            in_size=in_size,
-                            out_size=out_size,
-                            activation_fn=post_fcnet_activation
-                            if i < len(post_fcnet_hiddens) - 1
-                            else None,
-                            initializer=normc_initializer(1.0),
-                        )
-                    )
-                    in_size = out_size
-                # Last layer is logits layer.
-                self._logits = layers.pop()
-
-            else:
-                self._logits = SlimConv1d(
-                    out_channels,
-                    num_outputs,
-                    1,
-                    1,
-                    padding,
-                    activation_fn=None,
-                )
+            self._logits = SlimFC(
+                out_channels,
+                num_outputs,
+                initializer=normc_initializer(0.01),
+                activation_fn=None,
+            )
+            self.num_outputs = num_outputs
 
         # num_outputs not known -> Flatten, then set self.num_outputs
         # to the resulting number of nodes.
         else:
-            self.last_layer_is_flattened = True
-            layers.append(nn.Flatten())
-
-        self._convs = nn.Sequential(*layers)
-
-        # If our num_outputs still unknown, we need to do a test pass to
-        # figure out the output dimensions. This could be the case, if we have
-        # the Flatten layer at the end.
-        if self.num_outputs is None:
-            # Create a B=1 dummy sample and push it through out conv-net.
-            dummy_in = (
-                torch.from_numpy(self.obs_space.sample())
-                .permute(1, 0)
-                .unsqueeze(0)
-                .float()
-            )
-            dummy_out = self._convs(dummy_in)
-            self.num_outputs = dummy_out.shape[1]
+            self.num_outputs = out_channels
 
         # Build the value layers
         self._value_branch = SlimFC(
-            out_channels, 1, initializer=normc_initializer(0.01), activation_fn=None
+            out_channels,
+            1,
+            initializer=normc_initializer(0.01),
+            activation_fn=None,
         )
 
         # Holds the current "base" output (before logits layer).
@@ -246,48 +213,22 @@ class Cnn1DNetwork(TorchModelV2, nn.Module):
         state: List[TensorType],
         seq_lens: TensorType,
     ) -> (TensorType, List[TensorType]):
-        self._features = input_dict["obs"].float()
-        # Permuate b/c data comes in as [B, dim, dim, channels]:
-        self._features = self._features.permute(0, 2, 1)
-        conv_out = self._convs(self._features)
-        # Store features to save forward pass when getting value_function out.
-        if not self._value_branch_separate:
-            self._features = conv_out
+        self._features = self._hidden_layers(input_dict)
 
-        if not self.last_layer_is_flattened:
-            if self._logits:
-                conv_out = self._logits(conv_out)
-            if len(conv_out.shape) == 3:
-                if conv_out.shape[2] != 1:
-                    conv_filters = self.model_config["conv_filters"]
-                    num_outputs = self.num_outputs
-                    shape = list(conv_out.shape)
-                    raise ValueError(
-                        f"Given `conv_filters` ({conv_filters}) do not"
-                        f"result in a [B, {num_outputs} "
-                        f"(`num_outputs`), 1] shape (but in {shape})! Please "
-                        "adjust your Conv1D stack such that the last 1 dim "
-                        "is 1."
-                    )
-                logits = conv_out.squeeze(2)
-                logits = logits.squeeze(1)
-            else:
-                logits = conv_out
-            return logits, state
-        return conv_out, state
+        if self._logits is None:
+            return self._features, state
+
+        logits = self._logits(self._features)
+        return logits, state
 
     @override(TorchModelV2)
     def value_function(self) -> TensorType:
         assert self._features is not None, "must call forward() first"
 
-        if not self.last_layer_is_flattened:
-            features = self._features.squeeze(2)
-        else:
-            features = self._features
+        return self._value_branch(self._features).squeeze(1)
 
-        return self._value_branch(features).squeeze(1)
-
-    def _hidden_layers(self, obs: TensorType) -> TensorType:
-        res = self._convs(obs.permute(0, 2, 1))  # switch to channel-major
-        res = res.squeeze(2)
-        return res
+    def _hidden_layers(self, input_dict):
+        features = []
+        for obs_name, obs in input_dict["obs"].items():
+            features.append(self._convs[obs_name](obs.permute(0, 2, 1)))
+        return torch.cat(features, dim=1)
