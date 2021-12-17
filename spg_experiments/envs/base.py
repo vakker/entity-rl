@@ -24,6 +24,8 @@ class PlaygroundEnv(gym.Env, ABC):
 
     def __init__(self, config):
         sensors_name = config["sensors_name"]
+        sensors_fov = config.get("sensors_fov", 360)
+        sensors_res = config.get("sensors_res", 64)
         multisteps = config.get("multisteps")
         continuous_action_space = True
 
@@ -40,7 +42,7 @@ class PlaygroundEnv(gym.Env, ABC):
         self.time_limit = self.playground.time_limit
         self.episodes = 0
 
-        self._create_agent("base", sensors_name)
+        self._create_agent("base", sensors_name, sensors_fov, sensors_res)
         self._set_action_space(continuous_action_space)
         self._set_obs_space()
 
@@ -76,7 +78,7 @@ class PlaygroundEnv(gym.Env, ABC):
         else:
             raise NotImplementedError()
 
-    def _create_agent(self, agent_type, sensors_name):
+    def _create_agent(self, agent_type, sensors_name, fov, resolution):
         if agent_type == "base":
             agent_cls = agents.BaseAgent
         else:
@@ -84,7 +86,8 @@ class PlaygroundEnv(gym.Env, ABC):
 
         agent = agent_cls(controller=controllers.External())
 
-        for sensor_cls, sensor_params in get_sensor_config(sensors_name):
+        sensors_config = get_sensor_config(sensors_name, fov, resolution)
+        for sensor_cls, sensor_params in sensors_config:
             agent.add_sensor(
                 sensor_cls(
                     anchor=agent.base_platform,
@@ -261,15 +264,28 @@ class PgDict(PlaygroundEnv):
         self.observation_space = spaces.Dict(d)
 
 
-def get_sensor_config(sensors_name):
+def get_sensor_config(sensors_name, fov=360, resolution=64):
     if sensors_name == "blind":
-        return [(sensors.BlindCamera, {"fov": 360, "resolution": 64, "name": "blind"})]
+        return [
+            (
+                sensors.BlindCamera,
+                {
+                    "fov": fov,
+                    "resolution": resolution,
+                    "name": "blind",
+                },
+            )
+        ]
 
     if sensors_name == "semantic":
         return [
             (
                 sensors.SemanticRay,
-                {"range": 1000, "resolution": 1000, "name": "semantic"},
+                {
+                    "range": 1000,
+                    "resolution": 1000,
+                    "name": "semantic",
+                },
             )
         ]
 
@@ -280,7 +296,12 @@ def get_sensor_config(sensors_name):
             sensor_config.append(
                 (
                     sensors.RgbCamera,
-                    {"fov": 360, "range": 300, "resolution": 64, "name": "rgb"},
+                    {
+                        "fov": fov,
+                        "range": 300,
+                        "resolution": resolution,
+                        "name": "rgb",
+                    },
                 ),
             )
 
@@ -288,7 +309,12 @@ def get_sensor_config(sensors_name):
             sensor_config.append(
                 (
                     sensors.Lidar,
-                    {"fov": 360, "range": 300, "resolution": 64, "name": "lidar"},
+                    {
+                        "fov": fov,
+                        "range": 300,
+                        "resolution": resolution,
+                        "name": "lidar",
+                    },
                 ),
             )
 
@@ -296,7 +322,12 @@ def get_sensor_config(sensors_name):
             sensor_config.append(
                 (
                     sensors.Touch,
-                    {"range": 2, "fov": 360, "resolution": 64, "name": "touch"},
+                    {
+                        "range": 2,
+                        "fov": fov,
+                        "resolution": resolution,
+                        "name": "touch",
+                    },
                 ),
             )
 
