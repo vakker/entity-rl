@@ -34,7 +34,7 @@ def same_padding_1d(
     filter_width = filter_size
     stride_width = stride_size
 
-    out_width = np.ceil(float(in_width) / float(stride_width))
+    out_width = int(np.ceil(in_width / stride_width))
 
     pad_along_width = int(((out_width - 1) * stride_width + filter_width - in_width))
     pad_left = pad_along_width // 2
