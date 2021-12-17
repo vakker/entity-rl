@@ -113,7 +113,7 @@ class PlaygroundEnv(gym.Env, ABC):
 
         actuators = self.agent.controller.controlled_actuators
         for actuator, act in zip(actuators, action):
-            actuator.apply_action(act)
+            actions_dict[actuator] = act
 
         actions_to_game_engine[self.agent] = actions_dict
 
@@ -131,6 +131,9 @@ class PlaygroundEnv(gym.Env, ABC):
         reward = self.agent.reward
         done = self.playground.done or not self.engine.game_on
         # done = self.time_steps > 1000
+
+        if self.video_dir is not None:
+            self.render()
 
         return (self.observations, reward, done, {})
 
@@ -154,8 +157,6 @@ class PlaygroundEnv(gym.Env, ABC):
         return self.observations
 
     def render(self, mode="human"):
-        # TODO: verify this
-
         if self.video_dir is None:
             return None
 
@@ -163,12 +164,16 @@ class PlaygroundEnv(gym.Env, ABC):
 
         step_id = self.engine.elapsed_time
         video_dir = osp.join(self.video_dir, str(id(self)), str(self.episodes))
-        frame_path = osp.join(video_dir, f"f-{step_id:03d}.png")
+        frame_path = osp.join(video_dir, f"f-{step_id:06d}.png")
         if not osp.exists(video_dir):
             os.makedirs(video_dir, exist_ok=True)
 
         skio.imsave(frame_path, img)
-        return img
+
+        if mode == "human":
+            return img
+
+        return None
 
     def close(self):
         self.engine.terminate()
@@ -257,27 +262,41 @@ class PgDict(PlaygroundEnv):
 
 def get_sensor_config(sensors_name):
     if sensors_name == "blind":
-        return [(sensors.BlindCamera, {"fov": 360, "resolution": 64})]
+        return [(sensors.BlindCamera, {"fov": 360, "resolution": 64, "name": "blind"})]
 
     if sensors_name == "semantic":
-        return [(sensors.SemanticRay, {"range": 1000, "resolution": 1000})]
+        return [
+            (
+                sensors.SemanticRay,
+                {"range": 1000, "resolution": 1000, "name": "semantic"},
+            )
+        ]
 
     sensors_name = sensors_name.split("_")
     sensor_config = []
     for name in sensors_name:
         if name == "rgb":
             sensor_config.append(
-                (sensors.RgbCamera, {"fov": 360, "range": 300, "resolution": 64}),
+                (
+                    sensors.RgbCamera,
+                    {"fov": 360, "range": 300, "resolution": 64, "name": "rgb"},
+                ),
             )
 
-        if name == "depth":
+        if name in ["lidar", "depth"]:
             sensor_config.append(
-                (sensors.Lidar, {"fov": 360, "range": 300, "resolution": 64}),
+                (
+                    sensors.Lidar,
+                    {"fov": 360, "range": 300, "resolution": 64, "name": "lidar"},
+                ),
             )
 
         if name == "touch":
             sensor_config.append(
-                (sensors.Touch, {"range": 2, "fov": 360, "resolution": 64}),
+                (
+                    sensors.Touch,
+                    {"range": 2, "fov": 360, "resolution": 64, "name": "touch"},
+                ),
             )
 
     return sensor_config

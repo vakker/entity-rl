@@ -4,6 +4,7 @@ import shutil
 from os import path as osp
 
 import matplotlib.pyplot as plt
+import numpy as np
 import requests
 from skimage import io as skio
 from tqdm import trange
@@ -41,7 +42,7 @@ def main(args):
         if args.use_serve:
             act = get_action(obs, args.serve_port)
         else:
-            act = [0, 0]
+            act = np.random.rand(2, 1) * 2 - 1
 
         obs, _, done, _ = env.step(act)
 
