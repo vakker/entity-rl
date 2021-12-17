@@ -40,7 +40,15 @@ def exp_name(prefix):
 
 
 def trial_str_creator(trial):
-    return f"trial-{trial.trial_id}"
+    if not trial.evaluated_params:
+        return f"trial-{trial.trial_id}"
+
+    params = {
+        k.split("/")[-1]: p[-1] if isinstance(p, list) else str(p)
+        for k, p in trial.evaluated_params.items()
+    }
+    name = "-".join([f"{k}:{p}" for k, p in params.items()])
+    return f"trial-{name}"
 
 
 def load_dict(dict_path):
