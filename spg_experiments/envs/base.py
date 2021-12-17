@@ -207,10 +207,10 @@ class PgFlat(PlaygroundEnv):
         )
 
 
-class PgChannels(PlaygroundEnv):
+class PgStacked(PlaygroundEnv):
     def process_obs(self, obs):
         obs_stacked = np.concatenate([v for k, v in obs.items()], axis=1)
-        return obs_stacked
+        return {"stacked": obs_stacked}
 
     def _set_obs_space(self):
         channel_size = 0
@@ -230,12 +230,13 @@ class PgChannels(PlaygroundEnv):
 
             channel_size += shape[1]
 
-        self.observation_space = spaces.Box(
+        box = spaces.Box(
             low=0,
             high=1,
             shape=(width, channel_size),
             dtype=np.float64,
         )
+        self.observation_space = spaces.Dict({"stacked": box})
 
 
 class PgDict(PlaygroundEnv):

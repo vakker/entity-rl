@@ -23,9 +23,7 @@ class E(dict):
 def register():
     register_env("spg-flat", envs.PgFlat)
     register_env("spg-dict", envs.PgDict)
-    register_env("spg-channels", envs.PgChannels)
-    # register_env("spg-graph", gym.PlaygroundEnv)
-    # register_env("spg-set", gym.PlaygroundEnv)
+    register_env("spg-stacked", envs.PgStacked)
 
     ModelCatalog.register_custom_model("fc-net", models.FcNetwork)
     ModelCatalog.register_custom_model("cnn1d-net", models.Cnn1DNetwork)
