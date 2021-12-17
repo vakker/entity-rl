@@ -21,14 +21,14 @@ class E(dict):
 
 
 def register():
-    register_env("spg-flat", envs.PgFlat)
-    register_env("spg-dict", envs.PgDict)
-    register_env("spg-stacked", envs.PgStacked)
+    register_env("spg_flat", envs.PgFlat)
+    register_env("spg_dict", envs.PgDict)
+    register_env("spg_stacked", envs.PgStacked)
 
-    ModelCatalog.register_custom_model("fc-net", models.FcNetwork)
-    ModelCatalog.register_custom_model("cnn1d-net", models.Cnn1DNetwork)
-    ModelCatalog.register_custom_model("attn-net", models.AttnNetwork)
-    ModelCatalog.register_custom_model("gnn-net", models.GnnNetwork)
+    ModelCatalog.register_custom_model("fc_net", models.FcNetwork)
+    ModelCatalog.register_custom_model("cnn1d_net", models.Cnn1DNetwork)
+    ModelCatalog.register_custom_model("attn_net", models.AttnNetwork)
+    ModelCatalog.register_custom_model("gnn_net", models.GnnNetwork)
 
 
 def get_env_creator(env_name):
