@@ -257,7 +257,7 @@ class PgDict(PlaygroundEnv):
 
 def get_sensor_config(sensors_name):
     if sensors_name == "blind":
-        return [(sensors.BlindCamera, {"resolution": 64})]
+        return [(sensors.BlindCamera, {"fov": 360, "resolution": 64})]
 
     if sensors_name == "semantic":
         return [(sensors.SemanticRay, {"range": 1000, "resolution": 1000})]
@@ -267,17 +267,17 @@ def get_sensor_config(sensors_name):
     for name in sensors_name:
         if name == "rgb":
             sensor_config.append(
-                (sensors.RgbCamera, {"fov": 180, "range": 300, "resolution": 64}),
+                (sensors.RgbCamera, {"fov": 360, "range": 300, "resolution": 64}),
             )
 
         if name == "depth":
             sensor_config.append(
-                (sensors.Lidar, {"fov": 180, "range": 300, "resolution": 64}),
+                (sensors.Lidar, {"fov": 360, "range": 300, "resolution": 64}),
             )
 
         if name == "touch":
             sensor_config.append(
-                (sensors.Touch, {"range": 2, "resolution": 64}),
+                (sensors.Touch, {"range": 2, "fov": 360, "resolution": 64}),
             )
 
     return sensor_config
