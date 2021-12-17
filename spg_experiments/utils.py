@@ -21,15 +21,14 @@ class E(dict):
 
 
 def register():
-    register_env("spg-flat", envs.PgFlat)
-    register_env("spg-dict", envs.PgDict)
-    # register_env("spg-graph", gym.PlaygroundEnv)
-    # register_env("spg-set", gym.PlaygroundEnv)
+    register_env("spg_flat", envs.PgFlat)
+    register_env("spg_dict", envs.PgDict)
+    register_env("spg_stacked", envs.PgStacked)
 
-    ModelCatalog.register_custom_model("fc-net", models.FcNetwork)
-    ModelCatalog.register_custom_model("cnn-net", models.CnnNetwork)
-    ModelCatalog.register_custom_model("attn-net", models.AttnNetwork)
-    ModelCatalog.register_custom_model("gnn-net", models.GnnNetwork)
+    ModelCatalog.register_custom_model("fc_net", models.FcNetwork)
+    ModelCatalog.register_custom_model("cnn1d_net", models.Cnn1DNetwork)
+    ModelCatalog.register_custom_model("attn_net", models.AttnNetwork)
+    ModelCatalog.register_custom_model("gnn_net", models.GnnNetwork)
 
 
 def get_env_creator(env_name):
@@ -41,7 +40,15 @@ def exp_name(prefix):
 
 
 def trial_str_creator(trial):
-    return f"trial-{trial.trial_id}"
+    if not trial.evaluated_params:
+        return f"trial-{trial.trial_id}"
+
+    params = {
+        k.split("/")[-1]: p[-1] if isinstance(p, list) else str(p)
+        for k, p in trial.evaluated_params.items()
+    }
+    name = "-".join([f"{k}:{p}" for k, p in params.items()])
+    return f"trial-{name}"
 
 
 def load_dict(dict_path):
@@ -109,6 +116,13 @@ def parse_tune_configs(configs, use_tune=False):
 
 
 def get_tune_params(args):
+    args["max_iters"] = (
+        min(2, args["max_iters"]) if args["smoke"] else args["max_iters"]
+    )
+    args["num_samples"] = (
+        min(2, args["num_samples"]) if args["smoke"] else args["num_samples"]
+    )
+
     configs_base = {
         "num_workers": args["num_workers"],
         "evaluation_config": {
@@ -178,7 +192,7 @@ def get_search_alg_sched(conf_yaml, args, is_grid_search):
 
         search_alg = ConcurrencyLimiter(search_alg, max_concurrent=args["concurrency"])
 
-    if args["no_sched"]:
+    if args["no_sched"] or args["smoke"]:
         scheduler = None
 
     else:

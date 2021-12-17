@@ -207,6 +207,38 @@ class PgFlat(PlaygroundEnv):
         )
 
 
+class PgStacked(PlaygroundEnv):
+    def process_obs(self, obs):
+        obs_stacked = np.concatenate([v for k, v in obs.items()], axis=1)
+        return {"stacked": obs_stacked}
+
+    def _set_obs_space(self):
+        channel_size = 0
+        width = None
+        for sensor in self.agent.sensors:
+            if isinstance(sensor.shape, int):
+                shape = (sensor.shape, 1)
+            else:
+                shape = sensor.shape
+
+            assert len(shape) == 2
+
+            if width is None:
+                width = shape[0]
+            else:
+                assert width == shape[0], "Inconsistent obs width."
+
+            channel_size += shape[1]
+
+        box = spaces.Box(
+            low=0,
+            high=1,
+            shape=(width, channel_size),
+            dtype=np.float64,
+        )
+        self.observation_space = spaces.Dict({"stacked": box})
+
+
 class PgDict(PlaygroundEnv):
     def process_obs(self, obs):
         return obs
@@ -231,7 +263,7 @@ class PgDict(PlaygroundEnv):
 
 def get_sensor_config(sensors_name):
     if sensors_name == "blind":
-        return [(sensors.BlindCamera, {"resolution": 64, "name": "blind"})]
+        return [(sensors.BlindCamera, {"fov": 360, "resolution": 64, "name": "blind"})]
 
     if sensors_name == "semantic":
         return [
@@ -248,7 +280,7 @@ def get_sensor_config(sensors_name):
             sensor_config.append(
                 (
                     sensors.RgbCamera,
-                    {"fov": 180, "range": 300, "resolution": 64, "name": "rgb"},
+                    {"fov": 360, "range": 300, "resolution": 64, "name": "rgb"},
                 ),
             )
 
@@ -256,7 +288,7 @@ def get_sensor_config(sensors_name):
             sensor_config.append(
                 (
                     sensors.Lidar,
-                    {"fov": 180, "range": 300, "resolution": 64, "name": "lidar"},
+                    {"fov": 360, "range": 300, "resolution": 64, "name": "lidar"},
                 ),
             )
 
@@ -264,7 +296,7 @@ def get_sensor_config(sensors_name):
             sensor_config.append(
                 (
                     sensors.Touch,
-                    {"range": 2, "resolution": 64, "name": "touch"},
+                    {"range": 2, "fov": 360, "resolution": 64, "name": "touch"},
                 ),
             )
 
