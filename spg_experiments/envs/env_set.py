@@ -8,9 +8,9 @@ from .base import PlaygroundEnv
 
 
 class PlaygroundEnvSemantic(PlaygroundEnv):
-    def _create_agent(self, agent_type, sensors_name):
+    def _create_agent(self, agent_type, sensors_name, fov, resolution):
         assert sensors_name == "semantic"
-        super()._create_agent(agent_type, sensors_name)
+        super()._create_agent(agent_type, sensors_name, fov, resolution)
 
     def _set_obs_space(self):
         type_shape = (len(self.playground.entity_types_map),)
