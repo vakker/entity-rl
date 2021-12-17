@@ -12,23 +12,28 @@ from ray.rllib.utils.typing import ModelConfigDict, TensorType
 from torch import nn
 
 
+def get_out_size(in_size, padding, kernel_size, stride=1, dilation=1):
+    return 1 + (in_size + 2 * padding - dilation * (kernel_size - 1) - 1) // stride
+
+
 def create_branch(filters, activation, space):
     layers = []
     w, in_channels = space.shape
     in_size = w
-    for i, (out_channels, kernel, stride) in enumerate(filters):
-        padding, out_size = same_padding_1d(in_size, kernel, stride)
+    for out_channels, kernel, stride in filters:
+        padding = 0
         layers.append(
             SlimConv1d(
                 in_channels,
                 out_channels,
                 kernel,
                 stride,
-                None if i == (len(filters) - 1) else padding,
+                padding,
                 activation_fn=activation,
             )
         )
         in_channels = out_channels
+        out_size = get_out_size(in_size, padding, kernel, stride)
         in_size = out_size
 
     layers.append(nn.Flatten())
@@ -183,7 +188,7 @@ class Cnn1DNetwork(TorchModelV2, nn.Module):
         # TODO: add post_fcnet_hiddens
         if num_outputs:
             self._logits = SlimFC(
-                out_channels,
+                out_channels_all,
                 num_outputs,
                 initializer=normc_initializer(0.01),
                 activation_fn=None,
@@ -193,11 +198,11 @@ class Cnn1DNetwork(TorchModelV2, nn.Module):
         # num_outputs not known -> Flatten, then set self.num_outputs
         # to the resulting number of nodes.
         else:
-            self.num_outputs = out_channels
+            self.num_outputs = out_channels_all
 
         # Build the value layers
         self._value_branch = SlimFC(
-            out_channels,
+            out_channels_all,
             1,
             initializer=normc_initializer(0.01),
             activation_fn=None,
@@ -213,6 +218,7 @@ class Cnn1DNetwork(TorchModelV2, nn.Module):
         state: List[TensorType],
         seq_lens: TensorType,
     ) -> (TensorType, List[TensorType]):
+
         self._features = self._hidden_layers(input_dict)
 
         if self._logits is None:
