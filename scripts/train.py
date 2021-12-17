@@ -21,6 +21,9 @@ def main(args):
     )
     utils.register()
 
+    if args_dict["local"] and args_dict["num_workers"]:
+        args_dict["num_workers"] = 1
+
     tune_params = utils.get_tune_params(args_dict)
     if args_dict["resume_from"]:
         name = args_dict["resume_from"]
