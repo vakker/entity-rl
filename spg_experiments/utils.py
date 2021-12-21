@@ -24,6 +24,7 @@ def register():
     register_env("spg_flat", envs.PgFlat)
     register_env("spg_dict", envs.PgDict)
     register_env("spg_stacked", envs.PgStacked)
+    register_env("spg_set", envs.PgSet)
 
     ModelCatalog.register_custom_model("fc_net", models.FcNetwork)
     ModelCatalog.register_custom_model("cnn1d_net", models.Cnn1DNetwork)

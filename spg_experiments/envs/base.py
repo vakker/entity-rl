@@ -41,6 +41,7 @@ class PlaygroundEnv(gym.Env, ABC):
         self.playground.time_limit = 1000
         self.time_limit = self.playground.time_limit
         self.episodes = 0
+        self._entity_types = None
 
         self._create_agent("base", sensors_name, sensors_fov, sensors_res)
         self._set_action_space(continuous_action_space)
@@ -51,6 +52,23 @@ class PlaygroundEnv(gym.Env, ABC):
             assert isinstance(multisteps, int)
             self.multisteps = multisteps
         self.time_steps = 0
+
+    @property
+    def entity_types_map(self):
+        if self._entity_types is None:
+            entity_id = 0
+
+            self._entity_types = {}
+            element_types = [type_str(e) for e in self.playground.elements]
+            element_types += [
+                s.entity_produced.__name__ for s in self.playground.spawners
+            ]
+            for element in element_types:
+                if element not in self._entity_types:
+                    self._entity_types[element] = entity_id
+                    entity_id += 1
+
+        return self._entity_types
 
     @abstractmethod
     def _set_obs_space(self):
@@ -332,3 +350,7 @@ def get_sensor_config(sensors_name, fov=360, resolution=64):
             )
 
     return sensor_config
+
+
+def type_str(obj):
+    return type(obj).__name__
