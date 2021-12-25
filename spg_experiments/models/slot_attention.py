@@ -4,8 +4,11 @@ import torch
 from torch import nn
 from torch.nn import init
 
+
 class SlotAttention(nn.Module):
-    def __init__(self, num_slots, dim, iters = 3, eps = 1e-8, hidden_dim = 128):
+    # pylint: disable=too-many-locals
+
+    def __init__(self, num_slots, dim, iters=3, eps=1e-8, hidden_dim=128):
         super().__init__()
         self.num_slots = num_slots
         self.iters = iters
@@ -27,25 +30,27 @@ class SlotAttention(nn.Module):
 
         self.mlp = nn.Sequential(
             nn.Linear(dim, hidden_dim),
-            nn.ReLU(inplace = True),
-            nn.Linear(hidden_dim, dim)
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_dim, dim),
         )
 
-        self.norm_input  = nn.LayerNorm(dim)
-        self.norm_slots  = nn.LayerNorm(dim)
+        self.norm_input = nn.LayerNorm(dim)
+        self.norm_slots = nn.LayerNorm(dim)
         self.norm_pre_ff = nn.LayerNorm(dim)
 
-    def forward(self, inputs, num_slots = None):
-        b, n, d, device = *inputs.shape, inputs.device
+    def forward(self, inputs, num_slots=None):
+        batch_size, _, n_input_features = inputs.shape
+
         n_s = num_slots if num_slots is not None else self.num_slots
-        
-        mu = self.slots_mu.expand(b, n_s, -1)
-        sigma = self.slots_logsigma.exp().expand(b, n_s, -1)
 
-        slots = mu + sigma * torch.randn(mu.shape, device = device)
+        mu = self.slots_mu.expand(batch_size, n_s, -1)
+        sigma = self.slots_logsigma.exp().expand(batch_size, n_s, -1)
 
-        inputs = self.norm_input(inputs)        
-        k, v = self.to_k(inputs), self.to_v(inputs)
+        slots = mu + sigma * torch.randn(mu.shape, device=inputs.device)
+
+        inputs = self.norm_input(inputs)
+        k = self.to_k(inputs)
+        v = self.to_v(inputs)
 
         for _ in range(self.iters):
             slots_prev = slots
@@ -53,18 +58,18 @@ class SlotAttention(nn.Module):
             slots = self.norm_slots(slots)
             q = self.to_q(slots)
 
-            dots = torch.einsum('bid,bjd->bij', q, k) * self.scale
+            dots = torch.einsum("bid,bjd->bij", q, k) * self.scale
             attn = dots.softmax(dim=1) + self.eps
             attn = attn / attn.sum(dim=-1, keepdim=True)
 
-            updates = torch.einsum('bjd,bij->bid', v, attn)
+            updates = torch.einsum("bjd,bij->bid", v, attn)
 
             slots = self.gru(
-                updates.reshape(-1, d),
-                slots_prev.reshape(-1, d)
+                updates.reshape(-1, n_input_features),
+                slots_prev.reshape(-1, n_input_features),
             )
 
-            slots = slots.reshape(b, -1, d)
+            slots = slots.reshape(batch_size, -1, n_input_features)
             slots = slots + self.mlp(self.norm_pre_ff(slots))
 
         return slots

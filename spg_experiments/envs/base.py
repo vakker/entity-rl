@@ -63,6 +63,7 @@ class PlaygroundEnv(gym.Env, ABC):
             element_types += [
                 s.entity_produced.__name__ for s in self.playground.spawners
             ]
+
             for element in element_types:
                 if element not in self._entity_types:
                     self._entity_types[element] = entity_id
