@@ -1,15 +1,13 @@
 # pylint: disable=undefined-loop-variable
-from typing import Any, Dict, List, Tuple
+from typing import Any, Tuple
 
-import gym
 import numpy as np
 import torch
-from ray.rllib.models.torch.misc import SlimFC, normc_initializer
-from ray.rllib.models.torch.torch_modelv2 import TorchModelV2
 from ray.rllib.models.utils import get_activation_fn
-from ray.rllib.utils.annotations import override
-from ray.rllib.utils.typing import ModelConfigDict, TensorType
+from ray.rllib.utils.typing import TensorType
 from torch import nn
+
+from .base import BaseNetwork
 
 
 def get_out_size(in_size, padding, kernel_size, stride=1, dilation=1):
@@ -137,35 +135,17 @@ class SlimConv1d(nn.Module):
         return self._model(x)
 
 
-class Cnn1DNetwork(TorchModelV2, nn.Module):
-    # pylint: disable=abstract-method
+class Cnn1DNetwork(BaseNetwork):
+    def _hidden_layers(self, input_dict):
+        features = []
+        for obs_name, obs in input_dict["obs"].items():
+            features.append(self._encoder[obs_name](obs.permute(0, 2, 1)))
+        return torch.cat(features, dim=1)
 
-    def __init__(
-        self,
-        obs_space: gym.spaces.Space,
-        action_space: gym.spaces.Space,
-        num_outputs: int,
-        model_config: ModelConfigDict,
-        name: str,
-    ):
-        if not model_config.get("conv_filters"):
-            raise ValueError("Config for conv_filters is required")
-
-        TorchModelV2.__init__(
-            self, obs_space, action_space, num_outputs, model_config, name
-        )
-        nn.Module.__init__(self)
-
-        activation = self.model_config.get("conv_activation")
-        filters = self.model_config["conv_filters"]
+    def _create_hidden_layers(self, obs_space, model_config):
+        activation = model_config.get("conv_activation")
+        filters = model_config["conv_filters"]
         assert len(filters) > 0, "Must provide at least 1 entry in `conv_filters`!"
-
-        # TODO
-        # Post FC net config.
-        # post_fcnet_hiddens = model_config.get("post_fcnet_hiddens", [])
-        # post_fcnet_activation = get_activation_fn(
-        #     model_config.get("post_fcnet_activation"), framework="torch"
-        # )
 
         branches = {}
         out_channels_all = 0
@@ -180,61 +160,6 @@ class Cnn1DNetwork(TorchModelV2, nn.Module):
             # layer or something that makes the out_size consistent.
             # Currently the flatten makes it consistent anyway.
 
-        self._convs = nn.ModuleDict(branches)
+        self._encoder = nn.ModuleDict(branches)
 
-        self._logits = None
-        # num_outputs defined. Use that to create an exact
-        # `num_output`-sized (1)-Conv1D.
-        # TODO: add post_fcnet_hiddens
-        if num_outputs:
-            self._logits = SlimFC(
-                out_channels_all,
-                num_outputs,
-                initializer=normc_initializer(0.01),
-                activation_fn=None,
-            )
-            self.num_outputs = num_outputs
-
-        # num_outputs not known -> Flatten, then set self.num_outputs
-        # to the resulting number of nodes.
-        else:
-            self.num_outputs = out_channels_all
-
-        # Build the value layers
-        self._value_branch = SlimFC(
-            out_channels_all,
-            1,
-            initializer=normc_initializer(0.01),
-            activation_fn=None,
-        )
-
-        # Holds the current "base" output (before logits layer).
-        self._features = None
-
-    @override(TorchModelV2)
-    def forward(
-        self,
-        input_dict: Dict[str, TensorType],
-        state: List[TensorType],
-        seq_lens: TensorType,
-    ) -> (TensorType, List[TensorType]):
-
-        self._features = self._hidden_layers(input_dict)
-
-        if self._logits is None:
-            return self._features, state
-
-        logits = self._logits(self._features)
-        return logits, state
-
-    @override(TorchModelV2)
-    def value_function(self) -> TensorType:
-        assert self._features is not None, "must call forward() first"
-
-        return self._value_branch(self._features).squeeze(1)
-
-    def _hidden_layers(self, input_dict):
-        features = []
-        for obs_name, obs in input_dict["obs"].items():
-            features.append(self._convs[obs_name](obs.permute(0, 2, 1)))
-        return torch.cat(features, dim=1)
+        return out_channels_all
