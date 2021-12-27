@@ -20,9 +20,6 @@ class BaseNetwork(TorchModelV2, nn.Module, ABC):
         model_config: ModelConfigDict,
         name: str,
     ):
-        if not model_config.get("conv_filters"):
-            raise ValueError("Config for conv_filters is required")
-
         TorchModelV2.__init__(
             self, obs_space, action_space, num_outputs, model_config, name
         )
