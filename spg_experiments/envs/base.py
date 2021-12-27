@@ -56,14 +56,14 @@ class PlaygroundEnv(gym.Env, ABC):
     @property
     def entity_types_map(self):
         if self._entity_types is None:
-            entity_id = 0
-
             self._entity_types = {}
-            element_types = [type_str(e) for e in self.playground.elements]
+            element_types = [type_str(self.agent)]
+            element_types += [type_str(e) for e in self.playground.elements]
             element_types += [
                 s.entity_produced.__name__ for s in self.playground.spawners
             ]
 
+            entity_id = 0
             for element in element_types:
                 if element not in self._entity_types:
                     self._entity_types[element] = entity_id
@@ -299,7 +299,8 @@ def get_sensor_config(sensors_name, fov=360, resolution=64):
     if sensors_name == "semantic":
         return [
             (
-                sensors.SemanticRay,
+                # FIXME: use SemanticRay instead
+                sensors.PerfectSemantic,
                 {
                     "range": 1000,
                     "resolution": 1000,
