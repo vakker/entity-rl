@@ -30,13 +30,34 @@ class PgSet(PlaygroundEnv):
 
     def process_obs(self, obs):
         sensor_values = []
+
+        # Agent "background" info
+        ent_type = np.zeros((len(self.entity_types_map),), dtype=np.float32)
+        ent_type[self.entity_types_map[type_str(self.agent)]] = 1
+        sensor_values.append(
+            OrderedDict(
+                [
+                    (
+                        "location",
+                        np.array(
+                            [0, np.cos(self.agent.angle), np.sin(self.agent.angle)],
+                            dtype=np.float32,
+                        ),
+                    ),
+                    ("type", ent_type),
+                ]
+            )
+        )
+
         for detection in obs["semantic"]:
             location = np.array(
-                [detection.distance, np.cos(detection.angle), np.sin(detection.angle)]
+                [detection.distance, np.cos(detection.angle), np.sin(detection.angle)],
+                dtype=np.float32,
             )
             ent_type = np.zeros((len(self.entity_types_map),), dtype=np.float32)
             ent_type[self.entity_types_map[type_str(detection.entity)]] = 1
             sensor_values.append(
                 OrderedDict([("location", location), ("type", ent_type)])
             )
+
         return sensor_values
