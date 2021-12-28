@@ -7,7 +7,11 @@ from .slot_attention import SlotAttention
 
 class AttnNetwork(BaseNetwork):
     def _hidden_layers(self, input_dict):
-        inputs = []
+        # TODO: manual batching is used to work around stacking
+        # variable element size observations. This needs to be
+        # optimised if it's a bottlenack.
+
+        features = []
         for elements in input_dict["obs"].unbatch_all():
             if elements:
                 elem_tensor = []
@@ -23,10 +27,9 @@ class AttnNetwork(BaseNetwork):
                     1, self._n_input_size, device=input_dict["obs_flat"].device
                 )
 
-            inputs.append(elem_tensor)
+            features.append(self._encoder(elem_tensor.unsqueeze(0)))
 
-        inputs = torch.stack(inputs)
-        return self._encoder(inputs)
+        return torch.cat(features, dim=0)
 
     def _create_hidden_layers(self, obs_space, model_config):
         dim = sum([s.shape[0] for k, s in obs_space.original_space.child_space.items()])
