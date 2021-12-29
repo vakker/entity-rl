@@ -1,4 +1,5 @@
 import json
+import time
 from datetime import datetime
 from os import path as osp
 
@@ -11,7 +12,6 @@ from ray.tune.suggest import ConcurrencyLimiter
 from ray.tune.suggest.ax import AxSearch
 from ray.tune.suggest.hyperopt import HyperOptSearch
 
-from . import envs, models
 from .callbacks import CustomCallbacks
 
 
@@ -21,6 +21,10 @@ class E(dict):
 
 
 def register():
+    # pylint: disable=import-outside-toplevel
+
+    from . import envs, models
+
     register_env("spg_flat", envs.PgFlat)
     register_env("spg_dict", envs.PgDict)
     register_env("spg_stacked", envs.PgStacked)
@@ -210,3 +214,33 @@ def get_search_alg_sched(conf_yaml, args, is_grid_search):
         "scheduler": scheduler,
         "num_samples": args["num_samples"],
     }
+
+
+class TicToc:
+    def __init__(self):
+        self.start = 0
+        self.lap = 0
+
+        self.tic()
+
+    def tic(self):
+        self.start = time.time()
+        self.lap = self.start
+
+    def toc(self, message=""):
+        now = time.time()
+        elapsed_1 = now - self.start
+        elapsed_2 = now - self.lap
+        m = f"Cum: {elapsed_1:.6f}\tLap: {elapsed_2:.6f}"
+        if message:
+            m += f", {message}"
+        # logging.debug(m)
+        print(m)
+        self.lap = now
+
+    def cum(self):
+        now = time.time()
+        elapsed = now - self.start
+        m = f"Cum: {elapsed:.6f}\t"
+        print(m)
+        # logging.debug(m)
