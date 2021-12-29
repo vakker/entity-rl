@@ -1,5 +1,4 @@
 import torch
-import torch.nn.functional as F
 from torch import nn
 from torch_geometric.data import Batch, Data
 from torch_geometric.nn import GINConv, global_mean_pool
@@ -8,69 +7,38 @@ from .base import BaseNetwork
 
 
 class GINFeatures(nn.Module):
-    def __init__(self, n_input_features: int, features_dim: int = 512):
+    def __init__(self, n_input_features, dims, activation=None):
         super().__init__()
 
-        # self.act = F.selu
-        self.act = F.relu
+        if activation:
+            act = getattr(nn, activation)
+        else:
+            act = nn.ReLU
 
-        nn1 = nn.Sequential(
-            nn.Linear(n_input_features, features_dim),
-            nn.ReLU(),
-            nn.Linear(features_dim, features_dim),
-        )
-        self.conv1 = GINConv(nn1)
-        self.bn1 = torch.nn.BatchNorm1d(features_dim)
+        convs = []
+        in_channels = n_input_features
+        for dim in dims:
+            convs.append(
+                GINConv(
+                    nn.Sequential(
+                        nn.Linear(in_channels, dim),
+                        nn.BatchNorm1d(dim),
+                        act(),
+                        nn.Linear(dim, dim),
+                        act(),
+                    )
+                )
+            )
+            in_channels = dim
 
-        nn2 = nn.Sequential(
-            nn.Linear(features_dim, features_dim),
-            nn.ReLU(),
-            nn.Linear(features_dim, features_dim),
-        )
-        self.conv2 = GINConv(nn2)
-        self.bn2 = torch.nn.BatchNorm1d(features_dim)
-
-        nn3 = nn.Sequential(
-            nn.Linear(features_dim, features_dim),
-            nn.ReLU(),
-            nn.Linear(features_dim, features_dim),
-        )
-        self.conv3 = GINConv(nn3)
-        self.bn3 = torch.nn.BatchNorm1d(features_dim)
-
-        nn4 = nn.Sequential(
-            nn.Linear(features_dim, features_dim),
-            nn.ReLU(),
-            nn.Linear(features_dim, features_dim),
-        )
-        self.conv4 = GINConv(nn4)
-        self.bn4 = torch.nn.BatchNorm1d(features_dim)
-
-        nn5 = nn.Sequential(
-            nn.Linear(features_dim, features_dim),
-            nn.ReLU(),
-            nn.Linear(features_dim, features_dim),
-        )
-        self.conv5 = GINConv(nn5)
-        self.bn5 = torch.nn.BatchNorm1d(features_dim)
-
-        self.fc1 = nn.Linear(features_dim, features_dim)
+        self._convs = nn.ModuleList(convs)
 
     def forward(self, inputs):
         x, edge_index, batch = inputs
-        x = self.act(self.conv1(x, edge_index))
-        x = self.bn1(x)
-        x = self.act(self.conv2(x, edge_index))
-        x = self.bn2(x)
-        x = self.act(self.conv3(x, edge_index))
-        x = self.bn3(x)
-        x = self.act(self.conv4(x, edge_index))
-        x = self.bn4(x)
-        x = self.act(self.conv5(x, edge_index))
-        x = self.bn5(x)
+        for conv in self._convs:
+            x = conv(x, edge_index)
+
         x = global_mean_pool(x, batch)
-        # x = self.fc1(x)
-        x = torch.tanh(self.fc1(x))
         return x
 
 
@@ -105,11 +73,16 @@ class GnnNetwork(BaseNetwork):
         in_channels = obs_space.original_space["x"].child_space.shape[0]
 
         self._n_input_size = in_channels
-        features_dim = model_config["custom_model_config"]["features_dim"]
+        dims = model_config["custom_model_config"]["dims"]
+        activation = model_config["custom_model_config"].get("activation")
 
-        gnn = GINFeatures(n_input_features=in_channels, features_dim=features_dim)
+        gnn = GINFeatures(
+            n_input_features=in_channels,
+            dims=dims,
+            activation=activation,
+        )
 
         self._encoder = nn.Sequential(gnn, nn.Flatten())
-        out_channels_all = features_dim
+        out_channels_all = dims[-1]
 
         return out_channels_all
