@@ -1,8 +1,7 @@
 import torch
 import torch.nn.functional as F
 from torch import nn
-from torch_geometric.data import Data
-from torch_geometric.loader import DataLoader
+from torch_geometric.data import Batch, Data
 from torch_geometric.nn import GINConv, global_mean_pool
 
 from .base import BaseNetwork
@@ -79,28 +78,26 @@ class GnnNetwork(BaseNetwork):
     def _hidden_layers(self, input_dict):
         g_batch = []
         data = zip(
-            input_dict["obs"]["x"].unbatch_all(),
-            input_dict["obs"]["edge_index"].unbatch_all(),
+            input_dict["obs"]["x"].values,
+            input_dict["obs"]["x"].lengths.long(),
+            input_dict["obs"]["edge_index"].values,
+            input_dict["obs"]["edge_index"].lengths.long(),
         )
 
-        for x, edge_index in data:
-            if not x:
-                x = torch.zeros(
-                    1, self._n_input_size, device=input_dict["obs_flat"].device
-                )
-                edge_index = torch.tensor(
-                    [[0], [0]], device=input_dict["obs_flat"].device
-                ).long()
-            else:
-                x = torch.stack(x)
-                edge_index = torch.stack(edge_index)
-                edge_index = torch.transpose(edge_index, 1, 0).long()
+        # TODO: the stacking is still a bit slow
+        for x, x_len, edge_index, ei_len in data:
+            if not x_len:
+                x_len = 1
+                ei_len = 1
+
+            x = x[:x_len]
+            edge_index = edge_index[:ei_len]
+            edge_index = torch.transpose(edge_index, 1, 0).long()
 
             g_batch.append(Data(x=x, edge_index=edge_index))
 
-        dl = DataLoader(g_batch, batch_size=len(g_batch), shuffle=False)
-        data = next(iter(dl))
-        features = self._encoder((data.x, data.edge_index, data.batch))
+        batch = Batch.from_data_list(g_batch)
+        features = self._encoder((batch.x, batch.edge_index, batch.batch))
 
         return features
 
