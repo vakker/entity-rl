@@ -7,9 +7,9 @@ from .slot_attention import SlotAttention
 
 class AttnNetwork(BaseNetwork):
     def _hidden_layers(self, input_dict):
-        # TODO: manual batching is used to work around stacking
+        # FIXME: manual batching is used to work around stacking
         # variable element size observations. This needs to be
-        # optimised if it's a bottlenack.
+        # optimised, it's a significant bottleneck.
 
         features = []
         for elements in input_dict["obs"].unbatch_all():
