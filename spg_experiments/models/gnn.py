@@ -45,10 +45,11 @@ class GINFeatures(nn.Module):
 class GnnNetwork(BaseNetwork):
     def _hidden_layers(self, input_dict):
         g_batch = []
+
         data = zip(
             input_dict["obs"]["x"].values,
             input_dict["obs"]["x"].lengths.long(),
-            input_dict["obs"]["edge_index"].values,
+            torch.transpose(input_dict["obs"]["edge_index"].values, 2, 1).long(),
             input_dict["obs"]["edge_index"].lengths.long(),
         )
 
@@ -58,11 +59,7 @@ class GnnNetwork(BaseNetwork):
                 x_len = 1
                 ei_len = 1
 
-            x = x[:x_len]
-            edge_index = edge_index[:ei_len]
-            edge_index = torch.transpose(edge_index, 1, 0).long()
-
-            g_batch.append(Data(x=x, edge_index=edge_index))
+            g_batch.append(Data(x=x[:x_len], edge_index=edge_index[:, :ei_len]))
 
         batch = Batch.from_data_list(g_batch)
         features = self._encoder((batch.x, batch.edge_index, batch.batch))
