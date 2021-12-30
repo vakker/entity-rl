@@ -1,3 +1,5 @@
+# pylint: disable=self-assigning-variable
+
 import os
 import random
 from abc import ABC, abstractmethod
@@ -10,7 +12,14 @@ from simple_playgrounds.agent import agents, controllers
 from simple_playgrounds.device import sensors
 from simple_playgrounds.engine import Engine
 from simple_playgrounds.playground.playground import PlaygroundRegister
+from simple_playgrounds.playground.playgrounds.rl import foraging
 from skimage import io as skio
+
+from spg_experiments import playgrounds
+
+# Import needed because of the register, and this is needed because of the linters
+foraging = foraging
+playgrounds = playgrounds
 
 
 class PlaygroundEnv(gym.Env, ABC):
