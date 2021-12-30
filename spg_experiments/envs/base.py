@@ -58,9 +58,10 @@ class PlaygroundEnv(gym.Env, ABC):
     def entity_types_map(self):
         if self._entity_types is None:
             self._entity_types = {}
+            element_types = []
 
             if self.include_agent_in_obs:
-                element_types = [type_str(self.agent)]
+                element_types += [type_str(self.agent)]
 
             element_types += [type_str(e) for e in self.playground.elements]
             element_types += [
