@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+from torch_geometric import nn as pyg_nn
 from torch_geometric.data import Batch, Data
 from torch_geometric.nn import GINConv, global_mean_pool
 
@@ -7,13 +8,18 @@ from .base import BaseNetwork
 
 
 class GINFeatures(nn.Module):
-    def __init__(self, n_input_features, dims, activation=None):
+    def __init__(self, n_input_features, dims, activation=None, norm=None):
         super().__init__()
 
         if activation:
             act = getattr(nn, activation)
         else:
             act = nn.ReLU
+
+        if norm:
+            norm_layer = getattr(pyg_nn, norm)
+        else:
+            norm_layer = nn.Identity
 
         convs = []
         in_channels = n_input_features
@@ -22,7 +28,7 @@ class GINFeatures(nn.Module):
                 GINConv(
                     nn.Sequential(
                         nn.Linear(in_channels, dim),
-                        nn.BatchNorm1d(dim),
+                        norm_layer(),
                         act(),
                         nn.Linear(dim, dim),
                         act(),
