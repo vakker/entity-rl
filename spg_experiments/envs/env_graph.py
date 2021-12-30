@@ -58,8 +58,7 @@ class PgGraph(PlaygroundEnv):
             node_feat = np.concatenate([location, ent_type]).astype(np.float32)
             x.append(node_feat)
 
-        # +1 because of the agent node
-        n_nodes = len(obs["semantic"]) + 1
+        n_nodes = len(x)
         edge_index = [np.array([i, j]) for i in range(n_nodes) for j in range(n_nodes)]
 
         sensor_values = {"x": x, "edge_index": edge_index}
