@@ -21,9 +21,15 @@ class E(dict):
 
 
 def register():
-    # pylint: disable=import-outside-toplevel
+    # pylint: disable=import-outside-toplevel,self-assigning-variable
 
-    from . import envs, models
+    from simple_playgrounds.playground.playgrounds.rl import foraging
+
+    from . import envs, models, playgrounds
+
+    # Import needed because of the register, and this is needed because of the linters
+    foraging = foraging
+    playgrounds = playgrounds
 
     register_env("spg_flat", envs.PgFlat)
     register_env("spg_dict", envs.PgDict)
