@@ -27,6 +27,7 @@ class PlaygroundEnv(gym.Env, ABC):
         sensors_fov = config.get("sensors_fov", 360)
         sensors_res = config.get("sensors_res", 64)
         multisteps = config.get("multisteps")
+        self.include_agent_in_obs = config.get("include_agent", False)
         continuous_action_space = True
 
         seed = config.get("seed", 0)
@@ -57,7 +58,10 @@ class PlaygroundEnv(gym.Env, ABC):
     def entity_types_map(self):
         if self._entity_types is None:
             self._entity_types = {}
-            element_types = [type_str(self.agent)]
+
+            if self.include_agent_in_obs:
+                element_types = [type_str(self.agent)]
+
             element_types += [type_str(e) for e in self.playground.elements]
             element_types += [
                 s.entity_produced.__name__ for s in self.playground.spawners

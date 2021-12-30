@@ -37,12 +37,13 @@ class PgGraph(PlaygroundEnv):
         x = []
 
         # Agent "background" info
-        ent_type = np.zeros((len(self.entity_types_map),), dtype=np.float32)
-        ent_type[self.entity_types_map[type_str(self.agent)]] = 1
+        if type_str(self.agent) in self.entity_types_map:
+            ent_type = np.zeros((len(self.entity_types_map),), dtype=np.float32)
+            ent_type[self.entity_types_map[type_str(self.agent)]] = 1
 
-        location = np.array([0, np.cos(self.agent.angle), np.sin(self.agent.angle)])
-        node_feat = np.concatenate([location, ent_type]).astype(np.float32)
-        x.append(node_feat)
+            location = np.array([0, np.cos(self.agent.angle), np.sin(self.agent.angle)])
+            node_feat = np.concatenate([location, ent_type]).astype(np.float32)
+            x.append(node_feat)
 
         for detection in obs["semantic"]:
             location = np.array(
