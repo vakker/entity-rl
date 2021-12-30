@@ -138,7 +138,7 @@ def get_tune_params(args):
         "evaluation_num_episodes": 10,
         "num_cpus_per_worker": 0.5 if args["eval_int"] else 1,
         "evaluation_num_workers": args["num_workers"] if args["eval_int"] else 0,
-        "num_gpus": 0 if args["no_gpu"] else 1,
+        "num_gpus": args["num_gpus"],
         "framework": "torch",
         "num_envs_per_worker": 1,
         "batch_mode": "truncate_episodes",
