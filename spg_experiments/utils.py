@@ -54,6 +54,7 @@ def trial_str_creator(trial):
         for k, p in trial.evaluated_params.items()
     }
     name = "-".join([f"{k}:{p}" for k, p in params.items()])
+    name = name.replace("/", "_")
     return f"trial-{name}"
 
 
