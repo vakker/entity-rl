@@ -1,10 +1,49 @@
+import sys
+
 import torch
 from torch import nn
 from torch_geometric import nn as pyg_nn
 from torch_geometric.data import Batch, Data
-from torch_geometric.nn import GINConv, global_mean_pool
+from torch_geometric.nn import GATv2Conv, GINConv, global_mean_pool
 
 from .base import BaseNetwork
+
+module = sys.modules[__name__]
+
+
+class GATFeatures(nn.Module):
+    # pylint: disable=unused-argument
+
+    def __init__(self, n_input_features, dims, activation=None, norm=None):
+        super().__init__()
+
+        if activation:
+            self.act = getattr(nn, activation)()
+        else:
+            self.act = nn.ELU()
+
+        # TODO: add normalization if needed
+        # if norm:
+        #     norm_layer = getattr(pyg_nn, norm)
+        # else:
+        #     norm_layer = nn.Identity
+
+        convs = []
+        in_channels = n_input_features
+        for dim, heads in dims:
+            convs.append(GATv2Conv(in_channels, dim, heads))
+            in_channels = dim * heads
+
+        self._convs = nn.ModuleList(convs)
+        self.out_channels = in_channels
+
+    def forward(self, inputs):
+        x, edge_index, batch = inputs
+        for conv in self._convs:
+            x = self.act(conv(x, edge_index))
+
+        x = global_mean_pool(x, batch)
+        return x
 
 
 class GINFeatures(nn.Module):
@@ -38,6 +77,7 @@ class GINFeatures(nn.Module):
             in_channels = dim
 
         self._convs = nn.ModuleList(convs)
+        self.out_channels = in_channels
 
     def forward(self, inputs):
         x, edge_index, batch = inputs
@@ -78,14 +118,17 @@ class GnnNetwork(BaseNetwork):
         self._n_input_size = in_channels
         dims = model_config["custom_model_config"]["dims"]
         activation = model_config["custom_model_config"].get("activation")
+        graph_conv = model_config["custom_model_config"].get(
+            "graph_conv", "GATFeatures"
+        )
 
-        gnn = GINFeatures(
+        gnn = getattr(module, graph_conv)(
             n_input_features=in_channels,
             dims=dims,
             activation=activation,
         )
 
         self._encoder = nn.Sequential(gnn, nn.Flatten())
-        out_channels_all = dims[-1]
+        out_channels_all = gnn.out_channels
 
         return out_channels_all
