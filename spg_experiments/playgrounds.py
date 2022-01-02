@@ -61,10 +61,11 @@ class CandyFireballs(PlainPG):
         waypoints = (
             np.array([[20, 20], [20, 180], [180, 180], [180, 20]]) * coord_scaler
         )
+
         trajectory = Trajectory(
             "waypoints",
             trajectory_duration=300,
-            waypoints=waypoints,
+            waypoints=waypoints.tolist(),
         )
         fireball = Fireball(
             reward=-1,
@@ -79,7 +80,7 @@ class CandyFireballs(PlainPG):
         trajectory = Trajectory(
             "waypoints",
             trajectory_duration=150,
-            waypoints=waypoints,
+            waypoints=waypoints.tolist(),
         )
         fireball = Fireball(
             reward=-2,
@@ -94,7 +95,7 @@ class CandyFireballs(PlainPG):
         trajectory = Trajectory(
             "waypoints",
             trajectory_duration=180,
-            waypoints=waypoints,
+            waypoints=waypoints.tolist(),
         )
         fireball = Fireball(
             reward=-5,
