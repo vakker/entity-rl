@@ -14,6 +14,11 @@ torch.backends.cudnn.benchmark = True
 
 def main(args):
     args_dict = vars(args)
+
+    assert (args.max_iters is None) ^ (
+        args.max_steps is None
+    ), "Provide either max iters or steps."
+
     ray.init(
         local_mode=args_dict["local"],
         configure_logging=True,
@@ -54,7 +59,8 @@ if __name__ == "__main__":
     PARSER.add_argument("--tune", action="store_true")
     PARSER.add_argument("--no-sched", action="store_true")
     PARSER.add_argument("--logdir")
-    PARSER.add_argument("--max-iters", type=int, default=100)
+    PARSER.add_argument("--max-iters", type=int)
+    PARSER.add_argument("--max-steps", type=int)
     PARSER.add_argument("--num-samples", type=int, default=1)
     PARSER.add_argument("--local", action="store_true")
     PARSER.add_argument("--concurrency", type=int, default=1)

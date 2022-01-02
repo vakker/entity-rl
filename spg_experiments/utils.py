@@ -123,9 +123,9 @@ def parse_tune_configs(configs, use_tune=False):
 
 
 def get_tune_params(args):
-    args["max_iters"] = (
-        min(2, args["max_iters"]) if args["smoke"] else args["max_iters"]
-    )
+    if args["smoke"]:
+        args["max_iters"] = 1
+
     args["num_samples"] = (
         min(2, args["num_samples"]) if args["smoke"] else args["num_samples"]
     )
@@ -165,11 +165,18 @@ def get_tune_params(args):
     else:
         tune_params["num_samples"] = 1
 
+    if args["max_iters"]:
+        stop = {"training_iteration": args["max_iters"]}
+    elif args["max_steps"]:
+        stop = {"timesteps_total": args["max_steps"]}
+    else:
+        stop = {}
+
     tune_params.update(
         {
             "trial_name_creator": trial_str_creator,
             "trial_dirname_creator": trial_str_creator,
-            "stop": {"training_iteration": args["max_iters"]},
+            "stop": stop,
             "local_dir": args["logdir"],
             "checkpoint_freq": args["checkpoint_freq"],
             "checkpoint_at_end": args["checkpoint_freq"] > 0,
