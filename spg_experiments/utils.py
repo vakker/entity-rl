@@ -1,4 +1,5 @@
 import json
+import time
 from datetime import datetime
 from os import path as osp
 
@@ -11,7 +12,6 @@ from ray.tune.suggest import ConcurrencyLimiter
 from ray.tune.suggest.ax import AxSearch
 from ray.tune.suggest.hyperopt import HyperOptSearch
 
-from . import envs, models
 from .callbacks import CustomCallbacks
 
 
@@ -21,9 +21,15 @@ class E(dict):
 
 
 def register():
+    # pylint: disable=import-outside-toplevel,self-assigning-variable
+
+    from . import envs, models
+
     register_env("spg_flat", envs.PgFlat)
     register_env("spg_dict", envs.PgDict)
     register_env("spg_stacked", envs.PgStacked)
+    register_env("spg_set", envs.PgSet)
+    register_env("spg_graph", envs.PgGraph)
 
     ModelCatalog.register_custom_model("fc_net", models.FcNetwork)
     ModelCatalog.register_custom_model("cnn1d_net", models.Cnn1DNetwork)
@@ -48,6 +54,7 @@ def trial_str_creator(trial):
         for k, p in trial.evaluated_params.items()
     }
     name = "-".join([f"{k}:{p}" for k, p in params.items()])
+    name = name.replace("/", "_")
     return f"trial-{name}"
 
 
@@ -132,7 +139,7 @@ def get_tune_params(args):
         "evaluation_num_episodes": 10,
         "num_cpus_per_worker": 0.5 if args["eval_int"] else 1,
         "evaluation_num_workers": args["num_workers"] if args["eval_int"] else 0,
-        "num_gpus": 0 if args["no_gpu"] else 1,
+        "num_gpus": args["num_gpus"],
         "framework": "torch",
         "num_envs_per_worker": 1,
         "batch_mode": "truncate_episodes",
@@ -209,3 +216,33 @@ def get_search_alg_sched(conf_yaml, args, is_grid_search):
         "scheduler": scheduler,
         "num_samples": args["num_samples"],
     }
+
+
+class TicToc:
+    def __init__(self):
+        self.start = 0
+        self.lap = 0
+
+        self.tic()
+
+    def tic(self):
+        self.start = time.time()
+        self.lap = self.start
+
+    def toc(self, message=""):
+        now = time.time()
+        elapsed_1 = now - self.start
+        elapsed_2 = now - self.lap
+        m = f"Cum: {elapsed_1:.6f}\tLap: {elapsed_2:.6f}"
+        if message:
+            m += f", {message}"
+        # logging.debug(m)
+        print(m)
+        self.lap = now
+
+    def cum(self):
+        now = time.time()
+        elapsed = now - self.start
+        m = f"Cum: {elapsed:.6f}\t"
+        print(m)
+        # logging.debug(m)

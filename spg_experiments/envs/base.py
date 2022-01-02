@@ -1,3 +1,5 @@
+# pylint: disable=self-assigning-variable
+
 import os
 import random
 from abc import ABC, abstractmethod
@@ -13,8 +15,11 @@ from simple_playgrounds.playground.playground import PlaygroundRegister
 from simple_playgrounds.playground.playgrounds.rl import foraging
 from skimage import io as skio
 
+from spg_experiments import playgrounds
+
 # Import needed because of the register, and this is needed because of the linters
-_ = foraging
+foraging = foraging
+playgrounds = playgrounds
 
 
 class PlaygroundEnv(gym.Env, ABC):
@@ -27,6 +32,7 @@ class PlaygroundEnv(gym.Env, ABC):
         sensors_fov = config.get("sensors_fov", 360)
         sensors_res = config.get("sensors_res", 64)
         multisteps = config.get("multisteps")
+        self.include_agent_in_obs = config.get("include_agent", False)
         continuous_action_space = True
 
         seed = config.get("seed", 0)
@@ -41,6 +47,7 @@ class PlaygroundEnv(gym.Env, ABC):
         self.playground.time_limit = 1000
         self.time_limit = self.playground.time_limit
         self.episodes = 0
+        self._entity_types = None
 
         self._create_agent("base", sensors_name, sensors_fov, sensors_res)
         self._set_action_space(continuous_action_space)
@@ -51,6 +58,28 @@ class PlaygroundEnv(gym.Env, ABC):
             assert isinstance(multisteps, int)
             self.multisteps = multisteps
         self.time_steps = 0
+
+    @property
+    def entity_types_map(self):
+        if self._entity_types is None:
+            self._entity_types = {}
+            element_types = []
+
+            if self.include_agent_in_obs:
+                element_types += [type_str(self.agent)]
+
+            element_types += [type_str(e) for e in self.playground.elements]
+            element_types += [
+                s.entity_produced.__name__ for s in self.playground.spawners
+            ]
+
+            entity_id = 0
+            for element in element_types:
+                if element not in self._entity_types:
+                    self._entity_types[element] = entity_id
+                    entity_id += 1
+
+        return self._entity_types
 
     @abstractmethod
     def _set_obs_space(self):
@@ -280,7 +309,8 @@ def get_sensor_config(sensors_name, fov=360, resolution=64):
     if sensors_name == "semantic":
         return [
             (
-                sensors.SemanticRay,
+                # FIXME: use SemanticRay instead
+                sensors.PerfectSemantic,
                 {
                     "range": 1000,
                     "resolution": 1000,
@@ -332,3 +362,7 @@ def get_sensor_config(sensors_name, fov=360, resolution=64):
             )
 
     return sensor_config
+
+
+def type_str(obj):
+    return type(obj).__name__

@@ -67,7 +67,7 @@ def main(args):
 if __name__ == "__main__":
     PARSER = argparse.ArgumentParser()
     PARSER.add_argument("--pg", default="basic_rl/candy_poison")
-    PARSER.add_argument("--env", default="spg-dict")
+    PARSER.add_argument("--env", default="spg_dict")
     PARSER.add_argument("--no-bar", action="store_true")
     PARSER.add_argument("-r", "--render", action="store_true")
     PARSER.add_argument("-s", "--save", action="store_true")
