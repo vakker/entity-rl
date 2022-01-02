@@ -115,7 +115,9 @@ class PlaygroundEnv(gym.Env, ABC):
 
         agent = agent_cls(controller=controllers.External())
 
-        sensors_config = get_sensor_config(sensors_name, fov, resolution)
+        sensors_config = get_sensor_config(
+            sensors_name, fov, resolution, 1.5 * max(self.playground.size)
+        )
         for sensor_cls, sensor_params in sensors_config:
             agent.add_sensor(
                 sensor_cls(
@@ -293,7 +295,7 @@ class PgDict(PlaygroundEnv):
         self.observation_space = spaces.Dict(d)
 
 
-def get_sensor_config(sensors_name, fov=360, resolution=64):
+def get_sensor_config(sensors_name, fov=360, resolution=64, max_range=300):
     if sensors_name == "blind":
         return [
             (
@@ -312,8 +314,8 @@ def get_sensor_config(sensors_name, fov=360, resolution=64):
                 # FIXME: use SemanticRay instead
                 sensors.PerfectSemantic,
                 {
-                    "range": 1000,
-                    "resolution": 1000,
+                    "range": max_range,
+                    "resolution": resolution,
                     "name": "semantic",
                 },
             )
@@ -328,7 +330,7 @@ def get_sensor_config(sensors_name, fov=360, resolution=64):
                     sensors.RgbCamera,
                     {
                         "fov": fov,
-                        "range": 300,
+                        "range": max_range,
                         "resolution": resolution,
                         "name": "rgb",
                     },
@@ -341,7 +343,7 @@ def get_sensor_config(sensors_name, fov=360, resolution=64):
                     sensors.Lidar,
                     {
                         "fov": fov,
-                        "range": 300,
+                        "range": max_range,
                         "resolution": resolution,
                         "name": "lidar",
                     },
