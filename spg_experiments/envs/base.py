@@ -33,7 +33,7 @@ class PlaygroundEnv(gym.Env, ABC):
         sensors_res = config.get("sensors_res", 64)
         multisteps = config.get("multisteps")
         self.include_agent_in_obs = config.get("include_agent", False)
-        continuous_action_space = True
+        continuous_action_space = config.get("continuous_actions", True)
 
         seed = config.get("seed", 0)
         seed = (seed + id(self)) % (2 ** 32)
@@ -105,7 +105,11 @@ class PlaygroundEnv(gym.Env, ABC):
             )
 
         else:
-            raise NotImplementedError()
+            act_spaces = []
+            for actuator in actuators:
+                act_spaces.append(3)
+
+            self.action_space = spaces.MultiDiscrete(act_spaces)
 
     def _create_agent(self, agent_type, sensors_name, fov, resolution):
         if agent_type == "base":
@@ -142,12 +146,16 @@ class PlaygroundEnv(gym.Env, ABC):
         return self.engine.elapsed_time
 
     def step(self, action):
+
         actions_to_game_engine = {}
         actions_dict = {}
 
         actuators = self.agent.controller.controlled_actuators
         for actuator, act in zip(actuators, action):
-            actions_dict[actuator] = act
+            if self.continuous_action_space:
+                actions_dict[actuator] = act
+            else:
+                actions_dict[actuator] = [-1, 0, 1][act]
 
         actions_to_game_engine[self.agent] = actions_dict
 
