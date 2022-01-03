@@ -30,6 +30,7 @@ class PlainPG(Playground):
 class CandyPoison(PlainPG):
     def __init__(self, time_limit=100, size=(200, 200), probability_production=0.4):
         super().__init__(time_limit, size)
+        coord_scaler = max(size) / 200
 
         # Foraging
         area_prod = CoordinateSampler(
@@ -37,12 +38,20 @@ class CandyPoison(PlainPG):
         )
 
         spawner = Spawner(
-            Candy, production_area=area_prod, probability=probability_production
+            Candy,
+            production_area=area_prod,
+            probability=probability_production,
+            max_elements_in_playground=10 * coord_scaler,
+            production_limit=200,
         )
         self.add_spawner(spawner)
 
         spawner = Spawner(
-            Poison, production_area=area_prod, probability=probability_production
+            Poison,
+            production_area=area_prod,
+            probability=probability_production,
+            max_elements_in_playground=10 * coord_scaler,
+            production_limit=200,
         )
         self.add_spawner(spawner)
 
@@ -110,7 +119,11 @@ class CandyFireballs(PlainPG):
         )
 
         spawner = Spawner(
-            Candy, production_area=area_prod, probability=probability_production
+            Candy,
+            production_area=area_prod,
+            probability=probability_production,
+            max_elements_in_playground=20 * coord_scaler,
+            production_limit=200,
         )
         self.add_spawner(spawner)
 
