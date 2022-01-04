@@ -9,7 +9,8 @@ from simple_playgrounds.element.elements.activable import Dispenser
 from simple_playgrounds.element.elements.aura import Fireball
 from simple_playgrounds.element.elements.basic import Physical
 from simple_playgrounds.element.elements.contact import Candy, Poison
-from simple_playgrounds.element.elements.teleport import Portal, PortalColor
+from simple_playgrounds.element.elements.teleport import Portal as SPGPortal
+from simple_playgrounds.element.elements.teleport import PortalColor
 from simple_playgrounds.playground.layouts import SingleRoom
 from simple_playgrounds.playground.playground import Playground, PlaygroundRegister
 
@@ -17,6 +18,20 @@ from simple_playgrounds.playground.playground import Playground, PlaygroundRegis
 class TouchDispenser(Dispenser):
     def _set_shape_collision(self):
         self.pm_invisible_shape.collision_type = CollisionTypes.CONTACT
+
+
+class Portal(SPGPortal):
+    def __init__(self, color):
+        super().__init__(color)
+        self.energized = False
+
+    def energize(self, agent):
+        super().energize(agent)
+        self.energized = True
+
+    def pre_step(self):
+        super().pre_step()
+        self.energized = False
 
 
 class PlainPG(Playground):
@@ -201,18 +216,18 @@ class DispenserFireballsBase:
             size=[s / 3 for s in self._size],
         )
 
-        red_coord = [0.2 * self._size[0], 0.1 * self._size[1]]
-        blue_coord = [0.8 * self._size[0], 0.1 * self._size[1]]
+        red_coord = [7, 0.5 * self._size[1]]
+        blue_coord = [self._size[0] - 7, 0.5 * self._size[1]]
         portal_red = Portal(color=PortalColor.RED)
-        self.add_element(portal_red, (red_coord, np.pi / 2))
+        self.add_element(portal_red, (red_coord, np.pi))
         portal_blue = Portal(color=PortalColor.BLUE)
-        self.add_element(portal_blue, (blue_coord, np.pi / 2))
+        self.add_element(portal_blue, (blue_coord, 0))
+        self.portals = [portal_red, portal_blue]
 
         portal_red.destination = portal_blue
         portal_blue.destination = portal_red
 
         disp_coord = [0.9 * self._size[0], 0.9 * self._size[1]]
-        print(disp_coord)
         self.dispenser = TouchDispenser(
             element_produced=Candy,
             production_area=self.area_prod,
@@ -221,11 +236,6 @@ class DispenserFireballsBase:
             allow_overlapping=False,
         )
         self.add_element(self.dispenser, [disp_coord, 0])
-
-    # def reset(self):
-    #     for agent in self.agents:
-    #         agent.initial_coordinates = self.initial_agent_coordinates
-    #     super().reset()
 
 
 @PlaygroundRegister.register("nowall", "candy_poison")

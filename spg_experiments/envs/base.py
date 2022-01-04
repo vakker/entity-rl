@@ -178,12 +178,24 @@ class PlaygroundEnv(gym.Env, ABC):
 
         reward = self.agent.reward
         done = self.playground.done or not self.engine.game_on
-        # done = self.time_steps > 1000
+
+        if hasattr(self.playground, "portals"):
+            portal_used = int(any(p.energized for p in self.playground.portals))
+        else:
+            portal_used = 0
+
+        info = {
+            "data": {
+                "running": {
+                    "portal_used": portal_used,
+                },
+            },
+        }
 
         if self.video_dir is not None:
             self.render()
 
-        return (self.observations, reward, done, {})
+        return self.observations, reward, done, info
 
     def full_scenario(self):
         return (255 * self.engine.generate_agent_image(self.agent)).astype(np.uint8)
