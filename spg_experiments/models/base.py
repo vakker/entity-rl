@@ -10,6 +10,10 @@ from ray.rllib.utils.typing import ModelConfigDict, TensorType
 from torch import nn
 
 
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+
 class BaseNetwork(TorchModelV2, nn.Module, ABC):
     # pylint: disable=abstract-method
 
@@ -63,6 +67,10 @@ class BaseNetwork(TorchModelV2, nn.Module, ABC):
 
         # Holds the current "base" output (before logits layer).
         self._features = None
+
+        # print('#################')
+        # print(self)
+        # print(count_parameters(self))
 
     @override(TorchModelV2)
     def forward(
