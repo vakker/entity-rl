@@ -2,20 +2,14 @@
 
 
 import numpy as np
-from simple_playgrounds.common.definitions import CollisionTypes, ElementTypes
+from simple_playgrounds.common.definitions import CollisionTypes
 from simple_playgrounds.common.position_utils import CoordinateSampler, Trajectory
 from simple_playgrounds.common.spawner import Spawner
-from simple_playgrounds.element.element import InteractiveElement, SceneElement
-from simple_playgrounds.element.elements.activable import ActivableElement, Dispenser
+from simple_playgrounds.element.elements.activable import Dispenser
 from simple_playgrounds.element.elements.aura import Fireball
 from simple_playgrounds.element.elements.basic import Physical
 from simple_playgrounds.element.elements.contact import Candy, Poison
-from simple_playgrounds.element.elements.teleport import (
-    InvisibleBeam,
-    Portal,
-    PortalColor,
-    VisibleBeamHoming,
-)
+from simple_playgrounds.element.elements.teleport import Portal, PortalColor
 from simple_playgrounds.playground.layouts import SingleRoom
 from simple_playgrounds.playground.playground import Playground, PlaygroundRegister
 
@@ -143,6 +137,97 @@ class CandyFireballsBase:
         self.add_spawner(spawner)
 
 
+class DispenserFireballsBase:
+    def __init__(self, size=(200, 200)):
+        super().__init__(size)
+
+        coord_scaler = max(size) / 200
+
+        fireball_texture = {"texture_type": "color"}
+        interaction_range = 10 * coord_scaler
+        waypoints = (np.array([[100, 20], [100, 180]]) * coord_scaler).tolist()
+
+        # First Fireball
+        text = {"color": [235, 50, 210]}
+        trajectory = Trajectory(
+            "waypoints",
+            trajectory_duration=300,
+            waypoints=waypoints,
+        )
+        fireball = Fireball(
+            reward=-1,
+            texture={**fireball_texture, **text},
+            invisible_range=interaction_range,
+        )
+        self.add_element(fireball, trajectory)
+
+        # Second Fireball
+        text = {"color": [200, 50, 0]}
+        trajectory = Trajectory(
+            "waypoints",
+            trajectory_duration=150,
+            waypoints=waypoints,
+        )
+        fireball = Fireball(
+            reward=-2,
+            texture={**fireball_texture, **text},
+            invisible_range=interaction_range,
+        )
+        self.add_element(fireball, trajectory)
+
+        # Third Fireball
+        text = {"color": [235, 110, 0]}
+        trajectory = Trajectory(
+            "waypoints",
+            trajectory_duration=180,
+            waypoints=waypoints,
+        )
+        fireball = Fireball(
+            reward=-5,
+            texture={**fireball_texture, **text},
+            invisible_range=interaction_range,
+        )
+        self.add_element(fireball, trajectory)
+
+        self.area_prod = CoordinateSampler(
+            center=[self._center[0] / 2, self._center[1]],
+            area_shape="rectangle",
+            size=[s / 3 for s in self._size],
+        )
+
+        self.area_dispenser = CoordinateSampler(
+            center=[3 * self._center[0] / 2, self._center[1]],
+            area_shape="rectangle",
+            size=[s / 3 for s in self._size],
+        )
+
+        red_coord = [0.2 * self._size[0], 0.1 * self._size[1]]
+        blue_coord = [0.8 * self._size[0], 0.1 * self._size[1]]
+        portal_red = Portal(color=PortalColor.RED)
+        self.add_element(portal_red, (red_coord, np.pi / 2))
+        portal_blue = Portal(color=PortalColor.BLUE)
+        self.add_element(portal_blue, (blue_coord, np.pi / 2))
+
+        portal_red.destination = portal_blue
+        portal_blue.destination = portal_red
+
+        disp_coord = [0.9 * self._size[0], 0.9 * self._size[1]]
+        print(disp_coord)
+        self.dispenser = TouchDispenser(
+            element_produced=Candy,
+            production_area=self.area_prod,
+            production_limit=10,
+            radius=10,
+            allow_overlapping=False,
+        )
+        self.add_element(self.dispenser, [disp_coord, 0])
+
+    # def reset(self):
+    #     for agent in self.agents:
+    #         agent.initial_coordinates = self.initial_agent_coordinates
+    #     super().reset()
+
+
 @PlaygroundRegister.register("nowall", "candy_poison")
 class NoWallCandyPoison(CandyPoisonBase, PlainPG):
     pass
@@ -185,3 +270,25 @@ class WallCandyPoisonLarge(WallCandyPoison):
 class WallCandyFireballsLarge(WallCandyFireballs):
     def __init__(self, size=(1000, 1000), probability_production=0.4):
         super().__init__(size, probability_production=0.4)
+
+
+@PlaygroundRegister.register("nowall", "dispenser_fireballs")
+class NoWallDispenserFireballs(DispenserFireballsBase, PlainPG):
+    pass
+
+
+@PlaygroundRegister.register("wall", "dispenser_fireballs")
+class WallDispenserFireballs(DispenserFireballsBase, SingleRoom):
+    pass
+
+
+@PlaygroundRegister.register("nowall", "dispenser_fireballs_large")
+class NoWallDispenserFireballsLarge(NoWallDispenserFireballs):
+    def __init__(self, size=(1000, 1000)):
+        super().__init__(size)
+
+
+@PlaygroundRegister.register("wall", "dispenser_fireballs_large")
+class WallDispenserFireballsLarge(WallDispenserFireballs):
+    def __init__(self, size=(1000, 1000)):
+        super().__init__(size)
