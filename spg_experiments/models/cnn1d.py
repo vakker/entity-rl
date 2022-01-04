@@ -119,7 +119,7 @@ class SlimConv1d(nn.Module):
         layers.append(conv)
         # Activation function (if any; default=ReLu).
         if isinstance(activation_fn, str):
-            if activation_fn == "default":
+            if activation_fn in ["default", "relu"]:
                 activation_fn = nn.ReLU
             else:
                 activation_fn = getattr(nn, activation_fn)
