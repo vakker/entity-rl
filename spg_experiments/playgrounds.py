@@ -1,13 +1,28 @@
 # pylint: disable=no-member,too-few-public-methods
 
+
 import numpy as np
+from simple_playgrounds.common.definitions import CollisionTypes, ElementTypes
 from simple_playgrounds.common.position_utils import CoordinateSampler, Trajectory
 from simple_playgrounds.common.spawner import Spawner
+from simple_playgrounds.element.element import InteractiveElement, SceneElement
+from simple_playgrounds.element.elements.activable import ActivableElement, Dispenser
 from simple_playgrounds.element.elements.aura import Fireball
 from simple_playgrounds.element.elements.basic import Physical
 from simple_playgrounds.element.elements.contact import Candy, Poison
+from simple_playgrounds.element.elements.teleport import (
+    InvisibleBeam,
+    Portal,
+    PortalColor,
+    VisibleBeamHoming,
+)
 from simple_playgrounds.playground.layouts import SingleRoom
 from simple_playgrounds.playground.playground import Playground, PlaygroundRegister
+
+
+class TouchDispenser(Dispenser):
+    def _set_shape_collision(self):
+        self.pm_invisible_shape.collision_type = CollisionTypes.CONTACT
 
 
 class PlainPG(Playground):
@@ -62,11 +77,11 @@ class CandyFireballsBase:
         super().__init__(size)
         coord_scaler = max(size) / 200
 
-        fireball_texture = {"texture_type": "centered_random_tiles", "size_tiles": 4}
+        fireball_texture = {"texture_type": "color"}
         interaction_range = 10 * coord_scaler
 
         # First Fireball
-        text = {"color_min": [220, 0, 200], "color_max": [255, 100, 220]}
+        text = {"color": [235, 50, 210]}
         waypoints = (
             np.array([[20, 20], [20, 180], [180, 180], [180, 20]]) * coord_scaler
         )
@@ -84,7 +99,7 @@ class CandyFireballsBase:
         self.add_element(fireball, trajectory)
 
         # Second Fireball
-        text = {"color_min": [180, 0, 0], "color_max": [220, 100, 0]}
+        text = {"color": [200, 50, 0]}
         waypoints = np.array([[40, 40], [160, 160]]) * coord_scaler
         trajectory = Trajectory(
             "waypoints",
@@ -99,7 +114,7 @@ class CandyFireballsBase:
         self.add_element(fireball, trajectory)
 
         # Third Fireball
-        text = {"color_min": [220, 100, 0], "color_max": [255, 120, 0]}
+        text = {"color": [235, 110, 0]}
         waypoints = np.array([[40, 160], [160, 40]]) * coord_scaler
         trajectory = Trajectory(
             "waypoints",
