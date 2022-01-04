@@ -1,17 +1,19 @@
+# pylint: disable=no-member,too-few-public-methods
+
 import numpy as np
 from simple_playgrounds.common.position_utils import CoordinateSampler, Trajectory
 from simple_playgrounds.common.spawner import Spawner
 from simple_playgrounds.element.elements.aura import Fireball
 from simple_playgrounds.element.elements.basic import Physical
 from simple_playgrounds.element.elements.contact import Candy, Poison
+from simple_playgrounds.playground.layouts import SingleRoom
 from simple_playgrounds.playground.playground import Playground, PlaygroundRegister
 
 
 class PlainPG(Playground):
-    def __init__(self, time_limit=100, size=(200, 200)):
+    def __init__(self, size=(200, 200)):
         super().__init__()
 
-        self.time_limit = time_limit
         self._size = size
         self._width, self._length = self._size
         self._center = (self._width / 2, self._length / 2)
@@ -26,10 +28,9 @@ class PlainPG(Playground):
         )
 
 
-@PlaygroundRegister.register("custom", "candy_poison")
-class CandyPoison(PlainPG):
-    def __init__(self, time_limit=100, size=(200, 200), probability_production=0.4):
-        super().__init__(time_limit, size)
+class CandyPoisonBase:
+    def __init__(self, size=(200, 200), probability_production=0.4):
+        super().__init__(size)
         coord_scaler = max(size) / 200
 
         # Foraging
@@ -56,10 +57,9 @@ class CandyPoison(PlainPG):
         self.add_spawner(spawner)
 
 
-@PlaygroundRegister.register("custom", "candy_fireballs")
-class CandyFireballs(PlainPG):
-    def __init__(self, time_limit=100, size=(200, 200), probability_production=0.4):
-        super().__init__(time_limit, size)
+class CandyFireballsBase:
+    def __init__(self, size=(200, 200), probability_production=0.4):
+        super().__init__(size)
         coord_scaler = max(size) / 200
 
         fireball_texture = {"texture_type": "centered_random_tiles", "size_tiles": 4}
@@ -128,13 +128,45 @@ class CandyFireballs(PlainPG):
         self.add_spawner(spawner)
 
 
-@PlaygroundRegister.register("custom", "candy_poison_large")
-class CandyPoisonLarge(CandyPoison):
-    def __init__(self, time_limit=100, size=(1000, 1000), probability_production=0.4):
-        super().__init__(time_limit, size)
+@PlaygroundRegister.register("nowall", "candy_poison")
+class NoWallCandyPoison(CandyPoisonBase, PlainPG):
+    pass
 
 
-@PlaygroundRegister.register("custom", "candy_fireballs_large")
-class CandyFireballsLarge(CandyFireballs):
-    def __init__(self, time_limit=100, size=(1000, 1000), probability_production=0.4):
-        super().__init__(time_limit, size)
+@PlaygroundRegister.register("nowall", "candy_fireballs")
+class NoWallCandyFireballs(CandyFireballsBase, PlainPG):
+    pass
+
+
+@PlaygroundRegister.register("nowall", "candy_poison_large")
+class NoWallCandyPoisonLarge(NoWallCandyPoison):
+    def __init__(self, size=(1000, 1000), probability_production=0.4):
+        super().__init__(size, probability_production=0.4)
+
+
+@PlaygroundRegister.register("nowall", "candy_fireballs_large")
+class NoWallCandyFireballsLarge(NoWallCandyFireballs):
+    def __init__(self, size=(1000, 1000), probability_production=0.4):
+        super().__init__(size, probability_production=0.4)
+
+
+@PlaygroundRegister.register("wall", "candy_poison")
+class WallCandyPoison(CandyPoisonBase, SingleRoom):
+    pass
+
+
+@PlaygroundRegister.register("wall", "candy_fireballs")
+class WallCandyFireballs(CandyFireballsBase, SingleRoom):
+    pass
+
+
+@PlaygroundRegister.register("wall", "candy_poison_large")
+class WallCandyPoisonLarge(WallCandyPoison):
+    def __init__(self, size=(1000, 1000), probability_production=0.4):
+        super().__init__(size, probability_production=0.4)
+
+
+@PlaygroundRegister.register("wall", "candy_fireballs_large")
+class WallCandyFireballsLarge(WallCandyFireballs):
+    def __init__(self, size=(1000, 1000), probability_production=0.4):
+        super().__init__(size, probability_production=0.4)
