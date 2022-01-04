@@ -25,7 +25,9 @@ def get_action(obs, port):
 def main(args):
     utils.register()
     env_creator = utils.get_env_creator(args.env)
-    env = env_creator({"pg_name": args.pg, "sensors_name": "rgb_depth_touch"})
+    env = env_creator(
+        {"pg_name": args.pg, "sensors_name": "rgb_depth_touch", "keyboard": args.keys}
+    )
 
     if args.save:
         if osp.exists("frames"):
@@ -41,6 +43,9 @@ def main(args):
     for j in trange(args.iters, disable=args.no_bar):
         if args.use_serve:
             act = get_action(obs, args.serve_port)
+        elif args.keys:
+            act = env.agent.controller.generate_actions()
+            act = [v for k, v in act.items()]
         else:
             act = np.random.rand(2, 1) * 2 - 1
 

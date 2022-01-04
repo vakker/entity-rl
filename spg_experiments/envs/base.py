@@ -32,6 +32,7 @@ class PlaygroundEnv(gym.Env, ABC):
         sensors_fov = config.get("sensors_fov", 360)
         sensors_res = config.get("sensors_res", 64)
         multisteps = config.get("multisteps")
+        keyboard = config.get("keyboard")
         self.include_agent_in_obs = config.get("include_agent", False)
         continuous_action_space = config.get("continuous_actions", True)
 
@@ -49,7 +50,7 @@ class PlaygroundEnv(gym.Env, ABC):
         self.episodes = 0
         self._entity_types = None
 
-        self._create_agent("base", sensors_name, sensors_fov, sensors_res)
+        self._create_agent("base", sensors_name, sensors_fov, sensors_res, keyboard)
         self._set_action_space(continuous_action_space)
         self._set_obs_space()
 
@@ -111,13 +112,18 @@ class PlaygroundEnv(gym.Env, ABC):
 
             self.action_space = spaces.MultiDiscrete(act_spaces)
 
-    def _create_agent(self, agent_type, sensors_name, fov, resolution):
+    def _create_agent(self, agent_type, sensors_name, fov, resolution, keyboard=False):
         if agent_type == "base":
             agent_cls = agents.BaseAgent
         else:
             raise ValueError(f"Wrong agent_type: {agent_type}")
 
-        agent = agent_cls(controller=controllers.External())
+        if keyboard:
+            cont = controllers.Keyboard()
+        else:
+            cont = controllers.External()
+
+        agent = agent_cls(controller=cont)
 
         sensors_config = get_sensor_config(
             sensors_name, fov, resolution, 1.5 * max(self.playground.size)
