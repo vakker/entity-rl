@@ -126,7 +126,7 @@ class PlaygroundEnv(gym.Env, ABC):
         agent = agent_cls(controller=cont)
 
         sensors_config = get_sensor_config(
-            sensors_name, fov, resolution, 1.5 * max(self.playground.size)
+            sensors_name, fov, resolution, max(self.playground.size)
         )
         for sensor_cls, sensor_params in sensors_config:
             agent.add_sensor(
@@ -340,7 +340,7 @@ def get_sensor_config(sensors_name, fov=360, resolution=64, max_range=300):
                 # FIXME: use SemanticRay instead
                 sensors.PerfectSemantic,
                 {
-                    "range": max_range,
+                    "max_range": max_range,
                     "resolution": resolution,
                     "name": "semantic",
                 },
@@ -356,7 +356,7 @@ def get_sensor_config(sensors_name, fov=360, resolution=64, max_range=300):
                     sensors.RgbCamera,
                     {
                         "fov": fov,
-                        "range": max_range,
+                        "max_range": max_range,
                         "resolution": resolution,
                         "name": "rgb",
                     },
@@ -369,7 +369,7 @@ def get_sensor_config(sensors_name, fov=360, resolution=64, max_range=300):
                     sensors.Lidar,
                     {
                         "fov": fov,
-                        "range": max_range,
+                        "max_range": max_range,
                         "resolution": resolution,
                         "name": "lidar",
                     },
@@ -381,7 +381,7 @@ def get_sensor_config(sensors_name, fov=360, resolution=64, max_range=300):
                 (
                     sensors.Touch,
                     {
-                        "range": 2,
+                        "max_range": 2,
                         "fov": fov,
                         "resolution": resolution,
                         "name": "touch",
