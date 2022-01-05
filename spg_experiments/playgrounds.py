@@ -217,38 +217,30 @@ class DispenserFireballsBase:
         )
         self.add_element(fireball, trajectory)
 
-        self.area_prod = CoordinateSampler(
+        area_prod = CoordinateSampler(
             center=[self._center[0] / 2, self._center[1]],
             area_shape="rectangle",
             size=[s / 3 for s in self._size],
         )
 
-        self.area_dispenser = CoordinateSampler(
-            center=[3 * self._center[0] / 2, self._center[1]],
-            area_shape="rectangle",
-            size=[s / 3 for s in self._size],
-        )
-
-        red_coord = [7, 0.5 * self._size[1]]
-        blue_coord = [self._size[0] - 7, 0.5 * self._size[1]]
         portal_red = Portal(color=PortalColor.RED)
-        self.add_element(portal_red, (red_coord, np.pi))
+        self.add_element(portal_red, ([7, 0.5 * self._size[1]], np.pi))
         portal_blue = Portal(color=PortalColor.BLUE)
-        self.add_element(portal_blue, (blue_coord, 0))
+        self.add_element(portal_blue, ([self._size[0] - 7, 0.5 * self._size[1]], 0))
         self.portals = [portal_red, portal_blue]
 
         portal_red.destination = portal_blue
         portal_blue.destination = portal_red
 
         disp_coord = [0.9 * self._size[0], 0.9 * self._size[1]]
-        self.dispenser = TouchDispenser(
+        dispenser = TouchDispenser(
             element_produced=Candy,
-            production_area=self.area_prod,
+            production_area=area_prod,
             production_limit=10 * coord_scaler,
             radius=10,
             allow_overlapping=False,
         )
-        self.add_element(self.dispenser, [disp_coord, 0])
+        self.add_element(dispenser, [disp_coord, 0])
 
 
 @PlaygroundRegister.register("nowall", "candy_poison")
