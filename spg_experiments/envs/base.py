@@ -10,6 +10,7 @@ import numpy as np
 from gym import spaces
 from simple_playgrounds.agent import agents, controllers
 from simple_playgrounds.device import sensors
+from simple_playgrounds.element.elements.activable import Dispenser
 from simple_playgrounds.engine import Engine
 from simple_playgrounds.playground.playground import PlaygroundRegister
 from simple_playgrounds.playground.playgrounds.rl import foraging
@@ -70,6 +71,11 @@ class PlaygroundEnv(gym.Env, ABC):
                 element_types += [type_str(self.agent)]
 
             element_types += [type_str(e) for e in self.playground.elements]
+
+            dispensers = [
+                elem for elem in self.playground.elements if isinstance(elem, Dispenser)
+            ]
+            element_types += [d.elem_class_produced.__name__ for d in dispensers]
             element_types += [
                 s.entity_produced.__name__ for s in self.playground.spawners
             ]

@@ -34,6 +34,11 @@ class Portal(SPGPortal):
         self.energized = False
 
 
+class Pole(Physical):
+    def __init__(self):
+        super().__init__(config_key="circle", radius=2)
+
+
 class PlainPG(Playground):
     def __init__(self, size=(200, 200)):
         super().__init__()
@@ -42,7 +47,7 @@ class PlainPG(Playground):
         self._width, self._length = self._size
         self._center = (self._width / 2, self._length / 2)
 
-        pole = Physical(config_key="circle", radius=2)
+        pole = Pole()
         self.add_element(pole, [self._center, 0])
 
         self.initial_agent_coordinates = CoordinateSampler(

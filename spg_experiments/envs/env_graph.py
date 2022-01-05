@@ -19,7 +19,7 @@ class PgGraph(PlaygroundEnv):
     def _set_obs_space(self):
         x_shape = (3 + len(self.entity_types_map),)
 
-        max_elements = 50
+        max_elements = 150
         self.observation_space = gym.spaces.Dict(
             {
                 "x": Repeated(
