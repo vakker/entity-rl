@@ -30,6 +30,8 @@ class BaseNetwork(TorchModelV2, nn.Module, ABC):
         )
         nn.Module.__init__(self)
 
+        self.obs_space = obs_space
+
         self._encoder = None
         out_channels_all = self._create_hidden_layers(obs_space, self.model_config)
 
@@ -102,3 +104,7 @@ class BaseNetwork(TorchModelV2, nn.Module, ABC):
     @abstractmethod
     def _create_hidden_layers(self, obs_space, model_config):
         pass
+
+    @property
+    def device(self):
+        return next(self.parameters()).device
