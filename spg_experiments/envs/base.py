@@ -131,9 +131,7 @@ class PlaygroundEnv(gym.Env, ABC):
 
         agent = agent_cls(controller=cont)
 
-        sensors_config = get_sensor_config(
-            sensors_name, fov, resolution, max(self.playground.size)
-        )
+        sensors_config = get_sensor_config(sensors_name, fov, resolution, 400)
         for sensor_cls, sensor_params in sensors_config:
             agent.add_sensor(
                 sensor_cls(
