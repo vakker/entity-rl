@@ -11,7 +11,7 @@ from simple_playgrounds.element.elements.basic import Physical
 from simple_playgrounds.element.elements.contact import Candy, Poison
 from simple_playgrounds.element.elements.teleport import Portal as SPGPortal
 from simple_playgrounds.element.elements.teleport import PortalColor
-from simple_playgrounds.playground.layouts import SingleRoom
+from simple_playgrounds.playground.layouts import SingleRoom as SPGSingleRoom
 from simple_playgrounds.playground.playground import Playground, PlaygroundRegister
 
 
@@ -50,6 +50,19 @@ class PlainPG(Playground):
             area_shape="rectangle",
             size=self._size,
         )
+
+
+class SingleRoom(SPGSingleRoom):
+    def __init__(self, *args, **kwargs):
+        # Same at "texture_type": "color", but all this is needed
+        # because this is what the texture generator expects.
+        kwargs["wall_texture"] = {
+            "texture_type": "random_tiles",
+            "color_min": [150, 150, 0],
+            "color_max": [150, 150, 0],
+            "size_tiles": 4,
+        }
+        super().__init__(*args, **kwargs)
 
 
 class CandyPoisonBase:
@@ -147,7 +160,7 @@ class CandyFireballsBase:
             production_area=area_prod,
             probability=probability_production,
             max_elements_in_playground=20 * coord_scaler,
-            production_limit=200,
+            production_limit=400,
         )
         self.add_spawner(spawner)
 
@@ -231,7 +244,7 @@ class DispenserFireballsBase:
         self.dispenser = TouchDispenser(
             element_produced=Candy,
             production_area=self.area_prod,
-            production_limit=10,
+            production_limit=10 * coord_scaler,
             radius=10,
             allow_overlapping=False,
         )
