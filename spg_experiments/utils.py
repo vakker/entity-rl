@@ -130,6 +130,9 @@ def get_tune_params(args):
         min(2, args["num_samples"]) if args["smoke"] else args["num_samples"]
     )
 
+    cpus_per_worker = (
+        args["cpus_per_worker"] / 2 if args["eval_int"] else args["cpus_per_worker"]
+    )
     configs_base = {
         "num_workers": args["num_workers"],
         "evaluation_config": {
@@ -137,7 +140,7 @@ def get_tune_params(args):
         },
         "evaluation_interval": args["eval_int"],
         "evaluation_num_episodes": 10,
-        "num_cpus_per_worker": 0.5 if args["eval_int"] else 1,
+        "num_cpus_per_worker": cpus_per_worker,
         "evaluation_num_workers": args["num_workers"] if args["eval_int"] else 0,
         "num_gpus": args["num_gpus"],
         "framework": "torch",
