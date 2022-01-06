@@ -10,6 +10,7 @@ import numpy as np
 from gym import spaces
 from simple_playgrounds.agent import agents, controllers
 from simple_playgrounds.device import sensors
+from simple_playgrounds.element.elements.activable import Dispenser
 from simple_playgrounds.engine import Engine
 from simple_playgrounds.playground.playground import PlaygroundRegister
 from simple_playgrounds.playground.playgrounds.rl import foraging
@@ -32,8 +33,9 @@ class PlaygroundEnv(gym.Env, ABC):
         sensors_fov = config.get("sensors_fov", 360)
         sensors_res = config.get("sensors_res", 64)
         multisteps = config.get("multisteps")
+        keyboard = config.get("keyboard")
         self.include_agent_in_obs = config.get("include_agent", False)
-        continuous_action_space = True
+        continuous_action_space = config.get("continuous_actions", True)
 
         seed = config.get("seed", 0)
         seed = (seed + id(self)) % (2 ** 32)
@@ -49,7 +51,7 @@ class PlaygroundEnv(gym.Env, ABC):
         self.episodes = 0
         self._entity_types = None
 
-        self._create_agent("base", sensors_name, sensors_fov, sensors_res)
+        self._create_agent("base", sensors_name, sensors_fov, sensors_res, keyboard)
         self._set_action_space(continuous_action_space)
         self._set_obs_space()
 
@@ -69,6 +71,11 @@ class PlaygroundEnv(gym.Env, ABC):
                 element_types += [type_str(self.agent)]
 
             element_types += [type_str(e) for e in self.playground.elements]
+
+            dispensers = [
+                elem for elem in self.playground.elements if isinstance(elem, Dispenser)
+            ]
+            element_types += [d.elem_class_produced.__name__ for d in dispensers]
             element_types += [
                 s.entity_produced.__name__ for s in self.playground.spawners
             ]
@@ -105,17 +112,26 @@ class PlaygroundEnv(gym.Env, ABC):
             )
 
         else:
-            raise NotImplementedError()
+            act_spaces = []
+            for actuator in actuators:
+                act_spaces.append(3)
 
-    def _create_agent(self, agent_type, sensors_name, fov, resolution):
+            self.action_space = spaces.MultiDiscrete(act_spaces)
+
+    def _create_agent(self, agent_type, sensors_name, fov, resolution, keyboard=False):
         if agent_type == "base":
             agent_cls = agents.BaseAgent
         else:
             raise ValueError(f"Wrong agent_type: {agent_type}")
 
-        agent = agent_cls(controller=controllers.External())
+        if keyboard:
+            cont = controllers.Keyboard()
+        else:
+            cont = controllers.External()
 
-        sensors_config = get_sensor_config(sensors_name, fov, resolution)
+        agent = agent_cls(controller=cont)
+
+        sensors_config = get_sensor_config(sensors_name, fov, resolution, 400)
         for sensor_cls, sensor_params in sensors_config:
             agent.add_sensor(
                 sensor_cls(
@@ -140,12 +156,16 @@ class PlaygroundEnv(gym.Env, ABC):
         return self.engine.elapsed_time
 
     def step(self, action):
+
         actions_to_game_engine = {}
         actions_dict = {}
 
         actuators = self.agent.controller.controlled_actuators
         for actuator, act in zip(actuators, action):
-            actions_dict[actuator] = act
+            if self.continuous_action_space:
+                actions_dict[actuator] = act
+            else:
+                actions_dict[actuator] = [-1, 0, 1][act]
 
         actions_to_game_engine[self.agent] = actions_dict
 
@@ -162,12 +182,24 @@ class PlaygroundEnv(gym.Env, ABC):
 
         reward = self.agent.reward
         done = self.playground.done or not self.engine.game_on
-        # done = self.time_steps > 1000
+
+        if hasattr(self.playground, "portals"):
+            portal_used = int(any(p.energized for p in self.playground.portals))
+        else:
+            portal_used = 0
+
+        info = {
+            "data": {
+                "running": {
+                    "portal_used": portal_used,
+                },
+            },
+        }
 
         if self.video_dir is not None:
             self.render()
 
-        return (self.observations, reward, done, {})
+        return self.observations, reward, done, info
 
     def full_scenario(self):
         return (255 * self.engine.generate_agent_image(self.agent)).astype(np.uint8)
@@ -293,7 +325,7 @@ class PgDict(PlaygroundEnv):
         self.observation_space = spaces.Dict(d)
 
 
-def get_sensor_config(sensors_name, fov=360, resolution=64):
+def get_sensor_config(sensors_name, fov=360, resolution=64, max_range=300):
     if sensors_name == "blind":
         return [
             (
@@ -312,8 +344,8 @@ def get_sensor_config(sensors_name, fov=360, resolution=64):
                 # FIXME: use SemanticRay instead
                 sensors.PerfectSemantic,
                 {
-                    "range": 1000,
-                    "resolution": 1000,
+                    "max_range": max_range,
+                    "resolution": resolution,
                     "name": "semantic",
                 },
             )
@@ -328,7 +360,7 @@ def get_sensor_config(sensors_name, fov=360, resolution=64):
                     sensors.RgbCamera,
                     {
                         "fov": fov,
-                        "range": 300,
+                        "max_range": max_range,
                         "resolution": resolution,
                         "name": "rgb",
                     },
@@ -341,7 +373,7 @@ def get_sensor_config(sensors_name, fov=360, resolution=64):
                     sensors.Lidar,
                     {
                         "fov": fov,
-                        "range": 300,
+                        "max_range": max_range,
                         "resolution": resolution,
                         "name": "lidar",
                     },
@@ -353,7 +385,7 @@ def get_sensor_config(sensors_name, fov=360, resolution=64):
                 (
                     sensors.Touch,
                     {
-                        "range": 2,
+                        "max_range": 2,
                         "fov": fov,
                         "resolution": resolution,
                         "name": "touch",

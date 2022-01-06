@@ -123,13 +123,16 @@ def parse_tune_configs(configs, use_tune=False):
 
 
 def get_tune_params(args):
-    args["max_iters"] = (
-        min(2, args["max_iters"]) if args["smoke"] else args["max_iters"]
-    )
+    if args["smoke"]:
+        args["max_iters"] = 1
+
     args["num_samples"] = (
         min(2, args["num_samples"]) if args["smoke"] else args["num_samples"]
     )
 
+    cpus_per_worker = (
+        args["cpus_per_worker"] / 2 if args["eval_int"] else args["cpus_per_worker"]
+    )
     configs_base = {
         "num_workers": args["num_workers"],
         "evaluation_config": {
@@ -137,13 +140,14 @@ def get_tune_params(args):
         },
         "evaluation_interval": args["eval_int"],
         "evaluation_num_episodes": 10,
-        "num_cpus_per_worker": 0.5 if args["eval_int"] else 1,
+        "num_cpus_per_worker": cpus_per_worker,
         "evaluation_num_workers": args["num_workers"] if args["eval_int"] else 0,
         "num_gpus": args["num_gpus"],
         "framework": "torch",
         "num_envs_per_worker": 1,
         "batch_mode": "truncate_episodes",
         "observation_filter": "NoFilter",
+        "preprocessor_pref": None,
     }
 
     conf_yaml = get_configs(args["logdir"])
@@ -165,11 +169,18 @@ def get_tune_params(args):
     else:
         tune_params["num_samples"] = 1
 
+    if args["max_iters"]:
+        stop = {"training_iteration": args["max_iters"]}
+    elif args["max_steps"]:
+        stop = {"timesteps_total": args["max_steps"]}
+    else:
+        stop = {}
+
     tune_params.update(
         {
             "trial_name_creator": trial_str_creator,
             "trial_dirname_creator": trial_str_creator,
-            "stop": {"training_iteration": args["max_iters"]},
+            "stop": stop,
             "local_dir": args["logdir"],
             "checkpoint_freq": args["checkpoint_freq"],
             "checkpoint_at_end": args["checkpoint_freq"] > 0,

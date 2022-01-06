@@ -10,6 +10,10 @@ from ray.rllib.utils.typing import ModelConfigDict, TensorType
 from torch import nn
 
 
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+
 class BaseNetwork(TorchModelV2, nn.Module, ABC):
     # pylint: disable=abstract-method
 
@@ -25,6 +29,8 @@ class BaseNetwork(TorchModelV2, nn.Module, ABC):
             self, obs_space, action_space, num_outputs, model_config, name
         )
         nn.Module.__init__(self)
+
+        self.obs_space = obs_space
 
         self._encoder = None
         out_channels_all = self._create_hidden_layers(obs_space, self.model_config)
@@ -64,6 +70,10 @@ class BaseNetwork(TorchModelV2, nn.Module, ABC):
         # Holds the current "base" output (before logits layer).
         self._features = None
 
+        # print('#################')
+        # print(self)
+        # print(count_parameters(self))
+
     @override(TorchModelV2)
     def forward(
         self,
@@ -94,3 +104,7 @@ class BaseNetwork(TorchModelV2, nn.Module, ABC):
     @abstractmethod
     def _create_hidden_layers(self, obs_space, model_config):
         pass
+
+    @property
+    def device(self):
+        return next(self.parameters()).device

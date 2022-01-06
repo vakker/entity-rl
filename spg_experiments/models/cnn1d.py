@@ -3,7 +3,6 @@ from typing import Any, Tuple
 
 import numpy as np
 import torch
-from ray.rllib.models.utils import get_activation_fn
 from ray.rllib.utils.typing import TensorType
 from torch import nn
 
@@ -120,10 +119,10 @@ class SlimConv1d(nn.Module):
         layers.append(conv)
         # Activation function (if any; default=ReLu).
         if isinstance(activation_fn, str):
-            if activation_fn == "default":
+            if activation_fn in ["default", "relu"]:
                 activation_fn = nn.ReLU
             else:
-                activation_fn = get_activation_fn(activation_fn, "torch")
+                activation_fn = getattr(nn, activation_fn)
         if activation_fn is not None:
             layers.append(activation_fn())
         # Put everything in sequence.

@@ -9,13 +9,13 @@ from .base import PlaygroundEnv, type_str
 
 
 class PgSet(PlaygroundEnv):
-    def _create_agent(self, agent_type, sensors_name, fov, resolution):
+    def _create_agent(self, agent_type, sensors_name, fov, resolution, keyboard=False):
         if sensors_name != "semantic":
             warnings.warn("Setting sensors_name to semantic.")
 
             sensors_name = "semantic"
 
-        super()._create_agent(agent_type, sensors_name, fov, resolution)
+        super()._create_agent(agent_type, sensors_name, fov, resolution, keyboard)
 
     def _set_obs_space(self):
         type_shape = (len(self.entity_types_map),)
