@@ -22,7 +22,7 @@ def fixture_even_batch():
 
 @pytest.fixture(name="uneven_batch")
 def fixture_uneven_batch():
-    x = [torch.randn(N, TEST_D0) for N in torch.randint(1, 10, (TEST_BATCH_SIZE,))]
+    x = [torch.randn(1, N, TEST_D0) for N in torch.randint(1, 10, (TEST_BATCH_SIZE,))]
     return x
 
 
@@ -31,7 +31,7 @@ def compare_outputs(out_ref, out_new):
 
     for sample_ref, sample_new in zip(out_ref, out_new):
         tensors_equal = torch.norm(sample_ref - sample_new).detach() == pytest.approx(
-            0, abs=1.0e-06
+            0, abs=2.0e-06
         )
         assert tensors_equal
 
@@ -42,6 +42,9 @@ def to_pyg(batch):
     batch_idx = []
     pyg_batch = []
     for i, sample in enumerate(batch):
+        if sample.dim() == 3:
+            sample = sample.squeeze(0)
+
         pyg_batch.append(sample)
         batch_idx.append(torch.tensor([i] * len(sample)))
 
@@ -74,8 +77,6 @@ def layers_list():
 
     torch.manual_seed(0)
     sa_ref1 = slot_attention.SlotAttentionRef(TEST_K, TEST_D0, fixed_slots=True)
-    torch.manual_seed(0)
-    sa_ref2 = slot_attention.SlotAttentionRef(TEST_K, TEST_D0, fixed_slots=True)
     torch.manual_seed(0)
     sa_new1 = slot_attention.SlotAttention(TEST_K, TEST_D0, fixed_slots=True)
     torch.manual_seed(0)
@@ -157,7 +158,6 @@ def layers_list():
         [lin_layer_1, lambda x: pyg_wrapper(lin_layer_1, x)],
         [seq_layer, lambda x: pyg_wrapper(seq_layer, x)],
         [lambda x: sa_wrapper(sa_new1, x), lambda x: sa_wrapper(sa_new2, x)],
-        [sa_ref1, sa_ref2],
         [sa_ref1.norm_input, lambda x: pyg_wrapper(sa_new1.norm_input, x)],
         [sa_ref1.to_v, lambda x: pyg_wrapper(sa_new1.to_v, x)],
         [sa_ref1.to_k, lambda x: pyg_wrapper(sa_new1.to_k, x)],
@@ -192,11 +192,11 @@ def test_even_batch(even_batch, layers):
     assert compare_outputs(out_ref, out_new)
 
 
-# @pytest.mark.parametrize("layers", layers_list())
-# def test_uneven_batch(uneven_batch, layers):
-#     layer_0, layer_1 = layers
+@pytest.mark.parametrize("layers", layers_list())
+def test_uneven_batch(uneven_batch, layers):
+    layer_ref, layer_new = layers
 
-#     out_0 = [layer_0(b) for b in uneven_batch]
-#     out_1 = layer_1(uneven_batch)
+    out_ref = [layer_ref(b) for b in uneven_batch]
+    out_new = layer_new(uneven_batch)
 
-#     assert compare_outputs(out_0, out_1)
+    assert compare_outputs(out_ref, out_new)

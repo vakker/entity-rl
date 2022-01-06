@@ -91,6 +91,7 @@ class SlotAttentionRef(nn.Module):
 
     def forward(self, inputs):
         x = inputs
+        assert x.dim() == 3
         batch_size = x.shape[0]
 
         slots = self._get_slots(batch_size)
@@ -131,6 +132,8 @@ class SlotAttention(SlotAttentionRef):
 
     def forward(self, inputs):
         x, _, batch = inputs
+        assert x.dim() == 2
+
         x = x.unsqueeze(1)
         batch_size = torch.max(batch) + 1
 
