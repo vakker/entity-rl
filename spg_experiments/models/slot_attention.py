@@ -9,7 +9,7 @@ from .base import BaseModule
 
 
 class SlotAttentionRef(BaseModule):
-    # pylint: disable=too-many-locals,no-self-use
+    # pylint: disable=too-many-locals,no-self-use,unused-argument
 
     def __init__(
         self,
@@ -82,67 +82,27 @@ class SlotAttentionRef(BaseModule):
         slots = slots.reshape(batch_size, self.num_slots, -1)
         return slots + self.mlp(self.norm_pre_ff(slots))
 
-    def _get_M(self, k, q):
+    def _get_M(self, k, q, batch):
         return torch.matmul(k, q.transpose(2, 1)) * self.scale
 
     def _get_attn(self, M):
         return M.softmax(dim=-1) + self.eps
 
-    def _get_W(self, attn):
+    def _get_W(self, attn, batch):
         return attn / attn.sum(dim=1, keepdim=True)
 
-    def _get_updates(self, W, v):
+    def _get_updates(self, W, v, batch):
         return torch.matmul(W.transpose(2, 1), v)
 
-    def forward(self, inputs):
+    def _prep_inputs(self, inputs):
         x = inputs
         assert x.dim() == 3
         batch_size = x.shape[0]
 
-        slots = self._get_slots(batch_size)
-
-        x = self.norm_input(x)
-        k = self.to_k(x)
-        v = self.to_v(x)
-
-        for _ in range(self.iters):
-            slots_prev = slots
-
-            slots = self.norm_slots(slots)
-            q = self.to_q(slots)
-            M = self._get_M(k, q)
-
-            attn = self._get_attn(M)
-            W = self._get_W(attn)
-            updates = self._get_updates(W, v)
-
-            slots = self._slots_update(updates, slots_prev, batch_size)
-
-        if self.final_act:
-            return torch.relu(slots)
-
-        return slots
-
-
-class SlotAttention(SlotAttentionRef):
-    # pylint: disable=arguments-differ
-
-    def _get_M(self, k, q, batch):
-        q_scatter = q[batch]
-        return torch.matmul(k, q_scatter.transpose(2, 1)) * self.scale
-
-    def _get_W(self, attn, batch):
-        return attn / scatter(attn, batch, dim=0)[batch]
-
-    def _get_updates(self, W, v, batch):
-        return scatter(W.transpose(2, 1) * v, batch, dim=0)
+        return x, None, batch_size
 
     def forward(self, inputs):
-        x, _, batch = inputs
-        assert x.dim() == 2
-
-        x = x.unsqueeze(1)
-        batch_size = torch.max(batch) + 1
+        x, batch, batch_size = self._prep_inputs(inputs)
 
         slots = self._get_slots(batch_size)
 
@@ -167,3 +127,24 @@ class SlotAttention(SlotAttentionRef):
             return torch.relu(slots)
 
         return slots
+
+
+class SlotAttention(SlotAttentionRef):
+    def _get_M(self, k, q, batch):
+        q_scatter = q[batch]
+        return torch.matmul(k, q_scatter.transpose(2, 1)) * self.scale
+
+    def _get_W(self, attn, batch):
+        return attn / scatter(attn, batch, dim=0)[batch]
+
+    def _get_updates(self, W, v, batch):
+        return scatter(W.transpose(2, 1) * v, batch, dim=0)
+
+    def _prep_inputs(self, inputs):
+        x, _, batch = inputs
+        assert x.dim() == 2
+
+        x = x.unsqueeze(1)
+        batch_size = torch.max(batch) + 1
+
+        return x, batch, batch_size
