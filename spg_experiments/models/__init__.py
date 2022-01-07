@@ -1,9 +1,9 @@
-from .attn import AttnNetwork
-from .cnn1d import Cnn1DNetwork
-from .fc import FcNetwork
-from .gnn import GnnNetwork
+from .attn import AttnPolicy
+from .cnn1d import Cnn1DPolicy
+from .fc import FcPolicy
+from .gnn import GnnPolicy
 
-__all__ = ["FcNetwork", "Cnn1DNetwork", "GnnNetwork", "AttnNetwork"]
+__all__ = ["FcPolicy", "Cnn1DPolicy", "GnnPolicy", "AttnPolicy"]
 
 
 def sum_params(module):

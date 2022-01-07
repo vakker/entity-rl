@@ -5,7 +5,7 @@ from ray.rllib.models.torch.torch_modelv2 import TorchModelV2
 from torch import nn
 
 
-class FcNetwork(TorchModelV2, nn.Module):
+class FcPolicy(TorchModelV2, nn.Module):
     # pylint: disable=abstract-method
 
     def __init__(self, obs_space, action_space, num_outputs, model_config, name):

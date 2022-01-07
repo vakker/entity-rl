@@ -6,7 +6,7 @@ from torch_geometric import nn as pyg_nn
 from torch_geometric.data import Batch, Data
 from torch_geometric.nn import GATv2Conv, GINConv, global_mean_pool
 
-from .base import BaseNetwork
+from .base import BasePolicy
 
 module = sys.modules[__name__]
 
@@ -88,7 +88,7 @@ class GINFeatures(nn.Module):
         return x
 
 
-class GnnNetwork(BaseNetwork):
+class GnnPolicy(BasePolicy):
     def _hidden_layers(self, input_dict):
         g_batch = []
 
