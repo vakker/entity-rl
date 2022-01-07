@@ -6,7 +6,7 @@ import torch
 from ray.rllib.utils.typing import TensorType
 from torch import nn
 
-from .base import BaseNetwork
+from .base import BasePolicy
 
 
 def get_out_size(in_size, padding, kernel_size, stride=1, dilation=1):
@@ -134,7 +134,7 @@ class SlimConv1d(nn.Module):
         return self._model(x)
 
 
-class Cnn1DNetwork(BaseNetwork):
+class Cnn1DPolicy(BasePolicy):
     def _hidden_layers(self, input_dict):
         features = []
         for obs_name, obs in input_dict["obs"].items():

@@ -5,8 +5,10 @@ from torch import nn
 from torch.nn import init
 from torch_scatter import scatter
 
+from .base import BaseModule
 
-class SlotAttentionRef(nn.Module):
+
+class SlotAttentionRef(BaseModule):
     # pylint: disable=too-many-locals,no-self-use
 
     def __init__(
@@ -59,7 +61,7 @@ class SlotAttentionRef(nn.Module):
         self.fixed_slots = fixed_slots
         self.out_channels = num_slots * d_out
 
-    def _get_slots(self, batch_size, device):
+    def _get_slots(self, batch_size):
         n_s = self.num_slots
 
         mu = self.slots_mu.expand(batch_size, n_s, -1)
@@ -67,7 +69,7 @@ class SlotAttentionRef(nn.Module):
 
         if not self.fixed_slots:
             sigma = self.slots_logsigma.exp().expand(batch_size, n_s, -1)
-            slots = slots + sigma * torch.randn(mu.shape, device=device)
+            slots = slots + sigma * torch.randn(mu.shape, device=self.device)
 
         return slots
 
@@ -97,7 +99,7 @@ class SlotAttentionRef(nn.Module):
         assert x.dim() == 3
         batch_size = x.shape[0]
 
-        slots = self._get_slots(batch_size, x.device)
+        slots = self._get_slots(batch_size)
 
         x = self.norm_input(x)
         k = self.to_k(x)
@@ -139,7 +141,7 @@ class SlotAttention(SlotAttentionRef):
         x = x.unsqueeze(1)
         batch_size = torch.max(batch) + 1
 
-        slots = self._get_slots(batch_size, x.device)
+        slots = self._get_slots(batch_size)
 
         x = self.norm_input(x)
         k = self.to_k(x)

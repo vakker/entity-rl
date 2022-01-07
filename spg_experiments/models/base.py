@@ -14,9 +14,14 @@ def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
-class BaseNetwork(TorchModelV2, nn.Module, ABC):
-    # pylint: disable=abstract-method
+class BaseModule(nn.Module, ABC):
+    @property
+    def device(self):
+        return next(self.parameters()).device
 
+
+class BasePolicy(TorchModelV2, BaseModule, ABC):
+    # pylint: disable=abstract-method
     def __init__(
         self,
         obs_space: gym.spaces.Space,
@@ -28,7 +33,7 @@ class BaseNetwork(TorchModelV2, nn.Module, ABC):
         TorchModelV2.__init__(
             self, obs_space, action_space, num_outputs, model_config, name
         )
-        nn.Module.__init__(self)
+        BaseModule.__init__(self)
 
         self.obs_space = obs_space
 
@@ -104,7 +109,3 @@ class BaseNetwork(TorchModelV2, nn.Module, ABC):
     @abstractmethod
     def _create_hidden_layers(self, obs_space, model_config):
         pass
-
-    @property
-    def device(self):
-        return next(self.parameters()).device

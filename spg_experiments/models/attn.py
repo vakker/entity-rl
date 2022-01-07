@@ -2,11 +2,11 @@ import torch
 from torch import nn
 from torch_geometric.data import Batch, Data
 
-from .base import BaseNetwork
+from .base import BasePolicy
 from .slot_attention import SlotAttention
 
 
-class AttnNetworkRef(BaseNetwork):
+class AttnPolicyRef(BasePolicy):
     def _hidden_layers(self, input_dict):
         # FIXME: manual batching is used to work around stacking
         # variable element size observations. This needs to be
@@ -49,7 +49,7 @@ class AttnNetworkRef(BaseNetwork):
         return out_channels_all
 
 
-class AttnNetwork(BaseNetwork):
+class AttnPolicy(BasePolicy):
     def _hidden_layers(self, input_dict):
         g_batch = []
 

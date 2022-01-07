@@ -31,10 +31,10 @@ def register():
     register_env("spg_set", envs.PgSet)
     register_env("spg_graph", envs.PgGraph)
 
-    ModelCatalog.register_custom_model("fc_net", models.FcNetwork)
-    ModelCatalog.register_custom_model("cnn1d_net", models.Cnn1DNetwork)
-    ModelCatalog.register_custom_model("attn_net", models.AttnNetwork)
-    ModelCatalog.register_custom_model("gnn_net", models.GnnNetwork)
+    ModelCatalog.register_custom_model("fc_net", models.FcPolicy)
+    ModelCatalog.register_custom_model("cnn1d_net", models.Cnn1DPolicy)
+    ModelCatalog.register_custom_model("attn_net", models.AttnPolicy)
+    ModelCatalog.register_custom_model("gnn_net", models.GnnPolicy)
 
 
 def get_env_creator(env_name):
