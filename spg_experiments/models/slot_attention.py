@@ -82,16 +82,16 @@ class SlotAttentionRef(BaseModule):
         slots = slots.reshape(batch_size, self.num_slots, -1)
         return slots + self.mlp(self.norm_pre_ff(slots))
 
-    def _get_M(self, k, q, batch):
+    def _get_M(self, k, q, batch=None):
         return torch.matmul(k, q.transpose(2, 1)) * self.scale
 
     def _get_attn(self, M):
         return M.softmax(dim=-1) + self.eps
 
-    def _get_W(self, attn, batch):
+    def _get_W(self, attn, batch=None):
         return attn / attn.sum(dim=1, keepdim=True)
 
-    def _get_updates(self, W, v, batch):
+    def _get_updates(self, W, v, batch=None):
         return torch.matmul(W.transpose(2, 1), v)
 
     def _prep_inputs(self, inputs):
@@ -130,6 +130,8 @@ class SlotAttentionRef(BaseModule):
 
 
 class SlotAttention(SlotAttentionRef):
+    # pylint: disable=signature-differs
+
     def _get_M(self, k, q, batch):
         q_scatter = q[batch]
         return torch.matmul(k, q_scatter.transpose(2, 1)) * self.scale
