@@ -1,5 +1,4 @@
 import warnings
-from abc import ABC, abstractmethod
 
 import gym
 import numpy as np
@@ -8,7 +7,7 @@ from ray.rllib.utils.spaces.repeated import Repeated
 from .base import PlaygroundEnv, type_str
 
 
-class PgSet(PlaygroundEnv, ABC):
+class PgSet(PlaygroundEnv):
     max_elements = 75
 
     def _create_agent(self, agent_type, sensors_name, fov, resolution, keyboard=False):
@@ -63,7 +62,6 @@ class PgSet(PlaygroundEnv, ABC):
 
         return x
 
-    @abstractmethod
     def process_obs(self, obs):
         x = self.create_entity_features(obs)
         sensor_values = {"x": x}

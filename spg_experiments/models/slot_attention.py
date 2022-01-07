@@ -19,6 +19,7 @@ class SlotAttentionRef(nn.Module):
         eps=1e-8,
         hidden_dim=128,
         fixed_slots=False,
+        final_act=True,
     ):
         super().__init__()
 
@@ -54,9 +55,11 @@ class SlotAttentionRef(nn.Module):
         self.norm_slots = nn.LayerNorm(d_out)
         self.norm_pre_ff = nn.LayerNorm(d_out)
 
+        self.final_act = final_act
         self.fixed_slots = fixed_slots
+        self.out_channels = num_slots * d_out
 
-    def _get_slots(self, batch_size):
+    def _get_slots(self, batch_size, device):
         n_s = self.num_slots
 
         mu = self.slots_mu.expand(batch_size, n_s, -1)
@@ -64,7 +67,7 @@ class SlotAttentionRef(nn.Module):
 
         if not self.fixed_slots:
             sigma = self.slots_logsigma.exp().expand(batch_size, n_s, -1)
-            slots += sigma * torch.randn(mu.shape)
+            slots = slots + sigma * torch.randn(mu.shape, device=device)
 
         return slots
 
@@ -94,8 +97,7 @@ class SlotAttentionRef(nn.Module):
         assert x.dim() == 3
         batch_size = x.shape[0]
 
-        slots = self._get_slots(batch_size)
-        slots = slots.to(x.device)
+        slots = self._get_slots(batch_size, x.device)
 
         x = self.norm_input(x)
         k = self.to_k(x)
@@ -137,8 +139,7 @@ class SlotAttention(SlotAttentionRef):
         x = x.unsqueeze(1)
         batch_size = torch.max(batch) + 1
 
-        slots = self._get_slots(batch_size)
-        slots = slots.to(x.device)
+        slots = self._get_slots(batch_size, x.device)
 
         x = self.norm_input(x)
         k = self.to_k(x)
@@ -156,5 +157,8 @@ class SlotAttention(SlotAttentionRef):
             updates = self._get_updates(W, v, batch)
 
             slots = self._slots_update(updates, slots_prev, batch_size)
+
+        if self.final_act:
+            return torch.relu(slots)
 
         return slots
