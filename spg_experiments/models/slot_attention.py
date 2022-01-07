@@ -118,6 +118,9 @@ class SlotAttentionRef(BaseModule):
 
             slots = self._slots_update(updates, slots_prev, batch_size)
 
+        if self.final_act:
+            return torch.relu(slots)
+
         return slots
 
 
