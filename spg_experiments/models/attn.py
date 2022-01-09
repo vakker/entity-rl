@@ -76,7 +76,7 @@ class AttnPolicy(BasePolicy):
         self._n_input_size = in_channels
         num_slots = model_config["custom_model_config"]["num_slots"]
         hidden_dim = model_config["custom_model_config"]["hidden_dim"]
-        final_act = model_config["custom_model_config"]["final_act"]
+        final_act = model_config["custom_model_config"].get("final_act", True)
 
         slot_attn = SlotAttention(
             num_slots=num_slots,
