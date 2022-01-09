@@ -46,8 +46,9 @@ def exp_name(prefix):
 
 
 def trial_str_creator(trial):
+    trial_base_name = f"trial-{trial.trial_id}"
     if not trial.evaluated_params:
-        return f"trial-{trial.trial_id}"
+        return trial_base_name
 
     params = {
         k.split("/")[-1]: p[-1] if isinstance(p, list) else str(p)
@@ -55,7 +56,7 @@ def trial_str_creator(trial):
     }
     name = "-".join([f"{k}:{p}" for k, p in params.items()])
     name = name.replace("/", "_")
-    return f"trial-{name}"
+    return f"{trial_base_name}-{name}"
 
 
 def load_dict(dict_path):
@@ -164,10 +165,7 @@ def get_tune_params(args):
         "config": configs,
         "run_or_experiment": conf_yaml["run"],
     }
-    if args["tune"]:
-        tune_params.update(get_search_alg_sched(conf_yaml, args, is_grid_search))
-    else:
-        tune_params["num_samples"] = 1
+    tune_params.update(get_search_alg_sched(conf_yaml, args, is_grid_search))
 
     if args["max_iters"]:
         stop = {"training_iteration": args["max_iters"]}
@@ -194,6 +192,9 @@ def get_tune_params(args):
 
 
 def get_search_alg_sched(conf_yaml, args, is_grid_search):
+    if not args["tune"]:
+        return {"num_samples": args["num_samples"]}
+
     alg_name = conf_yaml.get("search_alg")
     metric = conf_yaml["metric"]
 
