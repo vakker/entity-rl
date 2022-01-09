@@ -11,6 +11,11 @@ class AtariSet(AtariEnv):
 
     max_elements = 50
 
+    def __init__(self, config):
+        super().__init__(config)
+
+        self._color_cache = None
+
     @property
     def x_shape(self):
         # RGB, pos (row, col), size (row, col) -> 7
@@ -31,7 +36,7 @@ class AtariSet(AtariEnv):
     def create_entity_features(self, obs):
         x = []
 
-        segments = get_segments(obs)
+        segments = self.get_segments(obs)
         props = regionprops(segments)
 
         for p in props:
@@ -53,22 +58,30 @@ class AtariSet(AtariEnv):
         sensor_values = {"x": x}
         return sensor_values
 
+    def get_segments(self, obs):
+        colors_np = obs.reshape((-1, 3))
+        if self._color_cache is None:
+            self._color_cache = list({tuple(c) for c in colors_np.tolist()})
 
-def get_segments(obs):
-    color_ids = get_color_ids(obs)
-    return label(color_ids, background=0, connectivity=2)
+        color_ids = self._get_segments(colors_np)
 
+        if np.any(color_ids == -1):
+            self._color_cache = list({tuple(c) for c in colors_np.tolist()})
+            color_ids = self._get_segments(colors_np)
 
-def get_color_ids(obs):
-    colors_np = obs.reshape((-1, 3))
-    colors = list({tuple(c) for c in colors_np.tolist()})
+        color_ids = color_ids.reshape(obs.shape[:2])
+        return label(color_ids, background=0, connectivity=2)
 
-    conds = {c: np.all(obs == c, axis=2) for c in colors}
-    color_ids = np.zeros(obs.shape[:2], dtype=np.int)
-    colors = sorted(colors, key=lambda c: np.sum(conds[c]), reverse=True)
+    def _get_segments(self, colors_np):
+        colors = self._color_cache
 
-    for i, c in enumerate(colors):
-        cond = conds[c]
-        color_ids[cond] = i
+        conds = [np.all(colors_np == c, axis=1) for c in colors]
+        sizes = np.array([np.sum(c) for c in conds])
+        color_order = np.argsort(sizes)[::-1]
+        color_ids = -1 * np.ones(colors_np.shape[0], dtype=np.int)
 
-    return color_ids
+        for i in color_order:
+            cond = conds[i]
+            color_ids[cond] = i
+
+        return color_ids
