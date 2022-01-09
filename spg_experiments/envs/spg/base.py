@@ -29,7 +29,7 @@ class PlaygroundEnv(gym.Env, ABC):
     metadata = {"render.modes": ["human", "rgb_array"]}
 
     def __init__(self, config):
-        sensors_name = config["sensors_name"]
+        sensors_name = config.get("sensors_name", "rgb_depth")
         sensors_fov = config.get("sensors_fov", 360)
         sensors_res = config.get("sensors_res", 64)
         multisteps = config.get("multisteps")
