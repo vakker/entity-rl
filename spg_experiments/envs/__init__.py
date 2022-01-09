@@ -1,5 +1,13 @@
-from .base import PgDict, PgFlat, PgStacked
-from .env_graph import PgGraph
-from .env_set import PgSet
+from .atari import AtariGraph, AtariRaw, AtariSet
+from .spg import PgDict, PgFlat, PgGraph, PgSet, PgStacked
 
-__all__ = ["PgFlat", "PgDict", "PgStacked", "PgSet", "PgGraph"]
+__all__ = [
+    "PgFlat",
+    "PgDict",
+    "PgStacked",
+    "PgSet",
+    "PgGraph",
+    "AtariRaw",
+    "AtariSet",
+    "AtariGraph",
+]

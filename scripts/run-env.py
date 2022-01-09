@@ -4,7 +4,6 @@ import shutil
 from os import path as osp
 
 import matplotlib.pyplot as plt
-import numpy as np
 import requests
 from skimage import io as skio
 from tqdm import trange
@@ -47,7 +46,7 @@ def main(args):
             act = env.agent.controller.generate_actions()
             act = [v for k, v in act.items()]
         else:
-            act = np.random.rand(2, 1) * 2 - 1
+            act = env.action_space.sample()
 
         obs, _, done, _ = env.step(act)
 
