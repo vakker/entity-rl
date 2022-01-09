@@ -20,14 +20,14 @@ class AtariEnv(gym.Env, ABC):
 
         self.video_dir = config.get("video_dir")
 
-        self.time_limit = 1000  # TODO: ?
         self.episodes = 0
-
-        self.action_space = self._env.action_space
-        self._set_obs_space()
 
         self.time_steps = 0
         self.obs_raw = None
+        self._crop = [25, 10]
+
+        self.action_space = self._env.action_space
+        self._set_obs_space()
 
     @abstractmethod
     def _set_obs_space(self):
@@ -35,17 +35,14 @@ class AtariEnv(gym.Env, ABC):
 
     def step(self, action):
         obs, reward, done, info = self._env.step(action)
-        self.time_steps += 1
-        done = done or self.time_steps >= self.time_limit
 
-        return self.process_obs(obs), reward, done, info
+        return self._process_obs(obs), reward, done, info
 
     def reset(self):
         obs = self._env.reset()
         self.episodes += 1
-        self.time_steps = 0
 
-        return self.process_obs(obs)
+        return self._process_obs(obs)
 
     def render(self, mode="human"):
         if self.video_dir is None:
@@ -55,6 +52,12 @@ class AtariEnv(gym.Env, ABC):
 
     def close(self):
         self._env.close()
+
+    def crop_obs(self, obs):
+        return obs[self._crop[0] : -self._crop[1]]
+
+    def _process_obs(self, obs):
+        return self.process_obs(self.crop_obs(obs))
 
     @abstractmethod
     def process_obs(self, obs):
@@ -67,7 +70,9 @@ class AtariEnv(gym.Env, ABC):
 
 class AtariRaw(AtariEnv):
     def _set_obs_space(self):
-        self.observation_space = self._env.observation_space
+        orig = self._env.observation_space
+        cropped_shape = (orig.shape[0] - sum(self._crop), orig.shape[1], orig.shape[2])
+        self.observation_space = gym.spaces.Box(0, 1, cropped_shape, dtype=np.float32)
 
     def process_obs(self, obs):
         self.obs_raw = obs

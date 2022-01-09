@@ -11,7 +11,7 @@ from .base import AtariEnv
 class AtariSet(AtariEnv):
     # pylint: disable=no-self-use
 
-    max_elements = 50
+    max_elements = 80
 
     def __init__(self, config):
         super().__init__(config)
