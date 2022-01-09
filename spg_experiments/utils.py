@@ -31,6 +31,10 @@ def register():
     register_env("spg_set", envs.PgSet)
     register_env("spg_graph", envs.PgGraph)
 
+    register_env("atari_raw", envs.AtariRaw)
+    register_env("atari_set", envs.AtariSet)
+    register_env("atari_graph", envs.AtariGraph)
+
     ModelCatalog.register_custom_model("fc_net", models.FcPolicy)
     ModelCatalog.register_custom_model("cnn1d_net", models.Cnn1DPolicy)
     ModelCatalog.register_custom_model("attn_net", models.AttnPolicy)

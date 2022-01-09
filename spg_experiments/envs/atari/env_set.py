@@ -14,7 +14,7 @@ class AtariSet(AtariEnv):
     @property
     def x_shape(self):
         # RGB, pos (row, col), size (row, col) -> 7
-        return 7
+        return (7,)
 
     @property
     def entity_features(self):

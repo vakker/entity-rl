@@ -16,7 +16,7 @@ class AtariEnv(gym.Env, ABC):
         random.seed(seed)
         np.random.seed(seed)
 
-        self._env = gym.make(config["game_name"])
+        self._env = gym.make(config["pg_name"])
 
         self.video_dir = config.get("video_dir")
 
@@ -34,7 +34,7 @@ class AtariEnv(gym.Env, ABC):
         pass
 
     def step(self, action):
-        obs, reward, done, info = self._env(action)
+        obs, reward, done, info = self._env.step(action)
         self.time_steps += 1
         done = done or self.time_steps >= self.time_limit
 
