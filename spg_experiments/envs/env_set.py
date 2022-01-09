@@ -8,7 +8,7 @@ from .base import PlaygroundEnv, type_str
 
 
 class PgSet(PlaygroundEnv):
-    max_elements = 75
+    max_elements = 80
 
     def _create_agent(self, agent_type, sensors_name, fov, resolution, keyboard=False):
         if sensors_name != "semantic":
