@@ -16,7 +16,7 @@ class AtariGraph(AtariSet):
         }
         self.observation_space = gym.spaces.Dict(d)
 
-    def _process_obs(self, obs):
+    def process_obs(self, obs):
         x = self.create_entity_features(obs)
         sensor_values = {"x": x}
 

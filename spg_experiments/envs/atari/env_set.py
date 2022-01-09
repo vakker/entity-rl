@@ -1,7 +1,9 @@
 import gym
 import numpy as np
 from ray.rllib.utils.spaces.repeated import Repeated
+from skimage.color import label2rgb
 from skimage.measure import label, regionprops
+from skimage.util import img_as_ubyte
 
 from .base import AtariEnv
 
@@ -15,6 +17,17 @@ class AtariSet(AtariEnv):
         super().__init__(config)
 
         self._color_cache = None
+        self.segments = None
+
+    def full_scenario(self):
+        segm = label2rgb(self.segments)
+        img = np.concatenate([self.obs_raw, img_as_ubyte(segm)], axis=1)
+        return img
+
+    def process_obs(self, obs):
+        x = self.create_entity_features(obs)
+        sensor_values = {"x": x}
+        return sensor_values
 
     @property
     def x_shape(self):
@@ -36,7 +49,11 @@ class AtariSet(AtariEnv):
     def create_entity_features(self, obs):
         x = []
 
+        # TODO: optimize this further
         segments = self.get_segments(obs)
+        self.obs_raw = obs
+        self.segments = segments
+
         props = regionprops(segments)
 
         for p in props:
@@ -52,11 +69,6 @@ class AtariSet(AtariEnv):
             x.append(node_feat)
 
         return x
-
-    def _process_obs(self, obs):
-        x = self.create_entity_features(obs)
-        sensor_values = {"x": x}
-        return sensor_values
 
     def get_segments(self, obs):
         colors_np = obs.reshape((-1, 3))
@@ -80,8 +92,8 @@ class AtariSet(AtariEnv):
         color_order = np.argsort(sizes)[::-1]
         color_ids = -1 * np.ones(colors_np.shape[0], dtype=np.int)
 
-        for i in color_order:
-            cond = conds[i]
+        for i, color_idx in enumerate(color_order):
+            cond = conds[color_idx]
             color_ids[cond] = i
 
         return color_ids

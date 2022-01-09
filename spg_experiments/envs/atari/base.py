@@ -40,9 +40,6 @@ class AtariEnv(gym.Env, ABC):
 
         return self.process_obs(obs), reward, done, info
 
-    def full_scenario(self):
-        return self.obs_raw
-
     def reset(self):
         obs = self._env.reset()
         self.episodes += 1
@@ -59,12 +56,12 @@ class AtariEnv(gym.Env, ABC):
     def close(self):
         self._env.close()
 
+    @abstractmethod
     def process_obs(self, obs):
-        self.obs_raw = obs
-        return self._process_obs(obs)
+        pass
 
     @abstractmethod
-    def _process_obs(self, obs):
+    def full_scenario(self):
         pass
 
 
@@ -72,5 +69,9 @@ class AtariRaw(AtariEnv):
     def _set_obs_space(self):
         self.observation_space = self._env.observation_space
 
-    def _process_obs(self, obs):
+    def process_obs(self, obs):
+        self.obs_raw = obs
         return obs
+
+    def full_scenario(self):
+        return self.obs_raw
