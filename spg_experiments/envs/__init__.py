@@ -1,5 +1,3 @@
-from .base import PgDict, PgFlat, PgStacked
-from .env_graph import PgGraph
-from .env_set import PgSet
+from .spg import PgDict, PgFlat, PgGraph, PgSet, PgStacked
 
 __all__ = ["PgFlat", "PgDict", "PgStacked", "PgSet", "PgGraph"]
