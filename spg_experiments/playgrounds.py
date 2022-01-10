@@ -278,7 +278,6 @@ class DispenserFireballsBase:
         self._elems = self._place_elements()
 
 
-
 @PlaygroundRegister.register("nowall", "candy_poison")
 class NoWallCandyPoison(CandyPoisonBase, PlainPG):
     pass
