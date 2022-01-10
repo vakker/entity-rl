@@ -229,22 +229,21 @@ class DispenserFireballsBase:
         # Get Random coordinates
         self._elems = self._place_elements()
 
-
     def _place_elements(self):
 
-        y_pos_area = np.random.uniform(self.size[1]/3, 2*self.size[1]/3)
+        y_pos_area = np.random.uniform(self.size[1] / 3, 2 * self.size[1] / 3)
         area_prod = CoordinateSampler(
             center=[self._center[0] / 2, y_pos_area],
             area_shape="rectangle",
             size=[s / 3 for s in self._size],
         )
 
-        y_pos_red = np.random.uniform(20, self._size[1]-20)
+        y_pos_red = np.random.uniform(20, self._size[1] - 20)
         portal_red = Portal(color=PortalColor.RED)
         self.add_element(portal_red, ([7, y_pos_red], np.pi))
 
-        pos_up = np.random.uniform(20, self._size[1]/2-20)
-        pos_down = np.random.uniform(self._size[1]/2 + 20, self._size[1]-20)
+        pos_up = np.random.uniform(20, self._size[1] / 2 - 20)
+        pos_down = np.random.uniform(self._size[1] / 2 + 20, self._size[1] - 20)
         portal_blue_is_up = np.random.choice(2)
         if portal_blue_is_up:
             y_pos_blue = pos_up
