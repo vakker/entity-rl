@@ -2,7 +2,6 @@
 
 
 import numpy as np
-from numpy.lib.function_base import disp
 from simple_playgrounds.common.definitions import CollisionTypes
 from simple_playgrounds.common.position_utils import CoordinateSampler, Trajectory
 from simple_playgrounds.common.spawner import Spawner
@@ -71,7 +70,7 @@ class SingleRoom(SPGSingleRoom):
         super().__init__(*args, **kwargs)
 
 
-class CandyPoisonBase:
+class CandyPoisonBase(SingleRoom):
     def __init__(self, size=(200, 200), probability_production=0.4):
         super().__init__(size)
         coord_scaler = max(size) / 200
@@ -100,7 +99,7 @@ class CandyPoisonBase:
         self.add_spawner(spawner)
 
 
-class CandyFireballsBase:
+class CandyFireballsBase(SingleRoom):
     def __init__(self, size=(200, 200), probability_production=0.4):
         super().__init__(size)
         coord_scaler = max(size) / 200
@@ -171,7 +170,7 @@ class CandyFireballsBase:
         self.add_spawner(spawner)
 
 
-class DispenserFireballsBase:
+class DispenserFireballsBase(SingleRoom):
     def __init__(self, size=(200, 200)):
         super().__init__(size)
 
@@ -225,9 +224,7 @@ class DispenserFireballsBase:
 
         self._coord_scaler = coord_scaler
 
-        #######################
-        # Get Random coordinates
-        self._elems = self._place_elements()
+        self._elems = []
 
     def _place_elements(self):
 
@@ -271,6 +268,7 @@ class DispenserFireballsBase:
         return portal_red, portal_blue, dispenser
 
     def reset(self):
+        super().reset()
 
         for elem in self._elems:
             self._remove_element_from_playground(elem)
@@ -278,62 +276,29 @@ class DispenserFireballsBase:
         self._elems = self._place_elements()
 
 
-@PlaygroundRegister.register("nowall", "candy_poison")
-class NoWallCandyPoison(CandyPoisonBase, PlainPG):
-    pass
-
-
-@PlaygroundRegister.register("nowall", "candy_fireballs")
-class NoWallCandyFireballs(CandyFireballsBase, PlainPG):
-    pass
-
-
-@PlaygroundRegister.register("nowall", "candy_poison_large")
-class NoWallCandyPoisonLarge(NoWallCandyPoison):
-    def __init__(self, size=(1000, 1000), probability_production=0.4):
-        super().__init__(size, probability_production=0.4)
-
-
-@PlaygroundRegister.register("nowall", "candy_fireballs_large")
-class NoWallCandyFireballsLarge(NoWallCandyFireballs):
-    def __init__(self, size=(1000, 1000), probability_production=0.4):
-        super().__init__(size, probability_production=0.4)
-
-
 @PlaygroundRegister.register("wall", "candy_poison")
-class WallCandyPoison(CandyPoisonBase, SingleRoom):
+class WallCandyPoison(CandyPoisonBase):
     pass
 
 
 @PlaygroundRegister.register("wall", "candy_fireballs")
-class WallCandyFireballs(CandyFireballsBase, SingleRoom):
+class WallCandyFireballs(CandyFireballsBase):
+    pass
+
+
+@PlaygroundRegister.register("wall", "dispenser_fireballs")
+class WallDispenserFireballs(DispenserFireballsBase):
     pass
 
 
 @PlaygroundRegister.register("wall", "candy_poison_large")
 class WallCandyPoisonLarge(WallCandyPoison):
-    def __init__(self, size=(1000, 1000), probability_production=0.4):
-        super().__init__(size, probability_production=0.4)
+    def __init__(self, size=(1000, 1000)):
+        super().__init__(size)
 
 
 @PlaygroundRegister.register("wall", "candy_fireballs_large")
 class WallCandyFireballsLarge(WallCandyFireballs):
-    def __init__(self, size=(1000, 1000), probability_production=0.4):
-        super().__init__(size, probability_production=0.4)
-
-
-@PlaygroundRegister.register("nowall", "dispenser_fireballs")
-class NoWallDispenserFireballs(DispenserFireballsBase, PlainPG):
-    pass
-
-
-@PlaygroundRegister.register("wall", "dispenser_fireballs")
-class WallDispenserFireballs(DispenserFireballsBase, SingleRoom):
-    pass
-
-
-@PlaygroundRegister.register("nowall", "dispenser_fireballs_large")
-class NoWallDispenserFireballsLarge(NoWallDispenserFireballs):
     def __init__(self, size=(1000, 1000)):
         super().__init__(size)
 
