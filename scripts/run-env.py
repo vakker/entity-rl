@@ -39,33 +39,40 @@ def main(args):
 
     plot_obj = None
 
-    for j in trange(args.iters, disable=args.no_bar):
-        if args.use_serve:
-            act = get_action(obs, args.serve_port)
-        elif args.keys:
-            act = env.agent.controller.generate_actions()
-            act = [v for k, v in act.items()]
-        else:
-            act = env.action_space.sample()
+    for i in trange(args.episodes, disable=args.no_bar):
+        frames_dir = osp.join("frames", f"episode-{i:02d}")
 
-        obs, _, done, _ = env.step(act)
+        for j in trange(args.iters, disable=args.no_bar, leave=False):
+            if args.use_serve:
+                act = get_action(obs, args.serve_port)
+            elif args.keys:
+                act = env.agent.controller.generate_actions()
+                act = [v for k, v in act.items()]
+            else:
+                act = env.action_space.sample()
 
-        if args.save:
-            skio.imsave(f"frames/frame-{j:06d}.png", env.full_scenario())
+            obs, _, done, _ = env.step(act)
 
-        if args.render:
-            if plot_obj is None:
-                plot_obj = plt.imshow(env.full_scenario())
-                plt.show(block=False)
+            if args.save:
+                if not osp.exists(frames_dir):
+                    os.mkdir(frames_dir)
 
-            plot_obj.set_data(env.full_scenario())
-            plt.gcf().canvas.draw_idle()
-            plt.gcf().canvas.start_event_loop(0.01)
+                img_path = osp.join(frames_dir, f"frame-{j:06d}.png")
+                skio.imsave(img_path, env.full_scenario())
 
-        if done:
-            break
+            if args.render:
+                if plot_obj is None:
+                    plot_obj = plt.imshow(env.full_scenario())
+                    plt.show(block=False)
 
-    env.reset()
+                plot_obj.set_data(env.full_scenario())
+                plt.gcf().canvas.draw_idle()
+                plt.gcf().canvas.start_event_loop(0.01)
+
+            if done:
+                break
+
+        env.reset()
 
 
 if __name__ == "__main__":
@@ -78,6 +85,7 @@ if __name__ == "__main__":
     PARSER.add_argument("-k", "--keys", action="store_true")
     PARSER.add_argument("-d", "--debug", action="store_true")
     PARSER.add_argument("-i", "--iters", type=int, default=100)
+    PARSER.add_argument("-e", "--episodes", type=int, default=1)
     PARSER.add_argument("--use-serve", action="store_true")
     PARSER.add_argument("--serve-port", type=int, default=7999)
 
