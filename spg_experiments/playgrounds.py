@@ -237,6 +237,8 @@ class DispenserFireballsBase(SingleRoom):
 
         y_pos_red = np.random.uniform(20, self._size[1] - 20)
         portal_red = Portal(color=PortalColor.RED)
+        portal_red.temporary = True
+
         self.add_element(portal_red, ([7, y_pos_red], np.pi))
 
         pos_up = np.random.uniform(20, self._size[1] / 2 - 20)
@@ -250,6 +252,7 @@ class DispenserFireballsBase(SingleRoom):
             y_pos_disp = pos_up
 
         portal_blue = Portal(color=PortalColor.BLUE)
+        portal_blue.temporary = True
         self.add_element(portal_blue, ([self._size[0] - 7, y_pos_blue], 0))
 
         portal_red.destination = portal_blue
@@ -262,6 +265,7 @@ class DispenserFireballsBase(SingleRoom):
             production_limit=10 * self._coord_scaler,
             radius=10,
             allow_overlapping=False,
+            temporary=True,
         )
         self.add_element(dispenser, [disp_coord, 0])
 
@@ -269,9 +273,6 @@ class DispenserFireballsBase(SingleRoom):
 
     def reset(self):
         super().reset()
-
-        for elem in self._elems:
-            self._remove_element_from_playground(elem)
 
         self._elems = self._place_elements()
 
