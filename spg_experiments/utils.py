@@ -120,8 +120,11 @@ def parse_tune_configs(configs, use_tune=False):
     for k, v in configs.get("tune", {}).items():
         if v["type"] == "grid_search":
             is_grid_search = True
+            value = getattr(tune, v["type"])(v["args"])
 
-        value = getattr(tune, v["type"])(*v["args"])
+        else:
+            value = getattr(tune, v["type"])(*v["args"])
+
         update_recursive(exp, k, value)
 
     return exp, is_grid_search
