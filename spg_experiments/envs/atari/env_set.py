@@ -13,7 +13,7 @@ class AtariSet(AtariEnv):
 
     def __init__(self, config):
         if config["pg_name"] == "PongNoFrameskip-v4":
-            self.max_elements = 5
+            self.max_elements = 10
         elif config["pg_name"] == "SkiingNoFrameskip-v4":
             self.max_elements = 30
         else:
