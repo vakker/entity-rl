@@ -11,13 +11,18 @@ from .base import AtariEnv
 class AtariSet(AtariEnv):
     # pylint: disable=no-self-use
 
-    max_elements = 80
-
     def __init__(self, config):
-        super().__init__(config)
+        if config["pg_name"] == "PongNoFrameskip-v4":
+            self.max_elements = 5
+        elif config["pg_name"] == "SkiingNoFrameskip-v4":
+            self.max_elements = 30
+        else:
+            self.max_elements = 80
 
         self._color_cache = None
         self.segments = None
+
+        super().__init__(config)
 
     def full_scenario(self):
         segm = label2rgb(self.segments)
