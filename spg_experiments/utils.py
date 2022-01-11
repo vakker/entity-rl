@@ -51,7 +51,7 @@ def exp_name(prefix):
 
 def trial_str_creator(trial):
     trial_base_name = f"trial-{trial.trial_id}"
-    if not trial.evaluated_params:
+    if not trial.evaluated_params or len(trial.evaluated_params) > 3:
         return trial_base_name
 
     params = {
