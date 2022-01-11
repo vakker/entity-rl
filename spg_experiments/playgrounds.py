@@ -235,14 +235,14 @@ class DispenserFireballsBase(SingleRoom):
             size=[s / 3 for s in self._size],
         )
 
-        y_pos_red = np.random.uniform(20, self._size[1] - 20)
+        y_pos_red = np.random.uniform(50, self._size[1] - 50)
         portal_red = Portal(color=PortalColor.RED)
         portal_red.temporary = True
 
-        self.add_element(portal_red, ([7, y_pos_red], np.pi))
+        self.add_element(portal_red, ([5, y_pos_red], np.pi))
 
-        pos_up = np.random.uniform(20, self._size[1] / 2 - 20)
-        pos_down = np.random.uniform(self._size[1] / 2 + 20, self._size[1] - 20)
+        pos_up = np.random.uniform(50, self._size[1] / 2 - 25)
+        pos_down = np.random.uniform(self._size[1] / 2 + 25, self._size[1] - 50)
         portal_blue_is_up = np.random.choice(2)
         if portal_blue_is_up:
             y_pos_blue = pos_up
@@ -253,7 +253,7 @@ class DispenserFireballsBase(SingleRoom):
 
         portal_blue = Portal(color=PortalColor.BLUE)
         portal_blue.temporary = True
-        self.add_element(portal_blue, ([self._size[0] - 7, y_pos_blue], 0))
+        self.add_element(portal_blue, ([self._size[0] - 5, y_pos_blue], 0))
 
         portal_red.destination = portal_blue
         portal_blue.destination = portal_red
