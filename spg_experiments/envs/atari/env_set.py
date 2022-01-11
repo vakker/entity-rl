@@ -2,6 +2,7 @@ import gym
 import numpy as np
 from ray.rllib.utils.spaces.repeated import Repeated
 from skimage.color import label2rgb
+from skimage.draw import disk, rectangle_perimeter
 from skimage.measure import label, regionprops
 from skimage.util import img_as_ubyte
 
@@ -21,12 +22,30 @@ class AtariSet(AtariEnv):
 
         self._color_cache = None
         self.segments = None
+        self.props = None
 
         super().__init__(config)
 
     def full_scenario(self):
-        segm = label2rgb(self.segments)
-        img = np.concatenate([self.obs_raw, img_as_ubyte(segm)], axis=1)
+        segm = self.obs_raw.copy()
+
+        for p in self.props:
+            rr, cc = disk(p.centroid, 1, shape=segm.shape)
+            segm[rr, cc] = [255, 0, 0]
+
+            rr, cc = rectangle_perimeter(
+                start=p.bbox[:2], end=p.bbox[2:], shape=segm.shape
+            )
+            segm[rr, cc] = [0, 0, 255]
+
+        img = np.concatenate(
+            [
+                self.obs_raw,
+                img_as_ubyte(segm),
+                img_as_ubyte(label2rgb(self.segments)),
+            ],
+            axis=1,
+        )
         return img
 
     def process_obs(self, obs):
@@ -60,6 +79,7 @@ class AtariSet(AtariEnv):
         self.segments = segments
 
         props = regionprops(segments)
+        self.props = props
 
         for p in props:
             color = obs[p.coords[0][0], p.coords[0][1]] / 255
