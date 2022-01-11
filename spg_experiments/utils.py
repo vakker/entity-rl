@@ -152,7 +152,7 @@ def get_tune_params(args):
         "evaluation_num_workers": args["num_workers"] if args["eval_int"] else 0,
         "num_gpus": args["num_gpus"],
         "framework": "torch",
-        "num_envs_per_worker": 1,
+        "num_envs_per_worker": args["envs_per_worker"],
         "batch_mode": "truncate_episodes",
         "observation_filter": "NoFilter",
         "preprocessor_pref": None,

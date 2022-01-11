@@ -66,6 +66,7 @@ if __name__ == "__main__":
     PARSER.add_argument("--concurrency", type=int, default=1)
     PARSER.add_argument("--num-workers", type=int, default=1)
     PARSER.add_argument("--cpus-per-worker", type=float, default=1.0)
+    PARSER.add_argument("--envs-per-worker", type=int, default=1)
     PARSER.add_argument("--num-gpus", type=float, default=1.0)
     PARSER.add_argument("--checkpoint-freq", type=int, default=1)
     PARSER.add_argument("--eval-int", type=int)
