@@ -33,8 +33,12 @@ class AtariSet(AtariEnv):
             rr, cc = disk(p.centroid, 1, shape=segm.shape)
             segm[rr, cc] = [255, 0, 0]
 
+            size = [
+                p.bbox[2] - p.bbox[0],
+                p.bbox[3] - p.bbox[1],
+            ]
             rr, cc = rectangle_perimeter(
-                start=p.bbox[:2], end=p.bbox[2:], shape=segm.shape
+                start=p.bbox[:2], extent=size, shape=segm.shape
             )
             segm[rr, cc] = [0, 0, 255]
 
