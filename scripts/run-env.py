@@ -57,7 +57,7 @@ def main(args):
                 if not osp.exists(frames_dir):
                     os.mkdir(frames_dir)
 
-                img_path = osp.join(frames_dir, f"frame-{j:06d}.png")
+                img_path = osp.join(frames_dir, f"f-{j:06d}.png")
                 skio.imsave(img_path, env.full_scenario())
 
             if args.render:
