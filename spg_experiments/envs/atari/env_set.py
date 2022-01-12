@@ -2,7 +2,7 @@ import gym
 import numpy as np
 from ray.rllib.utils.spaces.repeated import Repeated
 from skimage.color import label2rgb
-from skimage.draw import disk, rectangle_perimeter
+from skimage.draw import disk, rectangle, rectangle_perimeter
 from skimage.measure import label, regionprops
 from skimage.util import img_as_ubyte
 
@@ -30,17 +30,22 @@ class AtariSet(AtariEnv):
         segm = self.obs_raw.copy()
 
         for p in self.props:
-            rr, cc = disk(p.centroid, 1, shape=segm.shape)
-            segm[rr, cc] = [255, 0, 0]
-
             size = [
                 p.bbox[2] - p.bbox[0],
                 p.bbox[3] - p.bbox[1],
             ]
+
+            rr, cc = rectangle(start=p.bbox[:2], extent=size, shape=segm.shape)
+
+            color = self.obs_raw[p.coords[0][0], p.coords[0][1]]
+            segm[rr, cc] = color
             rr, cc = rectangle_perimeter(
                 start=p.bbox[:2], extent=size, shape=segm.shape
             )
             segm[rr, cc] = [0, 0, 255]
+
+            rr, cc = disk(p.centroid, 1, shape=segm.shape)
+            segm[rr, cc] = [255, 0, 0]
 
         img = np.concatenate(
             [
