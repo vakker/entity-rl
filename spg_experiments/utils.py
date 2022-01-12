@@ -10,6 +10,7 @@ from ray.tune.registry import ENV_CREATOR, _global_registry, register_env
 from ray.tune.schedulers import AsyncHyperBandScheduler
 from ray.tune.suggest import ConcurrencyLimiter
 from ray.tune.suggest.ax import AxSearch
+from ray.tune.suggest.hebo import HEBOSearch
 from ray.tune.suggest.hyperopt import HyperOptSearch
 
 from .callbacks import CustomCallbacks
@@ -210,9 +211,11 @@ def get_search_alg_sched(conf_yaml, args, is_grid_search):
 
     else:
         if alg_name == "hyperopt":
-            search_alg = HyperOptSearch(metric=metric, mode="max")
+            search_alg = HyperOptSearch(metric=metric, mode="max", n_initial_points=10)
         elif alg_name == "ax":
             search_alg = AxSearch(metric=metric, mode="max")
+        elif alg_name == "hebo":
+            search_alg = HEBOSearch(metric=metric, mode="max")
         else:
             raise NotImplementedError(f"Search alg {alg_name} not implemented")
 
@@ -226,7 +229,7 @@ def get_search_alg_sched(conf_yaml, args, is_grid_search):
             time_attr="training_iteration",
             metric=metric,
             mode="max",
-            grace_period=50,
+            grace_period=args["grace_period"],
             max_t=max(args["max_iters"], 5),
         )
 
