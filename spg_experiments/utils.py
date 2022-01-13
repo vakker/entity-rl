@@ -124,7 +124,11 @@ def parse_tune_configs(configs, use_tune=False):
             value = getattr(tune, v["type"])(v["args"])
 
         else:
-            value = getattr(tune, v["type"])(*v["args"])
+            if v["type"] == "choice":
+                value = getattr(tune, v["type"])(v["args"])
+
+            else:
+                value = getattr(tune, v["type"])(*v["args"])
 
         update_recursive(exp, k, value)
 
