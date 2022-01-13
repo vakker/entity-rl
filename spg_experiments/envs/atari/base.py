@@ -76,7 +76,7 @@ class AtariRaw(AtariEnv):
 
     def process_obs(self, obs):
         self.obs_raw = obs
-        return obs
+        return obs / 255
 
     def full_scenario(self):
         return self.obs_raw
