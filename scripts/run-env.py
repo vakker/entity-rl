@@ -1,3 +1,5 @@
+# pylint: disable=too-many-branches
+
 import argparse
 import os
 import shutil
@@ -28,19 +30,24 @@ def main(args):
         {"pg_name": args.pg, "sensors_name": "rgb_depth_touch", "keyboard": args.keys}
     )
 
-    if args.save:
-        if osp.exists("frames"):
-            print("Frames dir exists, removing")
-            shutil.rmtree("frames")
+    if args.postfix:
+        frames_base = f"frames-{args.postfix}"
+    else:
+        frames_base = "frames"
 
-        os.mkdir("frames")
+    if args.save:
+        if osp.exists(frames_base):
+            print("Frames dir exists, removing")
+            shutil.rmtree(frames_base)
+
+        os.mkdir(frames_base)
 
     obs = env.reset()
 
     plot_obj = None
 
     for i in trange(args.episodes, disable=args.no_bar):
-        frames_dir = osp.join("frames", f"episode-{i:02d}")
+        frames_dir = osp.join(frames_base, f"episode-{i:02d}")
 
         for j in trange(args.iters, disable=args.no_bar, leave=False):
             if args.use_serve:
@@ -84,6 +91,7 @@ if __name__ == "__main__":
     PARSER.add_argument("-s", "--save", action="store_true")
     PARSER.add_argument("-k", "--keys", action="store_true")
     PARSER.add_argument("-d", "--debug", action="store_true")
+    PARSER.add_argument("--postfix", type=str)
     PARSER.add_argument("-i", "--iters", type=int, default=100)
     PARSER.add_argument("-e", "--episodes", type=int, default=1)
     PARSER.add_argument("--use-serve", action="store_true")
