@@ -13,6 +13,14 @@ class AtariSet(AtariEnv):
     # pylint: disable=no-self-use
 
     def __init__(self, config):
+        super().__init__(config)
+
+        self._color_cache = None
+        self.segments = None
+        self.props = None
+
+        self.stack_size = self._env.observation_space.shape[-1] // 3
+
         if config["pg_name"] == "PongNoFrameskip-v4":
             self.max_elements = 10
         elif config["pg_name"] == "SkiingNoFrameskip-v4":
@@ -20,11 +28,7 @@ class AtariSet(AtariEnv):
         else:
             self.max_elements = 80
 
-        self._color_cache = None
-        self.segments = None
-        self.props = None
-
-        super().__init__(config)
+        self.max_elements *= self.stack_size
 
     def full_scenario(self):
         segm = self.obs_raw.copy()
@@ -64,8 +68,8 @@ class AtariSet(AtariEnv):
 
     @property
     def x_shape(self):
-        # RGB, pos (row, col), size (row, col) -> 7
-        return (7,)
+        # RGB, pos (row, col), size (row, col), stack depth -> 8
+        return (8,)
 
     @property
     def entity_features(self):
@@ -77,34 +81,46 @@ class AtariSet(AtariEnv):
         }
 
     def _set_obs_space(self):
-        self.observation_space = gym.spaces.Dict(self.entity_features)
+        return gym.spaces.Dict(self.entity_features)
 
     def create_entity_features(self, obs):
         x = []
 
-        # TODO: optimize this further
-        segments = self.get_segments(obs)
-        self.obs_raw = obs
+        for stack_nr in range(self.stack_size):
+            c_min = stack_nr * 3
+            c_max = (stack_nr + 1) * 3
+            frame = obs[:, :, c_min:c_max]
+
+            segments = self.get_segments(frame)
+            props = regionprops(segments)
+
+            for p in props:
+                color = frame[p.coords[0][0], p.coords[0][1]] / 255
+                pos = np.array(p.centroid) / frame.shape[:2]
+                size = [
+                    p.bbox[2] - p.bbox[0],
+                    p.bbox[3] - p.bbox[1],
+                ]
+                size = np.array(size) / frame.shape[:2]
+
+                node_feat = np.concatenate(
+                    [
+                        color,
+                        pos,
+                        size,
+                        [stack_nr / self.stack_size],
+                    ]
+                ).astype(np.float32)
+                x.append(node_feat)
+
+        self.obs_raw = frame
         self.segments = segments
-
-        props = regionprops(segments)
         self.props = props
-
-        for p in props:
-            color = obs[p.coords[0][0], p.coords[0][1]] / 255
-            pos = np.array(p.centroid) / obs.shape[:2]
-            size = [
-                p.bbox[2] - p.bbox[0],
-                p.bbox[3] - p.bbox[1],
-            ]
-            size = np.array(size) / obs.shape[:2]
-
-            node_feat = np.concatenate([color, pos, size]).astype(np.float32)
-            x.append(node_feat)
 
         return x
 
     def get_segments(self, obs):
+        # TODO: optimize this further
         colors_np = obs.reshape((-1, 3))
         if self._color_cache is None:
             self._color_cache = list({tuple(c) for c in colors_np.tolist()})

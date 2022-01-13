@@ -14,7 +14,7 @@ class AtariGraph(AtariSet):
                 self.max_elements ** 2,
             ),
         }
-        self.observation_space = gym.spaces.Dict(d)
+        return gym.spaces.Dict(d)
 
     def process_obs(self, obs):
         x = self.create_entity_features(obs)

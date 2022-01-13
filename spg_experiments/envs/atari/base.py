@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 
 import gym
 import numpy as np
+from ray.rllib.env.wrappers import atari_wrappers as wrappers
 
 
 class AtariEnv(gym.Env, ABC):
@@ -17,6 +18,8 @@ class AtariEnv(gym.Env, ABC):
         np.random.seed(seed)
 
         self._env = gym.make(config["pg_name"])
+        if config.get("wrap", True):
+            self._env = wrap_deepmind(self._env)
 
         self.video_dir = config.get("video_dir")
 
@@ -27,7 +30,14 @@ class AtariEnv(gym.Env, ABC):
         self._crop = [25, 10]
 
         self.action_space = self._env.action_space
-        self._set_obs_space()
+        self._obs_space = None
+
+    @property
+    def observation_space(self):
+        if self._obs_space is None:
+            self._obs_space = self._set_obs_space()
+
+        return self._obs_space
 
     @abstractmethod
     def _set_obs_space(self):
@@ -72,7 +82,7 @@ class AtariRaw(AtariEnv):
     def _set_obs_space(self):
         orig = self._env.observation_space
         cropped_shape = (orig.shape[0] - sum(self._crop), orig.shape[1], orig.shape[2])
-        self.observation_space = gym.spaces.Box(0, 1, cropped_shape, dtype=np.float32)
+        return gym.spaces.Box(0, 1, cropped_shape, dtype=np.float32)
 
     def process_obs(self, obs):
         self.obs_raw = obs
@@ -80,3 +90,41 @@ class AtariRaw(AtariEnv):
 
     def full_scenario(self):
         return self.obs_raw
+
+
+class SkipEnv(gym.Wrapper):
+    def __init__(self, env, skip=4):
+        """Return only every `skip`-th frame"""
+        gym.Wrapper.__init__(self, env)
+        self._skip = skip
+
+    def step(self, action):
+        total_reward = 0.0
+        for _ in range(self._skip):
+            obs, reward, done, info = self.env.step(action)
+            total_reward += reward
+            if done:
+                break
+
+        return obs, total_reward, done, info
+
+
+def wrap_deepmind(env, framestack=True, skip=4, stack=4):
+    """Configure environment for DeepMind-style Atari. See:
+    https://github.com/ray-project/ray/blob/master/rllib/env/wrappers/atari_wrappers.py
+    """
+    env = wrappers.MonitorEnv(env)
+    env = wrappers.NoopResetEnv(env, noop_max=30)
+    if env.spec is not None and "NoFrameskip" in env.spec.id:
+        env = SkipEnv(env, skip=skip)  # Don't use max, only skip
+        # env = wrappers.MaxAndSkipEnv(env, skip=skip)
+    env = wrappers.EpisodicLifeEnv(env)
+    if "FIRE" in env.unwrapped.get_action_meanings():
+        env = wrappers.FireResetEnv(env)
+    # env = wrappers.WarpFrame(env, dim) # don't warp
+    # env = ScaledFloatFrame(env)  # TODO: use for dqn?
+    # env = ClipRewardEnv(env)  # reward clipping is handled by policy eval
+    # 4x image framestacking.
+    if framestack is True:
+        env = wrappers.FrameStack(env, stack)
+    return env
