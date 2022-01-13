@@ -160,7 +160,7 @@ def get_tune_params(args):
         "num_envs_per_worker": args["envs_per_worker"],
         "batch_mode": "truncate_episodes",
         "observation_filter": "NoFilter",
-        "preprocessor_pref": None,
+        # "preprocessor_pref": None,
     }
 
     conf_yaml = get_configs(args["logdir"])
