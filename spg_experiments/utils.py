@@ -166,9 +166,15 @@ def get_tune_params(args):
     conf_yaml = get_configs(args["logdir"])
     configs, is_grid_search = parse_tune_configs(conf_yaml, args["tune"])
 
-    # Hack to make serving easier
-    configs["env_config"]["__run"] = conf_yaml["run"]
-    configs["env_config"]["logdir"] = osp.realpath(args["logdir"])
+    # TODO: the same env_config is used for the built-in envs, should be renamed,
+    # otherwise they interfere
+    if "env_config" not in configs:
+        configs["env_config"] = {}
+
+    else:
+        # Hack to make serving easier
+        configs["env_config"]["__run"] = conf_yaml["run"]
+        configs["env_config"]["logdir"] = osp.realpath(args["logdir"])
 
     configs.update(configs_base)
     configs["callbacks"] = CustomCallbacks
