@@ -210,6 +210,8 @@ def get_search_alg_sched(conf_yaml, args, is_grid_search):
         search_alg = None
 
     else:
+        assert args["num_samples"] > 1
+
         if alg_name == "hyperopt":
             search_alg = HyperOptSearch(metric=metric, mode="max", n_initial_points=10)
         elif alg_name == "ax":
