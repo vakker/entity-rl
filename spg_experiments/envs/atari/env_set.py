@@ -51,10 +51,13 @@ class AtariSet(AtariEnv):
             rr, cc = disk(p.centroid, 1, shape=segm.shape)
             segm[rr, cc] = [255, 0, 0]
 
+        line = img_as_ubyte(np.ones((segm.shape[0], 10, 3)))
         img = np.concatenate(
             [
                 self.obs_raw,
+                line,
                 img_as_ubyte(segm),
+                line,
                 img_as_ubyte(label2rgb(self.segments)),
             ],
             axis=1,
