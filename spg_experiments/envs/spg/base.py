@@ -35,7 +35,7 @@ class PlaygroundEnv(gym.Env, ABC):
         multisteps = config.get("multisteps")
         keyboard = config.get("keyboard")
         self.include_agent_in_obs = config.get("include_agent", False)
-        continuous_action_space = config.get("continuous_actions", True)
+        continuous_action_space = config.get("continuous_actions", False)
 
         seed = config.get("seed", 0)
         seed = (seed + id(self)) % (2 ** 32)
