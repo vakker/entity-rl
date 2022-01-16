@@ -200,7 +200,7 @@ def get_tune_params(args):
             "local_dir": args["logdir"],
             "checkpoint_freq": args["checkpoint_freq"],
             "checkpoint_at_end": args["checkpoint_freq"] > 0,
-            "keep_checkpoints_num": 3,
+            "keep_checkpoints_num": None if args["keep_all_chkp"] else 3,
             "checkpoint_score_attr": conf_yaml["metric"],
             "max_failures": 1 if args["smoke"] else 2,
         }
