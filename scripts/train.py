@@ -20,6 +20,8 @@ def main(args):
     ), "Provide either max iters or steps."
 
     ray.init(
+        address=args_dict["head_ip"],
+        _node_ip_address=args_dict["node_ip"],
         local_mode=args_dict["local"],
         configure_logging=True,
         logging_level="DEBUG" if args.verbose else "INFO",
@@ -72,6 +74,8 @@ if __name__ == "__main__":
     PARSER.add_argument("--checkpoint-freq", type=int, default=1)
     PARSER.add_argument("--keep-all-chkp", action="store_true")
     PARSER.add_argument("--eval-int", type=int, default=0)
+    PARSER.add_argument("--node-ip", type=str, default="127.0.0.1")
+    PARSER.add_argument("--head-ip", type=str)
 
     ARGS = PARSER.parse_args()
 
