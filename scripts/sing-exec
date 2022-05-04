@@ -1,0 +1,4 @@
+#!/bin/bash
+
+flight env activate singularity
+singularity run --nv container.sif "$@" --num-cpus="$SLURM_CPUS_PER_TASK"
