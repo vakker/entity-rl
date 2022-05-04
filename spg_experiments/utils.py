@@ -160,6 +160,7 @@ def get_tune_params(args):
         "num_envs_per_worker": args["envs_per_worker"],
         "batch_mode": "truncate_episodes",
         "observation_filter": "NoFilter",
+        "placement_strategy": "SPREAD",
         # "preprocessor_pref": None,
     }
 
