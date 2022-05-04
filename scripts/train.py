@@ -45,7 +45,7 @@ def main(args):
         progress_reporter=reporter,
         resume=resume,
         name=name,
-        verbose=3 if args_dict["verbose"] else 1,
+        verbose=3 if args_dict["verbose"] else 2,
         callbacks=[callbacks.DataLoggerCallback()]
     )
 
