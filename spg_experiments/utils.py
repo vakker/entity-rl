@@ -14,6 +14,7 @@ from ray.tune.suggest.hebo import HEBOSearch
 from ray.tune.suggest.hyperopt import HyperOptSearch
 
 from .callbacks import CustomCallbacks
+from .models.space_policy import SpacePPOTrainer
 
 
 class E(dict):
@@ -48,6 +49,9 @@ def get_env_creator(env_name):
 
 
 def exp_name(prefix):
+    if not isinstance(prefix, str):
+        prefix = prefix.__name__
+
     return prefix + "." + datetime.now().strftime("%Y-%m-%d.%H:%M:%S")
 
 
@@ -181,9 +185,10 @@ def get_tune_params(args):
     configs.update(configs_base)
     configs["callbacks"] = CustomCallbacks
 
+    assert conf_yaml["run"] == "PPO"
     tune_params = {
         "config": configs,
-        "run_or_experiment": conf_yaml["run"],
+        "run_or_experiment": SpacePPOTrainer,
     }
     tune_params.update(get_search_alg_sched(conf_yaml, args, is_grid_search))
 

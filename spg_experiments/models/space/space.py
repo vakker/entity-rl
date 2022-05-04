@@ -12,8 +12,9 @@ class Space(nn.Module):
 
         self.fg_module = SpaceFg()
         self.bg_module = SpaceBg()
+        self.global_step = 0
 
-    def forward(self, x, global_step):
+    def forward(self, x):
         """
         Inference.
 
@@ -26,15 +27,15 @@ class Space(nn.Module):
 
         # Background extraction
         # (B, 3, H, W), (B, 3, H, W), (B,)
-        bg_likelihood, bg, kl_bg, log_bg = self.bg_module(x, global_step)
+        bg_likelihood, bg, kl_bg, log_bg = self.bg_module(x, self.global_step)
 
         # Foreground extraction
         fg_likelihood, fg, alpha_map, kl_fg, loss_boundary, log_fg = self.fg_module(
-            x, global_step
+            x, self.global_step
         )
 
         # Fix alpha trick
-        if global_step and global_step < arch.fix_alpha_steps:
+        if self.global_step and self.global_step < arch.fix_alpha_steps:
             alpha_map = torch.full_like(alpha_map, arch.fix_alpha_value)
 
         # Compute final mixture likelhood

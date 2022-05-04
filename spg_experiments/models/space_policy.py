@@ -1,9 +1,10 @@
 # pylint: disable=undefined-loop-variable
-from typing import Any, Tuple
 
 import numpy as np
 import torch
-from ray.rllib.utils.typing import TensorType
+from ray.rllib.agents.ppo.ppo import PPOTrainer
+from ray.rllib.agents.ppo.ppo_torch_policy import PPOTorchPolicy
+from ray.rllib.utils.numpy import convert_to_numpy
 from torch import nn
 from torch_geometric.data import Batch, Data
 
@@ -13,6 +14,7 @@ from .space.arch import arch
 from .space.space import Space
 
 
+# pylint: disable=attribute-defined-outside-init
 class SpaceGnnPolicy(BasePolicy):
     def _hidden_layers(self, input_dict):
         # TODO: fix stacking
@@ -24,7 +26,8 @@ class SpaceGnnPolicy(BasePolicy):
             x = torch.zeros(4, x.shape[1], x.shape[2], x.shape[3]).to(self.device)
             is_dummy = True
 
-        loss, log = self._space_encoder(x, 0)
+        loss, log = self._space_encoder(x)
+        self.space_loss = loss
 
         g_batch = []
 
@@ -57,7 +60,6 @@ class SpaceGnnPolicy(BasePolicy):
 
             g_batch.append(Data(x=x, edge_index=edge_index))
 
-        print("Total nodes:", total_nodes)
         batch = Batch.from_data_list(g_batch)
         features = self._gnn_encoder((batch.x, batch.edge_index, batch.batch))
 
@@ -85,3 +87,45 @@ class SpaceGnnPolicy(BasePolicy):
         out_channels_all = gnn_encoder.out_channels
 
         return out_channels_all
+
+    def on_global_var_update(self, global_vars):
+        self._space_encoder.global_step = global_vars["timestep"]
+
+
+# pylint: disable=abstract-method
+class SpacePPOTorchPolicy(PPOTorchPolicy):
+    def loss(self, model, dist_class, train_batch):
+        total_loss = super().loss(model, dist_class, train_batch)
+
+        if self.config.get("space_loss_coeff", 0.0) > 0.0:
+            # TODO: move loss calculation here and use reduce_mean_valid instead
+            total_loss += self.config["space_loss_coeff"] * model.space_loss
+            model.tower_stats["mean_space_loss"] = model.space_loss
+
+        return total_loss
+
+    def extra_grad_info(self, train_batch):
+        d_0 = super().extra_grad_info(train_batch)
+        d_1 = convert_to_numpy(
+            {
+                "space_loss": torch.mean(
+                    torch.stack(self.get_tower_stats("mean_space_loss"))
+                )
+            }
+        )
+
+        d_0.update(d_1)
+        return d_0
+
+    def on_global_var_update(self, global_vars):
+        super().on_global_var_update(global_vars)
+        if hasattr(self.model, "on_global_var_update"):
+            self.model.on_global_var_update(global_vars)
+
+
+# pylint: disable=abstract-method
+class SpacePPOTrainer(PPOTrainer):
+    _allow_unknown_configs = True
+
+    def get_default_policy_class(self, config):
+        return SpacePPOTorchPolicy
