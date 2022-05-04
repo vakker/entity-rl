@@ -10,6 +10,8 @@ grpcio==1.43
 gym[atari]
 autorom[accept-rom-license]
 
+attrdict
+
 --extra-index-url https://download.pytorch.org/whl/cu113
 torch
 torchvision
