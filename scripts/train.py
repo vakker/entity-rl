@@ -76,6 +76,7 @@ if __name__ == "__main__":
     PARSER.add_argument("--eval-int", type=int, default=0)
     PARSER.add_argument("--node-ip", type=str, default="127.0.0.1")
     PARSER.add_argument("--head-ip", type=str)
+    PARSER.add_argument("--num-cpus", type=str)
 
     ARGS = PARSER.parse_args()
 
