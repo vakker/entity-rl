@@ -11,6 +11,7 @@ gym[atari]
 autorom[accept-rom-license]
 
 attrdict
+yacs
 
 --extra-index-url https://download.pytorch.org/whl/cu113
 torch
