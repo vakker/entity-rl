@@ -186,7 +186,7 @@ def get_tune_params(args):
     configs["callbacks"] = CustomCallbacks
 
     assert conf_yaml["run"] == "PPO"
-    if "space_loss_coeff" in conf_yaml:
+    if "space_loss_coeff" in configs:
         experiment = SpacePPOTrainer
     else:
         experiment = "PPO"
