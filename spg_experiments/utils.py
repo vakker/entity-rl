@@ -186,9 +186,14 @@ def get_tune_params(args):
     configs["callbacks"] = CustomCallbacks
 
     assert conf_yaml["run"] == "PPO"
+    if "space_loss_coeff" in conf_yaml:
+        experiment = SpacePPOTrainer
+    else:
+        experiment = "PPO"
+
     tune_params = {
         "config": configs,
-        "run_or_experiment": SpacePPOTrainer,
+        "run_or_experiment": experiment,
     }
     tune_params.update(get_search_alg_sched(conf_yaml, args, is_grid_search))
 
