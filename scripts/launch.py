@@ -131,13 +131,14 @@ if __name__ == "__main__":
     text = replace("{{NUM_CPU_NODES}}", args.num_cpu_nodes)
     text = replace("{{NUM_GPU_NODES}}", args.num_gpu_nodes)
     text = replace("{{NUM_GPUS_PER_NODE}}", args.num_gpus)
-    text = replace("{{GPU_CPUS_PER_TASK}}", args.num_gpus)
+    text = replace("{{GPU_CPUS_PER_TASK}}", args.num_gpus * 6)
     text = replace("{{COMMAND_PLACEHOLDER}}", args.command)
     text = replace("{{NET_INTERFACE}}", args.net_interface)
     text = replace("{{LOAD_ENV}}", args.load_env)
     text = replace("{{COMMAND_SUFFIX}}", args.command_suffix)
 
     script_file = f"{job_name}.sh"
+    print(f"Saving to {script_file}")
     with open(script_file, "w") as f:
         f.write(text)
 
