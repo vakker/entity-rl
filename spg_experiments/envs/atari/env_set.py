@@ -15,7 +15,7 @@ class AtariSet(AtariEnv):
     def __init__(self, config):
         super().__init__(config)
 
-        self._color_cache = None
+        self._bg_color = None
         self.segments = None
         self.props = None
 
@@ -120,37 +120,18 @@ class AtariSet(AtariEnv):
         self.segments = segments
         self.props = props
 
-        assert (
-            len(x) < self.max_elements
-        ), f"Num elements ({len(x)}) larger than max ({self.max_elements})"
+        if len(x) > self.max_elements:
+            print(f"Num elements ({len(x)}) larger than max ({self.max_elements})")
 
         return x
 
     def get_segments(self, obs):
-        # TODO: optimize this further
-        colors_np = obs.reshape((-1, 3))
-        if self._color_cache is None:
-            self._color_cache = list({tuple(c) for c in colors_np.tolist()})
+        scaler = np.array([1, 500, 500 * 500])
+        colors = obs @ scaler
 
-        color_ids = self._get_segments(colors_np)
+        if self._bg_color is None:
+            counts = np.bincount(colors.reshape(-1))
+            self._bg_color = np.argmax(counts)
 
-        if np.any(color_ids == -1):
-            self._color_cache = list({tuple(c) for c in colors_np.tolist()})
-            color_ids = self._get_segments(colors_np)
-
-        color_ids = color_ids.reshape(obs.shape[:2])
-        return label(color_ids, background=0, connectivity=2)
-
-    def _get_segments(self, colors_np):
-        colors = self._color_cache
-
-        conds = [np.all(colors_np == c, axis=1) for c in colors]
-        sizes = np.array([np.sum(c) for c in conds])
-        color_order = np.argsort(sizes)[::-1]
-        color_ids = -1 * np.ones(colors_np.shape[0], dtype=np.int)
-
-        for i, color_idx in enumerate(color_order):
-            cond = conds[color_idx]
-            color_ids[cond] = i
-
-        return color_ids
+        labels = label(colors, background=self._bg_color, connectivity=2)
+        return labels
