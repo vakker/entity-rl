@@ -5,6 +5,7 @@ import gym
 import numpy as np
 from ray.rllib.env.wrappers import atari_wrappers as wrappers
 from skimage import transform
+from skimage.util import img_as_ubyte
 
 
 class AtariEnv(gym.Env, ABC):
@@ -22,6 +23,7 @@ class AtariEnv(gym.Env, ABC):
         if config.get("wrap", True):
             self._env = wrap_deepmind(self._env)
 
+        # TODO: this should be removed
         self._env = ResizeEnv(self._env, (128, 128))
 
         self.video_dir = config.get("video_dir")
@@ -107,7 +109,14 @@ class ResizeEnv(gym.ObservationWrapper):
         )
 
     def observation(self, observation):
-        return transform.resize(observation, self._size)
+        return img_as_ubyte(
+            transform.resize(
+                observation,
+                self._size,
+                order=0,
+                anti_aliasing=False,
+            )
+        )
 
 
 class SkipEnv(gym.Wrapper):

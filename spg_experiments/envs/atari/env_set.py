@@ -54,7 +54,7 @@ class AtariSet(AtariEnv):
         line = img_as_ubyte(np.ones((segm.shape[0], 10, 3)))
         img = np.concatenate(
             [
-                self.obs_raw,
+                img_as_ubyte(self.obs_raw),
                 line,
                 img_as_ubyte(segm),
                 line,
@@ -119,6 +119,10 @@ class AtariSet(AtariEnv):
         self.obs_raw = frame
         self.segments = segments
         self.props = props
+
+        assert (
+            len(x) < self.max_elements
+        ), f"Num elements ({len(x)}) larger than max ({self.max_elements})"
 
         return x
 
