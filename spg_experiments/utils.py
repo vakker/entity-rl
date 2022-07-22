@@ -1,6 +1,7 @@
 import json
 import time
 from datetime import datetime
+from functools import wraps
 from os import path as osp
 
 import yaml
@@ -292,3 +293,22 @@ class TicToc:
         m = f"Cum: {elapsed:.6f}\t"
         print(m)
         # logging.debug(m)
+
+
+def timing_wrapper(method):
+    @wraps(method)
+    def wrapped(*args, **kwargs):
+        print("#####")
+        print("Calling", method.__name__)
+        start_time = time.time()
+        result = method(*args, **kwargs)
+        print("Done", method.__name__, "Took", time.time() - start_time)
+        return result
+
+    return wrapped
+
+
+def wrap_methods(cls, wrapper):
+    for key, value in cls.__dict__.items():
+        if hasattr(value, "__call__"):
+            setattr(cls, key, wrapper(value))
