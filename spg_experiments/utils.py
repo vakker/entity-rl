@@ -269,23 +269,26 @@ class TicToc:
     def __init__(self):
         self.start = 0
         self.lap = 0
+        self.counter = 0
 
         self.tic()
 
     def tic(self):
         self.start = time.time()
         self.lap = self.start
+        self.counter = 0
 
     def toc(self, message=""):
         now = time.time()
         elapsed_1 = now - self.start
         elapsed_2 = now - self.lap
-        m = f"Cum: {elapsed_1:.6f}\tLap: {elapsed_2:.6f}"
+        m = f"{self.counter}\tCum: {elapsed_1:.6f}\tLap: {elapsed_2:.6f}"
         if message:
             m += f", {message}"
         # logging.debug(m)
         print(m)
         self.lap = now
+        self.counter += 1
 
     def cum(self):
         now = time.time()
