@@ -10,8 +10,6 @@ from .base import AtariEnv
 
 
 class AtariSet(AtariEnv):
-    # pylint: disable=no-self-use
-
     def __init__(self, config):
         super().__init__(config)
 
@@ -22,11 +20,11 @@ class AtariSet(AtariEnv):
         self.stack_size = self._env.observation_space.shape[-1] // 3
 
         if config["pg_name"] == "PongNoFrameskip-v4":
-            self.max_elements = 10
+            self.max_elements = 20
         elif config["pg_name"] == "SkiingNoFrameskip-v4":
-            self.max_elements = 30
+            self.max_elements = 40
         else:
-            self.max_elements = 80
+            self.max_elements = 120
 
         self.max_elements *= self.stack_size
 
