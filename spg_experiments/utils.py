@@ -40,6 +40,7 @@ def register():
 
     ModelCatalog.register_custom_model("fc_net", models.FcPolicy)
     ModelCatalog.register_custom_model("cnn1d_net", models.Cnn1DPolicy)
+    ModelCatalog.register_custom_model("cnn_net", models.CnnPolicy)
     ModelCatalog.register_custom_model("attn_net", models.AttnPolicy)
     ModelCatalog.register_custom_model("gnn_net", models.GnnPolicy)
     ModelCatalog.register_custom_model("space_gnn_net", models.SpaceGnnPolicy)
