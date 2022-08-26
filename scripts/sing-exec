@@ -1,4 +1,5 @@
 #!/bin/bash
 
+ulimit -Sn 65535
 flight env activate singularity
 singularity run --nv container.sif "$@" --num-cpus="$SLURM_CPUS_PER_TASK"
