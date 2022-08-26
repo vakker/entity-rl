@@ -1,4 +1,5 @@
-ray[all] @ https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-2.0.0.dev0-cp39-cp39-manylinux2014_x86_64.whl
+#ray[all] @ https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-2.0.0.dev0-cp39-cp39-manylinux2014_x86_64.whl
+ray[all] @ https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-3.0.0.dev0-cp39-cp39-manylinux2014_x86_64.whl
 simple-playgrounds @ git+https://github.com/gaorkl/simple-playgrounds@master
 gputil
 tensorboard
@@ -12,6 +13,8 @@ autorom[accept-rom-license]
 
 attrdict
 yacs
+scikit-image
+imagecodecs
 
 --extra-index-url https://download.pytorch.org/whl/cu113
 torch
