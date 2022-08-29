@@ -73,10 +73,11 @@ if __name__ == "__main__":
     PARSER.add_argument("--num-gpus", type=float, default=1.0)
     PARSER.add_argument("--checkpoint-freq", type=int, default=1)
     PARSER.add_argument("--keep-all-chkp", action="store_true")
-    PARSER.add_argument("--eval-int", type=int, default=0)
+    PARSER.add_argument("--eval-int", type=int)
     PARSER.add_argument("--node-ip", type=str, default="127.0.0.1")
     PARSER.add_argument("--head-ip", type=str)
     PARSER.add_argument("--num-cpus", type=str)
+    PARSER.add_argument("--no-gpu-workers", action="store_true")
 
     ARGS = PARSER.parse_args()
 

@@ -167,9 +167,12 @@ def get_tune_params(args):
         "num_envs_per_worker": args["envs_per_worker"],
         "batch_mode": "truncate_episodes",
         "observation_filter": "NoFilter",
-        "placement_strategy": "SPREAD",
+        # "placement_strategy": "SPREAD",
         # "preprocessor_pref": None,
     }
+
+    if args["no_gpu_workers"]:
+        configs_base["custom_resources_per_worker"] = {"NO-GPU": 0.0001}
 
     conf_yaml = get_configs(args["logdir"])
     configs, is_grid_search = parse_tune_configs(conf_yaml, args["tune"])
