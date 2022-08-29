@@ -16,12 +16,12 @@ yacs
 scikit-image
 imagecodecs
 
---extra-index-url https://download.pytorch.org/whl/cu113
-torch
+--extra-index-url https://download.pytorch.org/whl/cu116
+torch==1.12.1
 torchvision
 torchaudio
 
--f https://data.pyg.org/whl/torch-1.11.0+cu113.html
+-f https://data.pyg.org/whl/torch-1.12.1+cu116.html
 torch-scatter
 torch-sparse
 torch-geometric
