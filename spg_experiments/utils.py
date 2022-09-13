@@ -15,7 +15,6 @@ from ray.tune.search.hebo import HEBOSearch
 from ray.tune.search.hyperopt import HyperOptSearch
 
 from .callbacks import CustomCallbacks
-from .models.space_policy import SpacePPOTrainer
 
 
 class E(dict):
@@ -43,7 +42,7 @@ def register():
     ModelCatalog.register_custom_model("cnn_net", models.CnnPolicy)
     ModelCatalog.register_custom_model("attn_net", models.AttnPolicy)
     ModelCatalog.register_custom_model("gnn_net", models.GnnPolicy)
-    ModelCatalog.register_custom_model("space_gnn_net", models.SpaceGnnPolicy)
+    # ModelCatalog.register_custom_model("space_gnn_net", models.SpaceGnnPolicy)
 
 
 def get_env_creator(env_name):
@@ -168,7 +167,6 @@ def get_tune_params(args):
         "num_envs_per_worker": args["envs_per_worker"],
         "batch_mode": "truncate_episodes",
         "observation_filter": "NoFilter",
-        # "placement_strategy": "SPREAD",
         # "preprocessor_pref": None,
     }
 
@@ -193,9 +191,9 @@ def get_tune_params(args):
 
     assert conf_yaml["run"] == "PPO"
     if "space_loss_coeff" in configs:
-        experiment = SpacePPOTrainer
-    else:
-        experiment = "PPO"
+        raise NotImplementedError("SpacePPOTrainer is not fully implemented.")
+
+    experiment = "PPO"
 
     tune_params = {
         "config": configs,

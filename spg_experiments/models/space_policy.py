@@ -1,9 +1,11 @@
+# TODO: this has breaking changed since Ray 2.0
+# pylint: disable=all
 # pylint: disable=undefined-loop-variable
 
 import numpy as np
 import torch
-from ray.rllib.agents.ppo.ppo import PPOTrainer
-from ray.rllib.agents.ppo.ppo_torch_policy import PPOTorchPolicy
+from ray.rllib.algorithms.ppo import PPO as PPOTrainer
+from ray.rllib.algorithms.ppo.ppo_torch_policy import PPOTorchPolicy
 from ray.rllib.utils.numpy import convert_to_numpy
 from torch import nn
 from torch_geometric.data import Batch, Data
