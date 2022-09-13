@@ -21,7 +21,7 @@ class BaseModule(nn.Module, ABC):
 
 
 class BasePolicy(TorchModelV2, BaseModule, ABC):
-    # pylint: disable=abstract-method
+    # pylint: disable=abstract-method,unused-argument
     def __init__(
         self,
         obs_space: gym.spaces.Space,
@@ -29,6 +29,7 @@ class BasePolicy(TorchModelV2, BaseModule, ABC):
         num_outputs: int,
         model_config: ModelConfigDict,
         name: str,
+        **custom_model_kwargs: dict,
     ):
         TorchModelV2.__init__(
             self, obs_space, action_space, num_outputs, model_config, name
