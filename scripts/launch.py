@@ -109,7 +109,9 @@ if __name__ == "__main__":
     with open(TEMPLATE_FILE, "r") as f:
         text = f.read()
 
-    if args.num_cpu_nodes:
+    # The head is also a full CPU node
+    num_cpu_nodes = args.num_cpu_nodes - 1
+    if num_cpu_nodes > 0:
         text = replace("{{CPU_RESOURCES}}", CPU_RESOURCES)
         text = replace("{{CPU_LAUNCH}}", CPU_LAUNCH)
         text = replace("{{CPU_HET_GROUP}}", 1)
@@ -120,7 +122,7 @@ if __name__ == "__main__":
     if args.num_gpu_nodes:
         text = replace("{{GPU_RESOURCES}}", GPU_RESOURCES)
         text = replace("{{GPU_LAUNCH}}", GPU_LAUNCH)
-        if args.num_cpu_nodes:
+        if num_cpu_nodes > 0:
             text = replace("{{GPU_HET_GROUP}}", 2)
         else:
             text = replace("{{GPU_HET_GROUP}}", 1)
@@ -129,7 +131,7 @@ if __name__ == "__main__":
         text = replace("{{GPU_LAUNCH}}", "")
 
     text = replace("{{JOB_NAME}}", job_name)
-    text = replace("{{NUM_CPU_NODES}}", args.num_cpu_nodes)
+    text = replace("{{NUM_CPU_NODES}}", num_cpu_nodes)
     text = replace("{{NUM_GPU_NODES}}", args.num_gpu_nodes)
     text = replace("{{NUM_GPUS_PER_NODE}}", args.num_gpus)
     text = replace("{{GPU_CPUS_PER_TASK}}", args.num_gpus * 6)
