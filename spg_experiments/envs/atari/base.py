@@ -23,8 +23,8 @@ class AtariEnv(gym.Env, ABC):
         if config.get("wrap", True):
             self._env = wrap_deepmind(self._env)
 
-        # TODO: this should be removed
-        self._env = ResizeEnv(self._env, (128, 128))
+        # FIXME: this should be part of the wrapper and optional
+        # self._env = ResizeEnv(self._env, (128, 128))
 
         self.video_dir = config.get("video_dir")
 
@@ -54,7 +54,9 @@ class AtariEnv(gym.Env, ABC):
         obs, reward, done, info = self._env.step(action)
         return self._process_obs(obs), reward, done, info
 
-    def reset(self):
+    def reset(self, *, seed=None, return_info=False, options=None):
+        assert not return_info
+
         obs = self._env.reset()
         self.episodes += 1
 
