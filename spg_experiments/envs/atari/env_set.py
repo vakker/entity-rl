@@ -10,23 +10,21 @@ from .base import AtariEnv
 
 
 class AtariSet(AtariEnv):
-    # pylint: disable=no-self-use
-
     def __init__(self, config):
         super().__init__(config)
 
-        self._color_cache = None
+        self._bg_color = None
         self.segments = None
         self.props = None
 
         self.stack_size = self._env.observation_space.shape[-1] // 3
 
         if config["pg_name"] == "PongNoFrameskip-v4":
-            self.max_elements = 10
+            self.max_elements = 20
         elif config["pg_name"] == "SkiingNoFrameskip-v4":
-            self.max_elements = 30
+            self.max_elements = 40
         else:
-            self.max_elements = 80
+            self.max_elements = 120
 
         self.max_elements *= self.stack_size
 
@@ -54,7 +52,7 @@ class AtariSet(AtariEnv):
         line = img_as_ubyte(np.ones((segm.shape[0], 10, 3)))
         img = np.concatenate(
             [
-                self.obs_raw,
+                img_as_ubyte(self.obs_raw),
                 line,
                 img_as_ubyte(segm),
                 line,
@@ -120,33 +118,18 @@ class AtariSet(AtariEnv):
         self.segments = segments
         self.props = props
 
+        if len(x) > self.max_elements:
+            print(f"Num elements ({len(x)}) larger than max ({self.max_elements})")
+
         return x
 
     def get_segments(self, obs):
-        # TODO: optimize this further
-        colors_np = obs.reshape((-1, 3))
-        if self._color_cache is None:
-            self._color_cache = list({tuple(c) for c in colors_np.tolist()})
+        scaler = np.array([1, 500, 500 * 500])
+        colors = obs @ scaler
 
-        color_ids = self._get_segments(colors_np)
+        if self._bg_color is None:
+            counts = np.bincount(colors.reshape(-1))
+            self._bg_color = np.argmax(counts)
 
-        if np.any(color_ids == -1):
-            self._color_cache = list({tuple(c) for c in colors_np.tolist()})
-            color_ids = self._get_segments(colors_np)
-
-        color_ids = color_ids.reshape(obs.shape[:2])
-        return label(color_ids, background=0, connectivity=2)
-
-    def _get_segments(self, colors_np):
-        colors = self._color_cache
-
-        conds = [np.all(colors_np == c, axis=1) for c in colors]
-        sizes = np.array([np.sum(c) for c in conds])
-        color_order = np.argsort(sizes)[::-1]
-        color_ids = -1 * np.ones(colors_np.shape[0], dtype=np.int)
-
-        for i, color_idx in enumerate(color_order):
-            cond = conds[color_idx]
-            color_ids[cond] = i
-
-        return color_ids
+        labels = label(colors, background=self._bg_color, connectivity=2)
+        return labels

@@ -1,5 +1,5 @@
-ray[all] ~= 1.9.0
-torch ~= 1.10.0
+#ray[all] @ https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-2.0.0.dev0-cp39-cp39-manylinux2014_x86_64.whl
+ray[all] @ https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-3.0.0.dev0-cp39-cp39-manylinux2014_x86_64.whl
 simple-playgrounds @ git+https://github.com/gaorkl/simple-playgrounds@master
 gputil
 tensorboard
@@ -7,8 +7,21 @@ ax-platform
 sqlalchemy
 hyperopt
 HEBO
+grpcio==1.43
+gym[atari]
+autorom[accept-rom-license]
 
--f https://data.pyg.org/whl/torch-1.10.0+cu102.html
+attrdict
+yacs
+scikit-image
+imagecodecs
+
+--extra-index-url https://download.pytorch.org/whl/cu116
+torch==1.12.1
+torchvision
+torchaudio
+
+-f https://data.pyg.org/whl/torch-1.12.1+cu116.html
 torch-scatter
 torch-sparse
 torch-geometric

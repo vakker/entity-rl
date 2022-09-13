@@ -1,6 +1,7 @@
 import json
 import time
 from datetime import datetime
+from functools import wraps
 from os import path as osp
 
 import yaml
@@ -8,10 +9,10 @@ from ray import tune
 from ray.rllib.models import ModelCatalog
 from ray.tune.registry import ENV_CREATOR, _global_registry, register_env
 from ray.tune.schedulers import AsyncHyperBandScheduler
-from ray.tune.suggest import ConcurrencyLimiter
-from ray.tune.suggest.ax import AxSearch
-from ray.tune.suggest.hebo import HEBOSearch
-from ray.tune.suggest.hyperopt import HyperOptSearch
+from ray.tune.search import ConcurrencyLimiter
+from ray.tune.search.ax import AxSearch
+from ray.tune.search.hebo import HEBOSearch
+from ray.tune.search.hyperopt import HyperOptSearch
 
 from .callbacks import CustomCallbacks
 
@@ -38,8 +39,10 @@ def register():
 
     ModelCatalog.register_custom_model("fc_net", models.FcPolicy)
     ModelCatalog.register_custom_model("cnn1d_net", models.Cnn1DPolicy)
+    ModelCatalog.register_custom_model("cnn_net", models.CnnPolicy)
     ModelCatalog.register_custom_model("attn_net", models.AttnPolicy)
     ModelCatalog.register_custom_model("gnn_net", models.GnnPolicy)
+    # ModelCatalog.register_custom_model("space_gnn_net", models.SpaceGnnPolicy)
 
 
 def get_env_creator(env_name):
@@ -47,6 +50,9 @@ def get_env_creator(env_name):
 
 
 def exp_name(prefix):
+    if not isinstance(prefix, str):
+        prefix = prefix.__name__
+
     return prefix + "." + datetime.now().strftime("%Y-%m-%d.%H:%M:%S")
 
 
@@ -152,7 +158,8 @@ def get_tune_params(args):
             "env_config": {"is_eval": True},
         },
         "evaluation_interval": args["eval_int"],
-        "evaluation_num_episodes": 10,
+        "evaluation_duration": 10,
+        "evaluation_duration_unit": "episodes",
         "num_cpus_per_worker": cpus_per_worker,
         "evaluation_num_workers": args["num_workers"] if args["eval_int"] else 0,
         "num_gpus": args["num_gpus"],
@@ -162,6 +169,9 @@ def get_tune_params(args):
         "observation_filter": "NoFilter",
         # "preprocessor_pref": None,
     }
+
+    if args["no_gpu_workers"]:
+        configs_base["custom_resources_per_worker"] = {"NO-GPU": 0.0001}
 
     conf_yaml = get_configs(args["logdir"])
     configs, is_grid_search = parse_tune_configs(conf_yaml, args["tune"])
@@ -179,9 +189,15 @@ def get_tune_params(args):
     configs.update(configs_base)
     configs["callbacks"] = CustomCallbacks
 
+    assert conf_yaml["run"] == "PPO"
+    if "space_loss_coeff" in configs:
+        raise NotImplementedError("SpacePPOTrainer is not fully implemented.")
+
+    experiment = "PPO"
+
     tune_params = {
         "config": configs,
-        "run_or_experiment": conf_yaml["run"],
+        "run_or_experiment": experiment,
     }
     tune_params.update(get_search_alg_sched(conf_yaml, args, is_grid_search))
 
@@ -256,23 +272,26 @@ class TicToc:
     def __init__(self):
         self.start = 0
         self.lap = 0
+        self.counter = 0
 
         self.tic()
 
     def tic(self):
         self.start = time.time()
         self.lap = self.start
+        self.counter = 0
 
     def toc(self, message=""):
         now = time.time()
         elapsed_1 = now - self.start
         elapsed_2 = now - self.lap
-        m = f"Cum: {elapsed_1:.6f}\tLap: {elapsed_2:.6f}"
+        m = f"{self.counter}\tCum: {elapsed_1:.6f}\tLap: {elapsed_2:.6f}"
         if message:
             m += f", {message}"
         # logging.debug(m)
         print(m)
         self.lap = now
+        self.counter += 1
 
     def cum(self):
         now = time.time()
@@ -280,3 +299,22 @@ class TicToc:
         m = f"Cum: {elapsed:.6f}\t"
         print(m)
         # logging.debug(m)
+
+
+def timing_wrapper(method):
+    @wraps(method)
+    def wrapped(*args, **kwargs):
+        print("#####")
+        print("Calling", method.__name__)
+        start_time = time.time()
+        result = method(*args, **kwargs)
+        print("Done", method.__name__, "Took", time.time() - start_time)
+        return result
+
+    return wrapped
+
+
+def wrap_methods(cls, wrapper):
+    for key, value in cls.__dict__.items():
+        if hasattr(value, "__call__"):
+            setattr(cls, key, wrapper(value))

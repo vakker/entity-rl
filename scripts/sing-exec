@@ -1,0 +1,7 @@
+#!/bin/bash
+
+#echo "$SLURM_CPUS_PER_TASK"
+#env | grep -i cpu
+ulimit -Sn 65535
+flight env activate singularity
+singularity run --nv container.sif "$@" --num-cpus="$SLURM_CPUS_ON_NODE"

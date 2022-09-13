@@ -1,0 +1,5 @@
+#!/bin/bash
+
+interface=$1
+
+ip -f inet addr show $interface | sed -En -e 's/.*inet ([0-9.]+).*/\1/p'

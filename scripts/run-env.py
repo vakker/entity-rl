@@ -64,12 +64,20 @@ def main(args):
                 if not osp.exists(frames_dir):
                     os.mkdir(frames_dir)
 
+                img = env.full_scenario()
+                if img.shape[-1] > 3:
+                    img = img[:, :, -3:]
+
                 img_path = osp.join(frames_dir, f"f-{j:06d}.png")
-                skio.imsave(img_path, env.full_scenario())
+                skio.imsave(img_path, img)
 
             if args.render:
                 if plot_obj is None:
-                    plot_obj = plt.imshow(env.full_scenario())
+                    img = env.full_scenario()
+                    if img.shape[-1] > 3:
+                        img = img[:, :, -3:]
+
+                    plot_obj = plt.imshow(img)
                     plt.show(block=False)
 
                 plot_obj.set_data(env.full_scenario())

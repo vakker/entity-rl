@@ -2,9 +2,8 @@ import sys
 
 import torch
 from torch import nn
-from torch_geometric import nn as pyg_nn
 from torch_geometric.data import Batch, Data
-from torch_geometric.nn import GATv2Conv, GINConv, global_mean_pool
+from torch_geometric.nn import MLP, GATv2Conv, GINConv, global_mean_pool
 
 from .base import BasePolicy
 
@@ -12,9 +11,8 @@ module = sys.modules[__name__]
 
 
 class GATFeatures(nn.Module):
-    # pylint: disable=unused-argument
-
     def __init__(self, n_input_features, dims, activation=None, norm=None):
+        # pylint: disable=unused-argument
         super().__init__()
 
         if activation:
@@ -46,46 +44,41 @@ class GATFeatures(nn.Module):
         return x
 
 
-class GINFeatures(nn.Module):
+class GINFeatures(torch.nn.Module):
     def __init__(self, n_input_features, dims, activation=None, norm=None):
+        # pylint: disable=unused-argument
         super().__init__()
 
         if activation:
-            act = getattr(nn, activation)
+            self.act = getattr(nn, activation)()
         else:
-            act = nn.ReLU
+            self.act = nn.ReLU()
 
-        if norm:
-            norm_layer = getattr(pyg_nn, norm)
-        else:
-            norm_layer = nn.Identity
+        # TODO: add normalization if needed
+        # if norm:
+        #     norm_layer = getattr(pyg_nn, norm)
+        # else:
+        #     norm_layer = nn.Identity
 
         convs = []
         in_channels = n_input_features
         for dim in dims:
-            convs.append(
-                GINConv(
-                    nn.Sequential(
-                        nn.Linear(in_channels, dim),
-                        norm_layer(),
-                        act(),
-                        nn.Linear(dim, dim),
-                        act(),
-                    )
-                )
-            )
+            mlp = MLP([in_channels, dim, dim], act=self.act)
+            convs.append(GINConv(nn=mlp, train_eps=False))
             in_channels = dim
 
         self._convs = nn.ModuleList(convs)
+        self.mlp = MLP([in_channels, in_channels, in_channels], norm=None, dropout=0.5)
+
         self.out_channels = in_channels
 
     def forward(self, inputs):
         x, edge_index, batch = inputs
         for conv in self._convs:
-            x = conv(x, edge_index)
+            x = self.act(conv(x, edge_index))
 
         x = global_mean_pool(x, batch)
-        return x
+        return self.mlp(x)
 
 
 class GnnPolicy(BasePolicy):
