@@ -4,7 +4,7 @@ from collections import defaultdict
 from os import path as osp
 
 import numpy as np
-from ray.rllib.agents.callbacks import DefaultCallbacks
+from ray.rllib.algorithms.callbacks import DefaultCallbacks
 from ray.tune.logger import LoggerCallback
 from ray.tune.result import TIMESTEPS_TOTAL, TRAINING_ITERATION
 

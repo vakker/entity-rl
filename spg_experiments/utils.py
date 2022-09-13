@@ -9,10 +9,10 @@ from ray import tune
 from ray.rllib.models import ModelCatalog
 from ray.tune.registry import ENV_CREATOR, _global_registry, register_env
 from ray.tune.schedulers import AsyncHyperBandScheduler
-from ray.tune.suggest import ConcurrencyLimiter
-from ray.tune.suggest.ax import AxSearch
-from ray.tune.suggest.hebo import HEBOSearch
-from ray.tune.suggest.hyperopt import HyperOptSearch
+from ray.tune.search import ConcurrencyLimiter
+from ray.tune.search.ax import AxSearch
+from ray.tune.search.hebo import HEBOSearch
+from ray.tune.search.hyperopt import HyperOptSearch
 
 from .callbacks import CustomCallbacks
 from .models.space_policy import SpacePPOTrainer
@@ -159,7 +159,8 @@ def get_tune_params(args):
             "env_config": {"is_eval": True},
         },
         "evaluation_interval": args["eval_int"],
-        "evaluation_num_episodes": 10,
+        "evaluation_duration": 10,
+        "evaluation_duration_unit": "episodes",
         "num_cpus_per_worker": cpus_per_worker,
         "evaluation_num_workers": args["num_workers"] if args["eval_int"] else 0,
         "num_gpus": args["num_gpus"],
