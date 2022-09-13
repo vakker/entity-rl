@@ -167,6 +167,7 @@ def get_tune_params(args):
         "num_envs_per_worker": args["envs_per_worker"],
         "batch_mode": "truncate_episodes",
         "observation_filter": "NoFilter",
+        "log_sys_usage": False,
         # "preprocessor_pref": None,
     }
 
