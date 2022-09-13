@@ -33,7 +33,7 @@ class AttnPolicyRef(BasePolicy):
         return torch.cat(features, dim=0)
 
     def _create_hidden_layers(self, obs_space, model_config):
-        dim = sum([s.shape[0] for k, s in obs_space.original_space.child_space.items()])
+        dim = sum(s.shape[0] for k, s in obs_space.original_space.child_space.items())
         self._n_input_size = dim
         num_slots = model_config["custom_model_config"]["num_slots"]
         hidden_dim = model_config["custom_model_config"]["hidden_dim"]

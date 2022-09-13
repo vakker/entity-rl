@@ -224,7 +224,6 @@ class SpaceBg(nn.Module):
         return new_masks
 
 
-# pylint: disable=no-self-use
 class Flatten(nn.Module):
     def forward(self, x):
         return x.reshape(x.shape[0], -1)

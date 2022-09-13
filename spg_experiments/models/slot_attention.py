@@ -9,7 +9,7 @@ from .base import BaseModule
 
 
 class SlotAttentionRef(BaseModule):
-    # pylint: disable=too-many-locals,no-self-use,unused-argument
+    # pylint: disable=too-many-locals,unused-argument
 
     def __init__(
         self,

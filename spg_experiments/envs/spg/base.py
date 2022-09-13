@@ -211,7 +211,9 @@ class PlaygroundEnv(gym.Env, ABC):
             sensor_values[sensor.name] = sensor.sensor_values
         return self.process_obs(sensor_values)
 
-    def reset(self):
+    def reset(self, *, seed=None, return_info=False, options=None):
+        assert not return_info
+
         self.engine.reset()
         self.engine.elapsed_time = 0
         self.episodes += 1
