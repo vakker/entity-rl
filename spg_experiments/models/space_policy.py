@@ -20,6 +20,7 @@ class SpaceGnnPolicy(BasePolicy):
         # TODO: fix stacking
         # print(input_dict["obs"].shape, input_dict["obs"].device)
         x = input_dict["obs"].permute(0, 3, 1, 2)[:, -3:]
+        # x = input_dict["obs"].permute(0, 3, 1, 2)
         is_dummy = False
 
         if x.shape[0] == 32 and x.device != "cpu":
