@@ -148,6 +148,7 @@ if __name__ == "__main__":
     text = replace("{{COMMAND_SUFFIX}}", args.command_suffix)
 
     script_file = f"{job_name}.sh"
+    script_file = osp.join(args.work_dir, script_file)
     print(f"Saving to {script_file}")
     with open(script_file, "w") as f:
         f.write(text)
