@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #SBATCH --job-name={{JOB_NAME}}
-#SBATCH --output=slurm-logs/%x_%j.log
+#SBATCH --output={{WORK_DIR}}/%x_%j.log
 #SBATCH --time=48:00:00
 
 ### Head node

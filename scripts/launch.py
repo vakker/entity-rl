@@ -80,6 +80,12 @@ if __name__ == "__main__":
         help="The script to load your environment, e.g. 'module load cuda/10.1'",
     )
     parser.add_argument(
+        "--work-dir",
+        type=str,
+        default="slurm-logs",
+        help="Work directory for logs.",
+    )
+    parser.add_argument(
         "--net-interface",
         type=str,
         default="ib0",
@@ -130,6 +136,7 @@ if __name__ == "__main__":
         text = replace("{{GPU_RESOURCES}}", "")
         text = replace("{{GPU_LAUNCH}}", "")
 
+    text = replace("{{WORK_DIR}}", args.work_dir)
     text = replace("{{JOB_NAME}}", job_name)
     text = replace("{{NUM_CPU_NODES}}", num_cpu_nodes)
     text = replace("{{NUM_GPU_NODES}}", args.num_gpu_nodes)
