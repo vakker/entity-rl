@@ -74,6 +74,12 @@ if __name__ == "__main__":
         help="Number of GPUs to use in each node. (Default: 0)",
     )
     parser.add_argument(
+        "--time",
+        type=int,
+        default=72,
+        help="Time limit for the job (hours)",
+    )
+    parser.add_argument(
         "--load-env",
         type=str,
         default="",
@@ -136,6 +142,7 @@ if __name__ == "__main__":
         text = replace("{{GPU_RESOURCES}}", "")
         text = replace("{{GPU_LAUNCH}}", "")
 
+    text = replace("{{TIME}}", args.time)
     text = replace("{{WORK_DIR}}", args.work_dir)
     text = replace("{{JOB_NAME}}", job_name)
     text = replace("{{NUM_CPU_NODES}}", num_cpu_nodes)

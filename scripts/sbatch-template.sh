@@ -2,7 +2,7 @@
 
 #SBATCH --job-name={{JOB_NAME}}
 #SBATCH --output={{WORK_DIR}}/%x_%j.log
-#SBATCH --time=48:00:00
+#SBATCH --time={{TIME}}:00:00
 
 ### Head node
 #SBATCH --ntasks-per-node=1
