@@ -10,6 +10,7 @@ HEBO
 grpcio==1.43
 gym[atari]
 autorom[accept-rom-license]
+aim
 
 attrdict
 yacs

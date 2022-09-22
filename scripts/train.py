@@ -46,7 +46,10 @@ def main(args):
         resume=resume,
         name=name,
         verbose=3 if args_dict["verbose"] else 2,
-        callbacks=[callbacks.DataLoggerCallback()]
+        callbacks=[
+            callbacks.DataLoggerCallback(),
+            callbacks.AimLoggerCallback(experiment_name=args_dict["exp_name"]),
+        ]
     )
 
     return analysis
@@ -77,6 +80,7 @@ if __name__ == "__main__":
     PARSER.add_argument("--node-ip", type=str, default="127.0.0.1")
     PARSER.add_argument("--head-ip", type=str)
     PARSER.add_argument("--num-cpus", type=str)
+    PARSER.add_argument("--exp-name", type=str, default="SPG-EXP")
     PARSER.add_argument("--no-gpu-workers", action="store_true")
 
     ARGS = PARSER.parse_args()
