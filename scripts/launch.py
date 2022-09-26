@@ -39,7 +39,7 @@ GPU_RESOURCES = """
 #SBATCH --cpus-per-task={{GPU_CPUS_PER_TASK}}
 #SBATCH --ntasks={{NUM_GPU_NODES}}
 #SBATCH --gres=gpu:{{NUM_GPUS_PER_NODE}}
-#SBATCH --mem-per-cpu=10G
+#SBATCH --mem-per-cpu=8G
 """
 
 
