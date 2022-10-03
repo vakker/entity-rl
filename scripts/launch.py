@@ -34,7 +34,6 @@ srun --het-group={{GPU_HET_GROUP}} \\
 GPU_RESOURCES = """
 ### GPU workers
 #SBATCH hetjob
-#SBATCH --ntasks-per-node=1
 #SBATCH --partition=gengpu
 #SBATCH --cpus-per-task={{GPU_CPUS_PER_TASK}}
 #SBATCH --ntasks={{NUM_GPU_NODES}}
