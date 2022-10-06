@@ -50,7 +50,7 @@ echo "STARTING HEAD at $node_1"
 srun --het-group=0 \
   scripts/sing-exec \
   ray start --head --node-ip-address=$ip --port=6379 --redis-password=$redis_password \
-  --block --resources='{"NO-GPU": 1}' &
+  --include-dashboard=false --block --resources='{"NO-GPU": 1}' &
 sleep 10
 
 {{CPU_LAUNCH}}
