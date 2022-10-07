@@ -12,7 +12,7 @@ echo "STARTING WORKER CPU nodes"
 srun --het-group={{CPU_HET_GROUP}} \\
   scripts/sing-exec \\
   ray start --address $ip_head --redis-password=$redis_password \\
-  --include-dashboard=false --block --resources='{"NO-GPU": 1}' &
+  --block --resources='{"NO-GPU": 1}' &
 """
 
 CPU_RESOURCES = """
@@ -29,7 +29,7 @@ echo "STARTING WORKER GPU nodes"
 srun --het-group={{GPU_HET_GROUP}} \\
   scripts/sing-exec \\
   ray start --address $ip_head --redis-password=$redis_password \\
-  --include-dashboard=false --block &
+  --block &
 """
 
 GPU_RESOURCES = """
