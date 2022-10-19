@@ -74,6 +74,12 @@ if __name__ == "__main__":
         help="Number of GPUs to use in each node. (Default: 0)",
     )
     parser.add_argument(
+        "--num-cpus-per-gpu",
+        type=int,
+        default=6,
+        help="Number of CPUs per GPUs",
+    )
+    parser.add_argument(
         "--time",
         type=int,
         default=72,
@@ -148,7 +154,7 @@ if __name__ == "__main__":
     text = replace("{{NUM_CPU_NODES}}", num_cpu_nodes)
     text = replace("{{NUM_GPU_NODES}}", args.num_gpu_nodes)
     text = replace("{{NUM_GPUS_PER_NODE}}", args.num_gpus)
-    text = replace("{{GPU_CPUS_PER_TASK}}", args.num_gpus * 6)
+    text = replace("{{GPU_CPUS_PER_TASK}}", args.num_gpus * args.num_cpus_per_gpu)
     text = replace("{{COMMAND_PLACEHOLDER}}", args.command)
     text = replace("{{NET_INTERFACE}}", args.net_interface)
     text = replace("{{LOAD_ENV}}", args.load_env)
