@@ -202,18 +202,10 @@ def get_tune_params(args):
     }
     tune_params.update(get_search_alg_sched(conf_yaml, args, is_grid_search))
 
-    stop = {}
-    if args["max_iters"]:
-        stop["training_iteration"] = args["max_iters"]
-
-    if args["max_steps"]:
-        stop["timesteps_total"] = args["max_steps"]
-
     tune_params.update(
         {
             "trial_name_creator": trial_str_creator,
             "trial_dirname_creator": trial_str_creator,
-            "stop": stop,
             "local_dir": args["logdir"],
             "checkpoint_freq": args["checkpoint_freq"],
             "checkpoint_at_end": args["checkpoint_freq"] > 0,
@@ -227,8 +219,10 @@ def get_tune_params(args):
 
 
 def get_search_alg_sched(conf_yaml, args, is_grid_search):
+    stop = {args["stop_attr"]: args["stop_at"]}
+
     if not args["tune"]:
-        return {"num_samples": args["num_samples"]}
+        return {"stop": stop, "num_samples": args["num_samples"]}
 
     alg_name = conf_yaml.get("search_alg")
     metric = conf_yaml["metric"]
@@ -254,15 +248,17 @@ def get_search_alg_sched(conf_yaml, args, is_grid_search):
         scheduler = None
 
     else:
+        assert 0 < args["grace_period"] < 1
         scheduler = AsyncHyperBandScheduler(
-            time_attr="training_iteration",
+            time_attr=args["stop_attr"],
             metric=metric,
             mode="max",
-            grace_period=args["grace_period"],
-            max_t=max(args["max_iters"], 5),
+            grace_period=args["stop_at"] * args["grace_period"],
+            max_t=args["stop_at"],
         )
 
     return {
+        "stop": stop,
         "search_alg": search_alg,
         "scheduler": scheduler,
         "num_samples": args["num_samples"],
