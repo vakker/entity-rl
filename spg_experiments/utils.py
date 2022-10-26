@@ -143,7 +143,8 @@ def parse_tune_configs(configs, use_tune=False):
 
 def get_tune_params(args):
     if args["smoke"]:
-        args["max_iters"] = 1
+        args["stop_attr"] = "training_iteration"
+        args["stop_at"] = 1
 
     args["num_samples"] = (
         min(2, args["num_samples"]) if args["smoke"] else args["num_samples"]
