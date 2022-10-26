@@ -202,12 +202,12 @@ def get_tune_params(args):
     }
     tune_params.update(get_search_alg_sched(conf_yaml, args, is_grid_search))
 
+    stop = {}
     if args["max_iters"]:
-        stop = {"training_iteration": args["max_iters"]}
-    elif args["max_steps"]:
-        stop = {"timesteps_total": args["max_steps"]}
-    else:
-        stop = {}
+        stop["training_iteration"] = args["max_iters"]
+
+    if args["max_steps"]:
+        stop["timesteps_total"] = args["max_steps"]
 
     tune_params.update(
         {
