@@ -253,7 +253,7 @@ def get_search_alg_sched(conf_yaml, args, is_grid_search):
             time_attr=args["stop_attr"],
             metric=metric,
             mode="max",
-            grace_period=args["stop_at"] * args["grace_period"],
+            grace_period=int(args["stop_at"] * args["grace_period"]),
             max_t=args["stop_at"],
         )
 
