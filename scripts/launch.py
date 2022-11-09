@@ -28,18 +28,18 @@ GPU_LAUNCH = """
 echo "STARTING WORKER GPU nodes"
 srun --het-group={{GPU_HET_GROUP}} \\
   scripts/sing-exec \\
-  ray start --address $ip_head --redis-password=$redis_password --block &
+  ray start --address $ip_head --redis-password=$redis_password \\
+  --block &
 """
 
 GPU_RESOURCES = """
 ### GPU workers
 #SBATCH hetjob
-#SBATCH --ntasks-per-node=1
 #SBATCH --partition=gengpu
 #SBATCH --cpus-per-task={{GPU_CPUS_PER_TASK}}
 #SBATCH --ntasks={{NUM_GPU_NODES}}
 #SBATCH --gres=gpu:{{NUM_GPUS_PER_NODE}}
-#SBATCH --mem-per-cpu=10G
+#SBATCH --mem-per-cpu=8G
 """
 
 
@@ -74,10 +74,28 @@ if __name__ == "__main__":
         help="Number of GPUs to use in each node. (Default: 0)",
     )
     parser.add_argument(
+        "--num-cpus-per-gpu",
+        type=int,
+        default=6,
+        help="Number of CPUs per GPUs",
+    )
+    parser.add_argument(
+        "--time",
+        type=int,
+        default=72,
+        help="Time limit for the job (hours)",
+    )
+    parser.add_argument(
         "--load-env",
         type=str,
         default="",
         help="The script to load your environment, e.g. 'module load cuda/10.1'",
+    )
+    parser.add_argument(
+        "--work-dir",
+        type=str,
+        default="slurm-logs",
+        help="Work directory for logs.",
     )
     parser.add_argument(
         "--net-interface",
@@ -109,7 +127,9 @@ if __name__ == "__main__":
     with open(TEMPLATE_FILE, "r") as f:
         text = f.read()
 
-    if args.num_cpu_nodes:
+    # The head is also a full CPU node
+    num_cpu_nodes = args.num_cpu_nodes - 1
+    if num_cpu_nodes > 0:
         text = replace("{{CPU_RESOURCES}}", CPU_RESOURCES)
         text = replace("{{CPU_LAUNCH}}", CPU_LAUNCH)
         text = replace("{{CPU_HET_GROUP}}", 1)
@@ -120,7 +140,7 @@ if __name__ == "__main__":
     if args.num_gpu_nodes:
         text = replace("{{GPU_RESOURCES}}", GPU_RESOURCES)
         text = replace("{{GPU_LAUNCH}}", GPU_LAUNCH)
-        if args.num_cpu_nodes:
+        if num_cpu_nodes > 0:
             text = replace("{{GPU_HET_GROUP}}", 2)
         else:
             text = replace("{{GPU_HET_GROUP}}", 1)
@@ -128,17 +148,20 @@ if __name__ == "__main__":
         text = replace("{{GPU_RESOURCES}}", "")
         text = replace("{{GPU_LAUNCH}}", "")
 
+    text = replace("{{TIME}}", args.time)
+    text = replace("{{WORK_DIR}}", args.work_dir)
     text = replace("{{JOB_NAME}}", job_name)
-    text = replace("{{NUM_CPU_NODES}}", args.num_cpu_nodes)
+    text = replace("{{NUM_CPU_NODES}}", num_cpu_nodes)
     text = replace("{{NUM_GPU_NODES}}", args.num_gpu_nodes)
     text = replace("{{NUM_GPUS_PER_NODE}}", args.num_gpus)
-    text = replace("{{GPU_CPUS_PER_TASK}}", args.num_gpus * 6)
+    text = replace("{{GPU_CPUS_PER_TASK}}", args.num_gpus * args.num_cpus_per_gpu)
     text = replace("{{COMMAND_PLACEHOLDER}}", args.command)
     text = replace("{{NET_INTERFACE}}", args.net_interface)
     text = replace("{{LOAD_ENV}}", args.load_env)
     text = replace("{{COMMAND_SUFFIX}}", args.command_suffix)
 
     script_file = f"{job_name}.sh"
+    script_file = osp.join(args.work_dir, script_file)
     print(f"Saving to {script_file}")
     with open(script_file, "w") as f:
         f.write(text)

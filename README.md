@@ -17,7 +17,7 @@ Each experiment is defined by a config file, for the tuned examples see the
 
 Create a log directory and place a config file in it named `conf.yaml`. Then run
 
-``` sh
+```sh
 python scripts/train.py --logdir <logdir> --num-workers <num-workers> --max-iters <max-iters>
 ```
 
@@ -32,3 +32,22 @@ For videos of the trained agents performing see [this
 playlist](https://www.youtube.com/playlist?list=PL0fzH_bs_m9jy4uzf8Oj5TP11OVEPxATh).
 
 If you have any issues, please reach out on: entity.rl.ijcai22@gmail.com
+
+### Slurm submit
+
+You can create a submit script by running:
+
+```sh
+python scripts/launch.py \
+  --exp-name <exp-name> \
+  --command <command>
+  --work-dir <work-dir> \
+  --num-gpu-nodes <num-gpu-nodes> \
+  --num-gpus <num-gpus> \
+  --num-cpu-nodes <num-cpu-nodes> \
+  --num-cpus-per-gpu <num-cpus-per-gpu> \
+  [--dry-run]
+```
+
+It'll create a submit script (location and name printed after the script
+executes). Using `--dry-run` only saves the file, but doesn't run `sbatch`.

@@ -1,8 +1,8 @@
 #!/bin/bash
 
 #SBATCH --job-name={{JOB_NAME}}
-#SBATCH --output=slurm-logs/%x_%j.log
-#SBATCH --time=48:00:00
+#SBATCH --output={{WORK_DIR}}/%x_%j.log
+#SBATCH --time={{TIME}}:00:00
 
 ### Head node
 #SBATCH --ntasks-per-node=1
@@ -50,7 +50,7 @@ echo "STARTING HEAD at $node_1"
 srun --het-group=0 \
   scripts/sing-exec \
   ray start --head --node-ip-address=$ip --port=6379 --redis-password=$redis_password \
-  --block --resources='{"NO-GPU": 1}' &
+  --include-dashboard=false --block --resources='{"NO-GPU": 1}' &
 sleep 10
 
 {{CPU_LAUNCH}}

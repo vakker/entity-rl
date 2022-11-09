@@ -37,6 +37,7 @@ class AtariEnv(gym.Env, ABC):
 
         self.action_space = self._env.action_space
         self._obs_space = None
+        self._config = config
 
     @property
     def observation_space(self):

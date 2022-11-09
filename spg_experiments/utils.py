@@ -143,7 +143,8 @@ def parse_tune_configs(configs, use_tune=False):
 
 def get_tune_params(args):
     if args["smoke"]:
-        args["max_iters"] = 1
+        args["stop_attr"] = "training_iteration"
+        args["stop_at"] = 1
 
     args["num_samples"] = (
         min(2, args["num_samples"]) if args["smoke"] else args["num_samples"]
@@ -167,6 +168,7 @@ def get_tune_params(args):
         "num_envs_per_worker": args["envs_per_worker"],
         "batch_mode": "truncate_episodes",
         "observation_filter": "NoFilter",
+        "log_sys_usage": False,
         # "preprocessor_pref": None,
     }
 
@@ -201,18 +203,10 @@ def get_tune_params(args):
     }
     tune_params.update(get_search_alg_sched(conf_yaml, args, is_grid_search))
 
-    if args["max_iters"]:
-        stop = {"training_iteration": args["max_iters"]}
-    elif args["max_steps"]:
-        stop = {"timesteps_total": args["max_steps"]}
-    else:
-        stop = {}
-
     tune_params.update(
         {
             "trial_name_creator": trial_str_creator,
             "trial_dirname_creator": trial_str_creator,
-            "stop": stop,
             "local_dir": args["logdir"],
             "checkpoint_freq": args["checkpoint_freq"],
             "checkpoint_at_end": args["checkpoint_freq"] > 0,
@@ -226,8 +220,10 @@ def get_tune_params(args):
 
 
 def get_search_alg_sched(conf_yaml, args, is_grid_search):
+    stop = {args["stop_attr"]: args["stop_at"]}
+
     if not args["tune"]:
-        return {"num_samples": args["num_samples"]}
+        return {"stop": stop, "num_samples": args["num_samples"]}
 
     alg_name = conf_yaml.get("search_alg")
     metric = conf_yaml["metric"]
@@ -253,15 +249,17 @@ def get_search_alg_sched(conf_yaml, args, is_grid_search):
         scheduler = None
 
     else:
+        assert 0 < args["grace_period"] < 1
         scheduler = AsyncHyperBandScheduler(
-            time_attr="training_iteration",
+            time_attr=args["stop_attr"],
             metric=metric,
             mode="max",
-            grace_period=args["grace_period"],
-            max_t=max(args["max_iters"], 5),
+            grace_period=int(args["stop_at"] * args["grace_period"]),
+            max_t=args["stop_at"],
         )
 
     return {
+        "stop": stop,
         "search_alg": search_alg,
         "scheduler": scheduler,
         "num_samples": args["num_samples"],

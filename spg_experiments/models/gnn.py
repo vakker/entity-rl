@@ -11,7 +11,7 @@ module = sys.modules[__name__]
 
 
 class GATFeatures(nn.Module):
-    def __init__(self, n_input_features, dims, activation=None, norm=None):
+    def __init__(self, n_input_features, dims, activation=None, norm=None, dropout=0.0):
         # pylint: disable=unused-argument
         super().__init__()
 
@@ -45,7 +45,7 @@ class GATFeatures(nn.Module):
 
 
 class GINFeatures(torch.nn.Module):
-    def __init__(self, n_input_features, dims, activation=None, norm=None):
+    def __init__(self, n_input_features, dims, activation=None, norm=None, dropout=0.0):
         # pylint: disable=unused-argument
         super().__init__()
 
@@ -68,7 +68,11 @@ class GINFeatures(torch.nn.Module):
             in_channels = dim
 
         self._convs = nn.ModuleList(convs)
-        self.mlp = MLP([in_channels, in_channels, in_channels], norm=None, dropout=0.5)
+        self.mlp = MLP(
+            [in_channels, in_channels, in_channels],
+            norm=None,
+            dropout=dropout,
+        )
 
         self.out_channels = in_channels
 
@@ -109,16 +113,13 @@ class GnnPolicy(BasePolicy):
         in_channels = obs_space.original_space["x"].child_space.shape[0]
 
         self._n_input_size = in_channels
-        dims = model_config["custom_model_config"]["dims"]
-        activation = model_config["custom_model_config"].get("activation")
         graph_conv = model_config["custom_model_config"].get(
             "graph_conv", "GATFeatures"
         )
 
         gnn = getattr(module, graph_conv)(
             n_input_features=in_channels,
-            dims=dims,
-            activation=activation,
+            **model_config["custom_model_config"].get("conv_config", {})
         )
 
         self._encoder = nn.Sequential(gnn, nn.Flatten())
