@@ -119,7 +119,15 @@ class AtariSet(AtariEnv):
         self.props = props
 
         if len(x) > self.max_elements:
-            print(f"Num elements ({len(x)}) larger than max ({self.max_elements})")
+            print(
+                f"Num elements ({len(x)}) larger than max ({self.max_elements}) for ",
+                self._config["pg_name"],
+            )
+
+        # assert len(x) <= self.max_elements, (
+        #     f"Num elements ({len(x)}) larger than max",
+        #     f"({self.max_elements}) for " + self._config["pg_name"],
+        # )
 
         return x
 
