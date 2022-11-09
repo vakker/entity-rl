@@ -218,4 +218,6 @@ class AimLoggerCallback(LoggerCallback):
         # if not failed:
         #     self._trial_runs[trial].report_successful_finish()
 
-        del self._trial_runs[trial]
+        if trial in self._trial_runs:
+            self._trial_runs[trial].close()
+            del self._trial_runs[trial]
