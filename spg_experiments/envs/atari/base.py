@@ -3,9 +3,12 @@ from abc import ABC, abstractmethod
 
 import gym
 import numpy as np
+from ale_py import ALEInterface, LoggerMode
 from ray.rllib.env.wrappers import atari_wrappers as wrappers
 from skimage import transform
 from skimage.util import img_as_ubyte
+
+ALEInterface.setLoggerMode(LoggerMode.Error)
 
 
 class AtariEnv(gym.Env, ABC):
