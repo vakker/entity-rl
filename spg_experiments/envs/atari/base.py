@@ -26,9 +26,6 @@ class AtariEnv(gym.Env, ABC):
         if config.get("wrap", True):
             self._env = wrap_deepmind(self._env)
 
-        # FIXME: this should be part of the wrapper and optional
-        # self._env = ResizeEnv(self._env, (128, 128))
-
         self.video_dir = config.get("video_dir")
 
         self.episodes = 0
@@ -142,12 +139,13 @@ class SkipEnv(gym.Wrapper):
         return obs, total_reward, done, info
 
 
-def wrap_deepmind(env, framestack=True, skip=4, stack=4):
+def wrap_deepmind(env, framestack=True, skip=4, stack=4, resize=None):
     """Configure environment for DeepMind-style Atari. See:
     https://github.com/ray-project/ray/blob/master/rllib/env/wrappers/atari_wrappers.py
     """
     env = wrappers.MonitorEnv(env)
     env = wrappers.NoopResetEnv(env, noop_max=30)
+    # FIXME: this doesn't skip for the ALE envs. Is that needed?
     if env.spec is not None and "NoFrameskip" in env.spec.id:
         env = SkipEnv(env, skip=skip)  # Don't use max, only skip
         # env = wrappers.MaxAndSkipEnv(env, skip=skip)
@@ -160,4 +158,8 @@ def wrap_deepmind(env, framestack=True, skip=4, stack=4):
     # 4x image framestacking.
     if framestack is True:
         env = wrappers.FrameStack(env, stack)
+
+    if resize:
+        env = ResizeEnv(env, resize)
+
     return env
