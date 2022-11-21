@@ -1,5 +1,8 @@
+from os import path as osp
+
 import gym
 import numpy as np
+import yaml
 from ray.rllib.utils.spaces.repeated import Repeated
 from skimage.color import label2rgb
 from skimage.draw import disk, rectangle, rectangle_perimeter
@@ -19,13 +22,17 @@ class AtariSet(AtariEnv):
 
         self.stack_size = self._env.observation_space.shape[-1] // 3
 
-        if config["pg_name"] == "PongNoFrameskip-v4":
-            self.max_elements = 20
-        elif config["pg_name"] == "SkiingNoFrameskip-v4":
-            self.max_elements = 40
-        else:
-            self.max_elements = 120
+        dir_path = osp.dirname(osp.abspath(__file__))
+        with open(osp.join(dir_path, "max-x-for-game.yml")) as yaml_f:
+            max_x = yaml.safe_load(yaml_f)
 
+        if config["pg_name"] in max_x:
+            max_elements = max_x[config["pg_name"]]
+        else:
+            max_elements = max(x for _, x in max_x.items())
+            print("No info for ", config["pg_name"], "setting max x to ", max_elements)
+
+        self.max_elements = int(max_elements * 1.2)
         self.max_elements *= self.stack_size
 
     def full_scenario(self):
