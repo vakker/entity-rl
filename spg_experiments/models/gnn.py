@@ -96,8 +96,8 @@ class GnnPolicy(BasePolicy):
             edge_index_len = input_dict["obs"]["edge_index"].lengths.long()
 
         else:
-            edge_index = (None for _ in range(len(input_dict["obs"])))
-            edge_index_len = (None for _ in range(len(input_dict["obs"])))
+            edge_index = (None for _ in range(len(input_dict["obs_flat"])))
+            edge_index_len = (None for _ in range(len(input_dict["obs_flat"])))
 
         data = zip(
             input_dict["obs"]["x"].values,
