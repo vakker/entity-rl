@@ -32,7 +32,7 @@ class AtariSet(AtariEnv):
             max_elements = max(x for _, x in max_x.items())
             print("No info for ", config["pg_name"], "setting max x to ", max_elements)
 
-        self.max_elements = int(max_elements * 1.2)
+        self.max_elements = int(max_elements * 1.5)
         self.max_elements *= self.stack_size
 
     def full_scenario(self):
