@@ -229,6 +229,7 @@ def get_search_alg_sched(conf_yaml, args, is_grid_search):
     metric = conf_yaml["metric"]
 
     if alg_name is None or is_grid_search:
+        # FIXME: concurrency limiter doesn't work this way
         search_alg = None
 
     else:

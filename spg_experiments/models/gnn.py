@@ -89,11 +89,21 @@ class GnnPolicy(BasePolicy):
     def _hidden_layers(self, input_dict):
         g_batch = []
 
+        if "edge_index" in input_dict["obs"]:
+            edge_index = torch.transpose(
+                input_dict["obs"]["edge_index"].values, 2, 1
+            ).long()
+            edge_index_len = input_dict["obs"]["edge_index"].lengths.long()
+
+        else:
+            edge_index = (None for _ in range(len(input_dict["obs"])))
+            edge_index_len = (None for _ in range(len(input_dict["obs"])))
+
         data = zip(
             input_dict["obs"]["x"].values,
             input_dict["obs"]["x"].lengths.long(),
-            torch.transpose(input_dict["obs"]["edge_index"].values, 2, 1).long(),
-            input_dict["obs"]["edge_index"].lengths.long(),
+            edge_index,
+            edge_index_len,
         )
 
         # TODO: the stacking is still a bit slow
@@ -101,6 +111,31 @@ class GnnPolicy(BasePolicy):
             if not x_len:
                 x_len = 1
                 ei_len = 1
+
+            if edge_index is None:
+                n_nodes = x_len
+
+                # For refecence:
+                # start_time = time.time()
+                # edge_index = [
+                #     torch.tensor([i, j], device=input_dict["obs_flat"].device)
+                #     for i in range(n_nodes)
+                #     for j in range(n_nodes)
+                # ]
+                # edge_index = torch.transpose(torch.stack(edge_index), 1, 0).long()
+                # print("edge_index", time.time() - start_time)
+
+                node_indices = torch.tensor(
+                    range(n_nodes),
+                    dtype=torch.long,
+                    device=input_dict["obs_flat"].device,
+                )
+
+                j_idx = node_indices.tile((n_nodes,))
+                i_idx = node_indices.repeat_interleave(n_nodes)
+                edge_index = torch.stack([i_idx, j_idx], dim=0)
+
+                ei_len = edge_index.shape[1]
 
             g_batch.append(Data(x=x[:x_len], edge_index=edge_index[:, :ei_len]))
 
