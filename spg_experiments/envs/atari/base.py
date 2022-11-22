@@ -139,23 +139,28 @@ class SkipEnv(gym.Wrapper):
         return obs, total_reward, done, info
 
 
-def wrap_deepmind(env, framestack=True, skip=4, stack=4, resize=None):
+def wrap_deepmind(env, framestack=True, skip=0, stack=4, resize=None):
     """Configure environment for DeepMind-style Atari. See:
     https://github.com/ray-project/ray/blob/master/rllib/env/wrappers/atari_wrappers.py
+
+    For default env settings see:
+    https://www.gymlibrary.dev/environments/atari/
     """
+
     env = wrappers.MonitorEnv(env)
     env = wrappers.NoopResetEnv(env, noop_max=30)
-    # FIXME: this doesn't skip for the ALE envs. Is that needed?
-    if env.spec is not None and "NoFrameskip" in env.spec.id:
+    if skip > 0:
         env = SkipEnv(env, skip=skip)  # Don't use max, only skip
         # env = wrappers.MaxAndSkipEnv(env, skip=skip)
+
     env = wrappers.EpisodicLifeEnv(env)
     if "FIRE" in env.unwrapped.get_action_meanings():
         env = wrappers.FireResetEnv(env)
+
     # env = wrappers.WarpFrame(env, dim) # don't warp
     # env = wrappers.ScaledFloatFrame(env)  # TODO: use for dqn?
     # env = ClipRewardEnv(env)  # reward clipping is handled by policy eval
-    # 4x image framestacking.
+
     if framestack is True:
         env = wrappers.FrameStack(env, stack)
 
