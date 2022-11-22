@@ -11,6 +11,42 @@ from skimage.util import img_as_ubyte
 ALEInterface.setLoggerMode(LoggerMode.Error)
 
 
+class SimpleCorridor(gym.Env):
+    """Example of a custom env in which you have to walk down a corridor.
+
+    You can configure the length of the corridor via the env config."""
+
+    def __init__(self, config):
+        self.end_pos = 10
+        self.cur_pos = 0
+        self.action_space = gym.spaces.Discrete(2)
+        self.observation_space = gym.spaces.Box(
+            0.0, self.end_pos, shape=(1,), dtype=np.float32
+        )
+        # Set the seed. This is only used for the final (reach goal) reward.
+        self.seed(0)
+
+    def reset(self, *, seed=None, return_info=False, options=None):
+        self.cur_pos = 0
+        return [self.cur_pos]
+
+    def step(self, action):
+        assert action in [0, 1], action
+        if action == 0 and self.cur_pos > 0:
+            self.cur_pos -= 1
+        elif action == 1:
+            self.cur_pos += 1
+        done = self.cur_pos >= self.end_pos
+        # Produce a random reward when we reach the goal.
+        return [self.cur_pos], random.random() * 2 if done else -0.1, done, {}
+
+    def seed(self, seed=None):
+        random.seed(seed)
+
+    def render(self, mode="human"):
+        return None
+
+
 class AtariEnv(gym.Env, ABC):
     """Custom Environment that follows gym interface"""
 
