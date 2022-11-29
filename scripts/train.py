@@ -35,6 +35,15 @@ def main(args):
         name = utils.exp_name(tune_params["run_or_experiment"])
         resume = False
 
+    callback_list = []
+
+    if "data" in args.callbacks:
+        callback_list.append(callbacks.DataLoggerCallback())
+    if "aim" in args.callbacks:
+        callback_list.append(
+            callbacks.AimLoggerCallback(experiment_name=args_dict["exp_name"])
+        )
+
     reporter = CLIReporter(parameter_columns=utils.E({"_": "_"}))
     analysis = tune.run(
         **tune_params,
@@ -42,10 +51,7 @@ def main(args):
         resume=resume,
         name=name,
         verbose=3 if args_dict["verbose"] else 2,
-        callbacks=[
-            callbacks.DataLoggerCallback(),
-            callbacks.AimLoggerCallback(experiment_name=args_dict["exp_name"]),
-        ]
+        callbacks=callback_list,
     )
 
     return analysis
@@ -79,6 +85,7 @@ if __name__ == "__main__":
     PARSER.add_argument("--num-cpus", type=str)
     PARSER.add_argument("--exp-name", type=str, default="SPG-EXP")
     PARSER.add_argument("--no-gpu-workers", action="store_true")
+    PARSER.add_argument("--callbacks", nargs="+")
 
     ARGS = PARSER.parse_args()
 
