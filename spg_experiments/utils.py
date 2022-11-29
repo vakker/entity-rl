@@ -36,6 +36,7 @@ def register():
     register_env("atari_raw", envs.AtariRaw)
     register_env("atari_set", envs.AtariSet)
     register_env("atari_graph", envs.AtariGraph)
+    register_env("corridor", envs.SimpleCorridor)
 
     ModelCatalog.register_custom_model("fc_net", models.FcPolicy)
     ModelCatalog.register_custom_model("cnn1d_net", models.Cnn1DPolicy)
@@ -153,6 +154,11 @@ def get_tune_params(args):
     cpus_per_worker = (
         args["cpus_per_worker"] / 2 if args["eval_int"] else args["cpus_per_worker"]
     )
+
+    gpus_per_worker = (
+        args["gpus_per_worker"] / 2 if args["eval_int"] else args["gpus_per_worker"]
+    )
+
     configs_base = {
         "num_workers": args["num_workers"],
         "evaluation_config": {
@@ -162,8 +168,11 @@ def get_tune_params(args):
         "evaluation_duration": 10,
         "evaluation_duration_unit": "episodes",
         "num_cpus_per_worker": cpus_per_worker,
+        "num_gpus_per_worker": gpus_per_worker,
+        "remote_env_batch_wait_ms": 0,
         "evaluation_num_workers": args["num_workers"] if args["eval_int"] else 0,
         "num_gpus": args["num_gpus"],
+        # "remote_worker_envs": True,
         "framework": "torch",
         "num_envs_per_worker": args["envs_per_worker"],
         "batch_mode": "truncate_episodes",
@@ -229,6 +238,7 @@ def get_search_alg_sched(conf_yaml, args, is_grid_search):
     metric = conf_yaml["metric"]
 
     if alg_name is None or is_grid_search:
+        # FIXME: concurrency limiter doesn't work this way
         search_alg = None
 
     else:

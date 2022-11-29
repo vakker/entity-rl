@@ -19,6 +19,7 @@ class FcPolicy(TorchModelV2, nn.Module):
         )
 
     def forward(self, input_dict, state, seq_lens):
+        input_dict["obs"] = input_dict["obs_flat"]
         fc_out, state = self.torch_sub_model(input_dict, state, seq_lens)
         return fc_out, state
 
