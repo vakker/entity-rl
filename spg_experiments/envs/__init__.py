@@ -1,4 +1,4 @@
-from .atari import AtariGraph, AtariRaw, AtariSet
+from .atari import AtariGraph, AtariRaw, AtariSet, SimpleCorridor
 from .spg import PgDict, PgFlat, PgGraph, PgSet, PgStacked
 
 __all__ = [
@@ -10,4 +10,5 @@ __all__ = [
     "AtariRaw",
     "AtariSet",
     "AtariGraph",
+    "SimpleCorridor",
 ]

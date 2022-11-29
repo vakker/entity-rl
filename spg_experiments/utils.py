@@ -36,7 +36,7 @@ def register():
     register_env("atari_raw", envs.AtariRaw)
     register_env("atari_set", envs.AtariSet)
     register_env("atari_graph", envs.AtariGraph)
-    register_env("corridor", envs.atari.base.SimpleCorridor)
+    register_env("corridor", envs.SimpleCorridor)
 
     ModelCatalog.register_custom_model("fc_net", models.FcPolicy)
     ModelCatalog.register_custom_model("cnn1d_net", models.Cnn1DPolicy)

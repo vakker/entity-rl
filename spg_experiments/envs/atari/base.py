@@ -181,6 +181,8 @@ def wrap_deepmind(env, framestack=True, skip=0, stack=4, resize=None):
 
     For default env settings see:
     https://www.gymlibrary.dev/environments/atari/
+
+    Note: ALE v5 envs have frameskip by default.
     """
 
     env = wrappers.MonitorEnv(env)
