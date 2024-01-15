@@ -7,7 +7,7 @@ import torch
 from ray import tune
 from ray.tune import CLIReporter
 
-from spg_experiments import callbacks, utils
+from entity_rl import callbacks, utils
 
 torch.backends.cudnn.benchmark = True
 
