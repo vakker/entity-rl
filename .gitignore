@@ -4,6 +4,8 @@ data
 mlruns
 backup
 outputs
+frames
+results
 
 TAGS
 
