@@ -1,3 +1,6 @@
+# pylint: disable=line-too-long
+
+
 from setuptools import find_packages, setup
 
 install_requires = [
@@ -23,6 +26,7 @@ install_requires = [
     "torch-scatter",
     "torch-sparse",
     "torch-geometric",
+    "simple-playgrounds",
 ]
 
 test_requires = [
@@ -48,6 +52,9 @@ setup(
     packages=find_packages(where="src"),
     package_dir={"": "src"},
     install_requires=install_requires,
+    dependency_links=[
+        "git+https://github.com/gaorkl/simple-playgrounds.git@legacy-v1#egg=simple-playgrounds",
+    ],
     extras_require={
         "test": test_requires,
         "dev": dev_requires,
