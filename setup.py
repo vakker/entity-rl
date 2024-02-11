@@ -20,13 +20,14 @@ install_requires = [
     "yacs",
     "scikit-image",
     "imagecodecs",
-    "gym[atari]",
+    "gymnasium[atari,box2d]",
     "autorom[accept-rom-license]",
     "aim",
     "torch-scatter",
     "torch-sparse",
     "torch-geometric",
     "simple-playgrounds",
+    "gputil",
 ]
 
 test_requires = [

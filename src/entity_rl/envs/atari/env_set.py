@@ -1,6 +1,6 @@
 from os import path as osp
 
-import gym
+import gymnasium as gym
 import numpy as np
 import yaml
 from ray.rllib.utils.spaces.repeated import Repeated

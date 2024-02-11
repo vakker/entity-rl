@@ -1,7 +1,7 @@
 import random
 from abc import ABC, abstractmethod
 
-import gym
+import gymnasium as gym
 import numpy as np
 from ale_py import ALEInterface, LoggerMode
 from ray.rllib.env.wrappers import atari_wrappers as wrappers
@@ -26,9 +26,9 @@ class SimpleCorridor(gym.Env):
         # Set the seed. This is only used for the final (reach goal) reward.
         self.seed(0)
 
-    def reset(self, *, seed=None, return_info=False, options=None):
+    def reset(self, seed=None, options=None):
         self.cur_pos = 0
-        return [self.cur_pos]
+        return [self.cur_pos], {}
 
     def step(self, action):
         assert action in [0, 1], action
@@ -38,7 +38,7 @@ class SimpleCorridor(gym.Env):
             self.cur_pos += 1
         done = self.cur_pos >= self.end_pos
         # Produce a random reward when we reach the goal.
-        return [self.cur_pos], random.random() * 2 if done else -0.1, done, {}
+        return [self.cur_pos], random.random() * 2 if done else -0.1, done, False, {}
 
     def seed(self, seed=None):
         random.seed(seed)
@@ -85,19 +85,20 @@ class AtariEnv(gym.Env, ABC):
     def _set_obs_space(self):
         orig = self._env.observation_space
         cropped_shape = (orig.shape[0] - sum(self._crop), orig.shape[1], orig.shape[2])
-        return gym.spaces.Box(0, 1, cropped_shape, dtype=np.float32)
+        low = np.amin(orig.low)
+        high = np.amax(orig.high)
+        return gym.spaces.Box(low, high, cropped_shape, dtype=orig.dtype)
 
     def step(self, action):
-        obs, reward, done, info = self._env.step(action)
-        return self._process_obs(obs), reward, done, info
+        obs, reward, done, truncated, info = self._env.step(action)
+        return self._process_obs(obs), reward, done, truncated, info
 
-    def reset(self, *, seed=None, return_info=False, options=None):
-        assert not return_info
-
-        obs = self._env.reset()
+    def reset(self, seed=None, options=None):
+        obs, info = self._env.reset()
         self.episodes += 1
+        obs = self._process_obs(obs)
 
-        return self._process_obs(obs)
+        return obs, info
 
     def render(self, mode="human"):
         if self.video_dir is None:
@@ -129,7 +130,8 @@ class AtariEnv(gym.Env, ABC):
 class AtariRaw(AtariEnv):
     def process_obs(self, obs):
         self.obs_raw = obs
-        return obs / 255
+        return obs
+        # return obs / 255
 
     def full_scenario(self):
         return self.obs_raw
@@ -167,12 +169,12 @@ class SkipEnv(gym.Wrapper):
     def step(self, action):
         total_reward = 0.0
         for _ in range(self._skip):
-            obs, reward, done, info = self.env.step(action)
+            obs, reward, done, truncated, info = self.env.step(action)
             total_reward += reward
             if done:
                 break
 
-        return obs, total_reward, done, info
+        return obs, total_reward, done, truncated, info
 
 
 def wrap_deepmind(env, framestack=True, skip=0, stack=4, resize=None):

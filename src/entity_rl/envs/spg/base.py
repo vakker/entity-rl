@@ -5,9 +5,9 @@ import random
 from abc import ABC, abstractmethod
 from os import path as osp
 
-import gym
+import gymnasium as gym
 import numpy as np
-from gym import spaces
+from gymnasium import spaces
 from simple_playgrounds.agent import agents, controllers
 from simple_playgrounds.device import sensors
 from simple_playgrounds.element.elements.activable import Dispenser

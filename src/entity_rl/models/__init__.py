@@ -3,14 +3,15 @@ from .cnn import CnnPolicy
 from .cnn1d import Cnn1DPolicy
 from .fc import FcPolicy
 from .gnn import GnnPolicy
-from .space_policy import SpaceGnnPolicy
+
+# from .space_policy import SpaceGnnPolicy
 
 __all__ = [
     "FcPolicy",
     "Cnn1DPolicy",
     "GnnPolicy",
     "AttnPolicy",
-    "SpaceGnnPolicy",
+    # "SpaceGnnPolicy",
     "CnnPolicy",
 ]
 

@@ -4,10 +4,9 @@ from os import path as osp
 
 import ray
 import torch
-from ray import tune
-from ray.tune import CLIReporter
+from ray.tune.tuner import Tuner
 
-from entity_rl import callbacks, utils
+from entity_rl import utils
 
 torch.backends.cudnn.benchmark = True
 
@@ -22,39 +21,21 @@ def main(args):
         configure_logging=True,
         logging_level="DEBUG" if args.verbose else "INFO",
     )
-    utils.register()
+    # utils.register()
 
-    if args_dict["local"] and args_dict["num_workers"]:
-        args_dict["num_workers"] = 1
+    configs = utils.get_configs(args_dict)
 
-    tune_params = utils.get_tune_params(args_dict)
     if args_dict["resume_from"]:
-        name = args_dict["resume_from"]
-        resume = True
-    else:
-        name = utils.exp_name(tune_params["run_or_experiment"])
-        resume = False
-
-    callback_list = []
-
-    if "data" in args.callbacks:
-        callback_list.append(callbacks.DataLoggerCallback())
-    if "aim" in args.callbacks:
-        callback_list.append(
-            callbacks.AimLoggerCallback(experiment_name=args_dict["exp_name"])
+        tuner = Tuner.restore(
+            path=args_dict["resume_from"],
+            trainable=configs["trainable"],
         )
 
-    reporter = CLIReporter(parameter_columns=utils.E({"_": "_"}))
-    analysis = tune.run(
-        **tune_params,
-        progress_reporter=reporter,
-        resume=resume,
-        name=name,
-        verbose=3 if args_dict["verbose"] else 2,
-        callbacks=callback_list,
-    )
+    else:
+        tuner = Tuner(**configs)
 
-    return analysis
+    results = tuner.fit()
+    return results
 
 
 if __name__ == "__main__":
@@ -67,7 +48,7 @@ if __name__ == "__main__":
     PARSER.add_argument("--no-sched", action="store_true")
     PARSER.add_argument("--logdir")
     PARSER.add_argument("--stop-attr", type=str, default="timesteps_total")
-    PARSER.add_argument("--stop-at", type=int)
+    PARSER.add_argument("--stop-at", type=int, default=100000)
     PARSER.add_argument("--num-samples", type=int, default=1)
     PARSER.add_argument("--local", action="store_true")
     PARSER.add_argument("--concurrency", type=int, default=1)

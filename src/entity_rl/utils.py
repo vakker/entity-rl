@@ -5,16 +5,16 @@ from functools import wraps
 from os import path as osp
 
 import yaml
-from ray import tune
+from ray import train, tune
 from ray.rllib.models import ModelCatalog
+# from ray.tune import CLIReporter
 from ray.tune.registry import ENV_CREATOR, _global_registry, register_env
 from ray.tune.schedulers import AsyncHyperBandScheduler
-from ray.tune.search import ConcurrencyLimiter
 from ray.tune.search.ax import AxSearch
 from ray.tune.search.hebo import HEBOSearch
 from ray.tune.search.hyperopt import HyperOptSearch
 
-from .callbacks import CustomCallbacks
+from . import callbacks
 
 
 class E(dict):
@@ -27,11 +27,11 @@ def register():
 
     from . import envs, models
 
-    register_env("spg_flat", envs.PgFlat)
-    register_env("spg_dict", envs.PgDict)
-    register_env("spg_stacked", envs.PgStacked)
-    register_env("spg_set", envs.PgSet)
-    register_env("spg_graph", envs.PgGraph)
+    # register_env("spg_flat", envs.PgFlat)
+    # register_env("spg_dict", envs.PgDict)
+    # register_env("spg_stacked", envs.PgStacked)
+    # register_env("spg_set", envs.PgSet)
+    # register_env("spg_graph", envs.PgGraph)
 
     register_env("atari_raw", envs.AtariRaw)
     register_env("atari_set", envs.AtariSet)
@@ -85,7 +85,7 @@ def load_dict(dict_path):
     return yaml_dict
 
 
-def get_configs(log_dir):
+def load_configs(log_dir):
     assert osp.isdir(log_dir), "Log dir does not exists."
     # project_dir = get_project_dir()
 
@@ -142,22 +142,19 @@ def parse_tune_configs(configs, use_tune=False):
     return exp, is_grid_search
 
 
-def get_tune_params(args):
+def get_configs(args):
+    if args["local"] and args["num_workers"]:
+        args["num_workers"] = 1
+
     if args["smoke"]:
         args["stop_attr"] = "training_iteration"
         args["stop_at"] = 1
+        args["num_samples"] = min(2, args["num_samples"])
 
-    args["num_samples"] = (
-        min(2, args["num_samples"]) if args["smoke"] else args["num_samples"]
-    )
-
-    cpus_per_worker = (
-        args["cpus_per_worker"] / 2 if args["eval_int"] else args["cpus_per_worker"]
-    )
-
-    gpus_per_worker = (
-        args["gpus_per_worker"] / 2 if args["eval_int"] else args["gpus_per_worker"]
-    )
+    # Split the resources for train and eval
+    if args["eval_int"]:
+        args["cpus_per_worker"] = args["cpus_per_worker"] / 2
+        args["gpus_per_worker"] = args["gpus_per_worker"] / 2
 
     configs_base = {
         "num_workers": args["num_workers"],
@@ -167,8 +164,8 @@ def get_tune_params(args):
         "evaluation_interval": args["eval_int"],
         "evaluation_duration": 10,
         "evaluation_duration_unit": "episodes",
-        "num_cpus_per_worker": cpus_per_worker,
-        "num_gpus_per_worker": gpus_per_worker,
+        "num_cpus_per_worker": args["cpus_per_worker"],
+        "num_gpus_per_worker": args["gpus_per_worker"],
         "remote_env_batch_wait_ms": 0,
         "evaluation_num_workers": args["num_workers"] if args["eval_int"] else 0,
         "num_gpus": args["num_gpus"],
@@ -179,12 +176,13 @@ def get_tune_params(args):
         "observation_filter": "NoFilter",
         "log_sys_usage": False,
         # "preprocessor_pref": None,
+        "experimental": {"_enable_new_api_stack": True},
     }
 
     if args["no_gpu_workers"]:
         configs_base["custom_resources_per_worker"] = {"NO-GPU": 0.0001}
 
-    conf_yaml = get_configs(args["logdir"])
+    conf_yaml = load_configs(args["logdir"])
     configs, is_grid_search = parse_tune_configs(conf_yaml, args["tune"])
 
     # TODO: the same env_config is used for the built-in envs, should be renamed,
@@ -198,62 +196,78 @@ def get_tune_params(args):
         configs["env_config"]["logdir"] = osp.realpath(args["logdir"])
 
     configs.update(configs_base)
-    configs["callbacks"] = CustomCallbacks
+    # This is RLlib specific
+    configs["callbacks"] = callbacks.CustomCallbacks
+    param_space = configs
 
     assert conf_yaml["run"] == "PPO"
-    if "space_loss_coeff" in configs:
-        raise NotImplementedError("SpacePPOTrainer is not fully implemented.")
-
     experiment = "PPO"
 
-    tune_params = {
-        "config": configs,
-        "run_or_experiment": experiment,
-    }
-    tune_params.update(get_search_alg_sched(conf_yaml, args, is_grid_search))
+    tune_config = get_search_alg_sched(conf_yaml, args, is_grid_search)
 
-    tune_params.update(
-        {
-            "trial_name_creator": trial_str_creator,
-            "trial_dirname_creator": trial_str_creator,
-            "local_dir": args["logdir"],
-            "checkpoint_freq": args["checkpoint_freq"],
-            "checkpoint_at_end": args["checkpoint_freq"] > 0,
-            "keep_checkpoints_num": None if args["keep_all_chkp"] else 3,
-            "checkpoint_score_attr": conf_yaml["metric"],
-            "max_failures": 1 if args["smoke"] else 2,
-        }
+    # These are general logging callbacks
+    if args["callbacks"]:
+        callback_list = []
+        if "data" in args["callbacks"]:
+            callback_list.append(
+                callbacks.DataLoggerCallback(),
+            )
+        if "aim" in args["callbacks"]:
+            callback_list.append(
+                callbacks.AimLoggerCallback(experiment_name=args["exp_name"])
+            )
+    else:
+        callback_list = None
+
+    run_config = train.RunConfig(
+        name=exp_name(experiment),
+        verbose=3 if args["verbose"] else 2,
+        # progress_reporter=CLIReporter(parameter_columns=E({"_": "_"})),
+        callbacks=callback_list,
+        stop={"training_iteration": args["stop_at"]},
+        storage_path=args["logdir"],
+        local_dir=args["logdir"],
+        checkpoint_config=train.CheckpointConfig(
+            num_to_keep=None if args["keep_all_chkp"] else 3,
+            checkpoint_frequency=args["checkpoint_freq"],
+            checkpoint_at_end=args["checkpoint_freq"] > 0,
+            checkpoint_score_attribute=conf_yaml["metric"],
+        ),
+        failure_config=train.FailureConfig(
+            max_failures=1 if args["smoke"] else 2,
+            fail_fast=args["smoke"],
+        ),
     )
 
-    return tune_params
+    return {
+        "trainable": experiment,
+        "tune_config": tune_config,
+        "run_config": run_config,
+        "param_space": param_space,
+    }
 
 
 def get_search_alg_sched(conf_yaml, args, is_grid_search):
-    stop = {args["stop_attr"]: args["stop_at"]}
-
     if not args["tune"]:
-        return {"stop": stop, "num_samples": args["num_samples"]}
+        return tune.TuneConfig(num_samples=args["num_samples"])
 
     alg_name = conf_yaml.get("search_alg")
-    metric = conf_yaml["metric"]
 
     if alg_name is None or is_grid_search:
-        # FIXME: concurrency limiter doesn't work this way
+        # With max_concurrent_trials this should be fine
         search_alg = None
 
     else:
         assert args["num_samples"] > 1
 
         if alg_name == "hyperopt":
-            search_alg = HyperOptSearch(metric=metric, mode="max", n_initial_points=10)
+            search_alg = HyperOptSearch(n_initial_points=10)
         elif alg_name == "ax":
-            search_alg = AxSearch(metric=metric, mode="max")
+            search_alg = AxSearch()
         elif alg_name == "hebo":
-            search_alg = HEBOSearch(metric=metric, mode="max")
+            search_alg = HEBOSearch()
         else:
             raise NotImplementedError(f"Search alg {alg_name} not implemented")
-
-        search_alg = ConcurrencyLimiter(search_alg, max_concurrent=args["concurrency"])
 
     if args["no_sched"] or args["smoke"]:
         scheduler = None
@@ -262,18 +276,22 @@ def get_search_alg_sched(conf_yaml, args, is_grid_search):
         assert 0 < args["grace_period"] < 1
         scheduler = AsyncHyperBandScheduler(
             time_attr=args["stop_attr"],
-            metric=metric,
-            mode="max",
             grace_period=int(args["stop_at"] * args["grace_period"]),
             max_t=args["stop_at"],
         )
 
-    return {
-        "stop": stop,
-        "search_alg": search_alg,
-        "scheduler": scheduler,
-        "num_samples": args["num_samples"],
-    }
+    tune_config = tune.TuneConfig(
+        search_alg=search_alg,
+        scheduler=scheduler,
+        metric=conf_yaml["metric"],
+        mode="max",
+        num_samples=args["num_samples"],
+        max_concurrent_trials=args["concurrency"],
+        trial_name_creator=trial_str_creator,
+        trial_dirname_creator=trial_str_creator,
+    )
+
+    return tune_config
 
 
 class TicToc:

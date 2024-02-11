@@ -1,6 +1,6 @@
 import warnings
 
-import gym
+import gymnasium as gym
 import numpy as np
 from ray.rllib.utils.spaces.repeated import Repeated
 
