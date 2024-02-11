@@ -7,6 +7,7 @@ from os import path as osp
 import yaml
 from ray import train, tune
 from ray.rllib.models import ModelCatalog
+
 # from ray.tune import CLIReporter
 from ray.tune.registry import ENV_CREATOR, _global_registry, register_env
 from ray.tune.schedulers import AsyncHyperBandScheduler
@@ -176,7 +177,7 @@ def get_configs(args):
         "observation_filter": "NoFilter",
         "log_sys_usage": False,
         # "preprocessor_pref": None,
-        "experimental": {"_enable_new_api_stack": True},
+        "_enable_new_api_stack": True,
     }
 
     if args["no_gpu_workers"]:
