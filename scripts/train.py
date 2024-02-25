@@ -21,7 +21,7 @@ def main(args):
         configure_logging=True,
         logging_level="DEBUG" if args.verbose else "INFO",
     )
-    # utils.register()
+    utils.register()
 
     configs = utils.get_configs(args_dict)
 

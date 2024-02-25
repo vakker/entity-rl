@@ -19,6 +19,13 @@ class BaseModule(nn.Module, ABC):
     def device(self):
         return next(self.parameters()).device
 
+    @property
+    def num_params(self):
+        s = 0
+        for p in self.parameters():
+            s += p.sum()
+        return s.item()
+
 
 class BasePolicy(TorchModelV2, BaseModule, ABC):
     # pylint: disable=abstract-method,unused-argument

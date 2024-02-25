@@ -44,7 +44,7 @@ class GATFeatures(nn.Module):
         return x
 
 
-class GINFeatures(torch.nn.Module):
+class GINFeatures(nn.Module):
     def __init__(self, n_input_features, dims, activation=None, norm=None, dropout=0.0):
         # pylint: disable=unused-argument
         super().__init__()

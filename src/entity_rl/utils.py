@@ -39,12 +39,7 @@ def register():
     register_env("atari_graph", envs.AtariGraph)
     register_env("corridor", envs.SimpleCorridor)
 
-    ModelCatalog.register_custom_model("fc_net", models.FcPolicy)
-    ModelCatalog.register_custom_model("cnn1d_net", models.Cnn1DPolicy)
-    ModelCatalog.register_custom_model("cnn_net", models.CnnPolicy)
-    ModelCatalog.register_custom_model("attn_net", models.AttnPolicy)
-    ModelCatalog.register_custom_model("gnn_net", models.GnnPolicy)
-    # ModelCatalog.register_custom_model("space_gnn_net", models.SpaceGnnPolicy)
+    ModelCatalog.register_custom_model("enros", models.ENROSPolicy)
 
 
 def get_env_creator(env_name):
@@ -177,7 +172,7 @@ def get_configs(args):
         "observation_filter": "NoFilter",
         "log_sys_usage": False,
         # "preprocessor_pref": None,
-        "_enable_new_api_stack": True,
+        # "_enable_new_api_stack": True,
     }
 
     if args["no_gpu_workers"]:
