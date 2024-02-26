@@ -157,4 +157,7 @@ class ENROSPolicy(TorchModelV2, BaseModule):
     @override(TorchModelV2)
     def value_function(self):
         assert self._features is not None, "must call forward() first"
+
+        # squeeze(1) is needed because the value function is expected to be just
+        # a single number per batch element, and not B x 1
         return self._vf(self._features).squeeze(1)

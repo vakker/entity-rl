@@ -1,5 +1,6 @@
 import argparse
 import logging
+import os
 from os import path as osp
 
 import ray
@@ -13,6 +14,7 @@ torch.backends.cudnn.benchmark = True
 
 def main(args):
     args_dict = vars(args)
+    os.environ["TUNE_RESULT_DIR"] = args_dict["logdir"]
 
     ray.init(
         address=args_dict["head_ip"],
@@ -51,7 +53,7 @@ if __name__ == "__main__":
     PARSER.add_argument("--stop-at", type=int, default=100000)
     PARSER.add_argument("--num-samples", type=int, default=1)
     PARSER.add_argument("--local", action="store_true")
-    PARSER.add_argument("--concurrency", type=int, default=1)
+    PARSER.add_argument("--concurrency", type=int, default=100000)
     PARSER.add_argument("--num-workers", type=int, default=1)
     PARSER.add_argument("--cpus-per-worker", type=float, default=1.0)
     PARSER.add_argument("--gpus-per-worker", type=float, default=0.0)

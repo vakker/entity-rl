@@ -217,10 +217,10 @@ def get_configs(args):
 
     run_config = train.RunConfig(
         name=exp_name(experiment),
-        verbose=3 if args["verbose"] else 2,
+        verbose=2 if args["verbose"] else 1,
         # progress_reporter=CLIReporter(parameter_columns=E({"_": "_"})),
         callbacks=callback_list,
-        stop={"training_iteration": args["stop_at"]},
+        stop={args["stop_attr"]: args["stop_at"]},
         storage_path=args["logdir"],
         local_dir=args["logdir"],
         checkpoint_config=train.CheckpointConfig(
