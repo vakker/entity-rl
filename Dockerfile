@@ -1,34 +1,56 @@
-FROM nvidia/cuda:11.6.1-cudnn8-devel-ubuntu20.04
+FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+ENV TZ=Etc/UTC
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV PYTHONUNBUFFERED=1
 
 USER root
 WORKDIR /root
 
-
-RUN apt-get -qq -y update && \
-    apt-get -qq -y install \
+RUN apt-get -y -qq update && \
+    apt-get -y -qq --no-install-recommends \
+    install \
     build-essential \
-    wget \
-    zlib1g-dev \
-    libbz2-dev \
     libncurses5-dev \
     libgdbm-dev \
     libnss3-dev \
+    nbtscan \
+    git \
+    iputils-ping \
     libssl-dev \
+    zlib1g-dev \
+    libbz2-dev \
     libreadline-dev \
-    libffi-dev \
     libsqlite3-dev \
+    wget \
     curl \
-    rsync \
-    git
+    llvm \
+    libncursesw5-dev \
+    xz-utils \
+    tk-dev \
+    libxml2-dev \
+    libxmlsec1-dev \
+    libffi-dev \
+    liblzma-dev \
+    libgl1 \
+    unp \
+    rsync && \
+    rm -rf /var/lib/apt/lists/*
 
-ENV PY_VERSION 3.9.7
-RUN wget -q https://www.python.org/ftp/python/${PY_VERSION}/Python-${PY_VERSION}.tgz && \
-    tar -xf Python-${PY_VERSION}.tgz && \
-    cd Python-${PY_VERSION} && \
+# Setup unison
+RUN wget https://github.com/bcpierce00/unison/releases/download/v2.53.0/unison-v2.53.0+ocaml-4.10.2+x86_64.linux.tar.gz && \
+    unp unison-v2.53.0+ocaml-4.10.2+x86_64.linux.tar.gz && \
+    cp bin/* /usr/local/bin && \
+    rm -rf unison-v2.53.0+ocaml-4.10.2+x86_64.linux.tar.gz bin
+
+# Install Python
+ENV PYTHON=3.10.7
+RUN wget -q https://www.python.org/ftp/python/${PYTHON}/Python-${PYTHON}.tgz && \
+    tar -xf Python-${PYTHON}.tgz && \
+    cd Python-${PYTHON} && \
     ./configure --enable-optimizations && \
-    make -j install
-
-RUN python3 -m pip install --upgrade --no-cache-dir pip setuptools wheel
-
-COPY requirements.txt .
-RUN pip install -r requirements.txt
+    make -j install && \
+    cd .. && \
+    rm -rf Python-${PYTHON} Python-${PYTHON}.tgz && \
+    python3 -m pip install --upgrade --no-cache-dir pip setuptools wheel

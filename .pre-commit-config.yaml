@@ -24,7 +24,7 @@ repos:
         entry: pylint
         language: system
         types: [python]
-        args: ["-j 0"]
+        args: ["-j 0", "-v"]
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.5.0

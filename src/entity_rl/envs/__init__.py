@@ -1,4 +1,4 @@
-from .atari import AtariGraph, AtariRaw, AtariSet, SimpleCorridor
+from .atari import AtariEnv, SimpleCorridor
 
 # from .spg import PgDict, PgFlat, PgGraph, PgSet, PgStacked
 
@@ -8,8 +8,6 @@ __all__ = [
     # "PgStacked",
     # "PgSet",
     # "PgGraph",
-    "AtariRaw",
-    "AtariSet",
-    "AtariGraph",
+    "AtariEnv",
     "SimpleCorridor",
 ]

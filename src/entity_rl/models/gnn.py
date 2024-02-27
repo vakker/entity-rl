@@ -5,8 +5,6 @@ from torch import nn
 from torch_geometric.data import Batch, Data
 from torch_geometric.nn import MLP, GATv2Conv, GINConv, global_mean_pool
 
-from .base import BasePolicy
-
 module = sys.modules[__name__]
 
 
@@ -85,7 +83,32 @@ class GINFeatures(nn.Module):
         return self.mlp(x)
 
 
-class GnnPolicy(BasePolicy):
+class GNNEncoder(nn.Module):
+    def __init__(self, model_config, input_space):
+        super().__init__()
+
+        # FIXME:
+        obs_space = input_space
+
+        in_channels = obs_space.original_space["x"].child_space.shape[0]
+
+        self._n_input_size = in_channels
+        graph_conv = model_config["custom_model_config"].get(
+            "graph_conv", "GATFeatures"
+        )
+
+        gnn = getattr(module, graph_conv)(
+            n_input_features=in_channels,
+            **model_config["custom_model_config"].get("conv_config", {})
+        )
+
+        self._encoder = nn.Sequential(gnn, nn.Flatten())
+        self._out_channeld = gnn.out_channels
+
+    def forward(self, inputs):
+        # TODO: refactor this
+        return self._hidden_layers(inputs)
+
     def _hidden_layers(self, input_dict):
         g_batch = []
 
@@ -143,21 +166,3 @@ class GnnPolicy(BasePolicy):
         features = self._encoder((batch.x, batch.edge_index, batch.batch))
 
         return features
-
-    def _create_hidden_layers(self, obs_space, model_config):
-        in_channels = obs_space.original_space["x"].child_space.shape[0]
-
-        self._n_input_size = in_channels
-        graph_conv = model_config["custom_model_config"].get(
-            "graph_conv", "GATFeatures"
-        )
-
-        gnn = getattr(module, graph_conv)(
-            n_input_features=in_channels,
-            **model_config["custom_model_config"].get("conv_config", {})
-        )
-
-        self._encoder = nn.Sequential(gnn, nn.Flatten())
-        out_channels_all = gnn.out_channels
-
-        return out_channels_all
