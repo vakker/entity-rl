@@ -71,7 +71,7 @@ class AtariEnv(gym.Env):
         self._config = config
 
     def seed(self, seed=None):
-        if seed is not None:
+        if seed is None:
             seed = 0
 
         seed = (seed + id(self)) % (2**32)
@@ -215,5 +215,7 @@ def wrap_deepmind(env, skip=0, stack=4, resize=None, crop=None):
 
     if stack > 1:
         env = wrappers.FrameStack(env, stack)
+
+    env = wrappers.NormalizedImageEnv(env)
 
     return env
