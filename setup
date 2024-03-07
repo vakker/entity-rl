@@ -1,0 +1,15 @@
+#!/bin/bash
+
+set -x
+
+# Install pytorch first because of torch-scatter (and others)
+pip install wheel
+pip install "torch~=2.1.0" torchvision
+pip install fairscale transformers nltk
+
+pip install openmim
+mim install mmengine
+mim install "mmcv>=2.0.0"
+mim install "mmdet[tracking]"
+
+pip install -e ".[dev,test]"

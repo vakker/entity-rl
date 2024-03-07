@@ -11,7 +11,8 @@ install_requires = [
     "tqdm",
     "python-multipart",
     "rich",
-    "ray[rllib] @ https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-3.0.0.dev0-cp310-cp310-manylinux2014_x86_64.whl",  # noqa: E501
+    "ray[rllib]",
+    # "ray[rllib] @ https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-3.0.0.dev0-cp310-cp310-manylinux2014_x86_64.whl",  # noqa: E501
     "torch",
     "torchvision",
     "transformers",
@@ -28,6 +29,7 @@ install_requires = [
     "torch-geometric",
     "simple-playgrounds",
     "gputil",
+    "mmengine",
 ]
 
 test_requires = [

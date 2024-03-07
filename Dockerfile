@@ -35,6 +35,9 @@ RUN apt-get -y -qq update && \
     liblzma-dev \
     libgl1 \
     unp \
+    htop \
+    swig \
+    vim \
     rsync && \
     rm -rf /var/lib/apt/lists/*
 
@@ -54,3 +57,8 @@ RUN wget -q https://www.python.org/ftp/python/${PYTHON}/Python-${PYTHON}.tgz && 
     cd .. && \
     rm -rf Python-${PYTHON} Python-${PYTHON}.tgz && \
     python3 -m pip install --upgrade --no-cache-dir pip setuptools wheel
+
+COPY requirements.txt .
+RUN pip3 install torch==2.2.0 torchvision==0.17.0 && \
+    pip3 install -r requirements.txt && \
+    rm -rf /root/.cache/pip
