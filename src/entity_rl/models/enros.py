@@ -1,19 +1,15 @@
-from typing import Dict, List
-
-import gymnasium as gym
 import torch
 from ray.rllib.models.torch.misc import SlimFC
 from ray.rllib.models.torch.torch_modelv2 import TorchModelV2
 from ray.rllib.utils.annotations import override
-from ray.rllib.utils.typing import ModelConfigDict, TensorType
 from torch import nn
 
-from . import combined
-from .base import BaseModule
+from . import combined, entity, scene
+from .base import BaseModule, get_num_params
 
 
-class Encoder(nn.Module):
-    def __init__(self, model_config, input_shape):
+class Encoder(BaseModule):
+    def __init__(self, model_config, obs_space):
         super().__init__()
 
         # The encoder needs to resolve the structure.
@@ -25,18 +21,18 @@ class Encoder(nn.Module):
             encoder_name = model_config["combined"]["name"]
             encoder_config = model_config["combined"]["config"]
             encoder = getattr(combined, encoder_name)
-            self._stages.append(encoder(encoder_config, input_shape))
+            self._stages.append(encoder(encoder_config, obs_space))
 
         else:
             encoder_name = model_config["entity"]["name"]
             encoder_config = model_config["entity"]["config"]
-            encoder = getattr(combined, encoder_name)
-            self._stages.append(encoder(encoder_config, input_shape))
+            encoder = getattr(entity, encoder_name)
+            self._stages.append(encoder(encoder_config, obs_space))
 
             input_shape = self._stages[-1].out_channels
             encoder_name = model_config["scene"]["name"]
             encoder_config = model_config["scene"]["config"]
-            encoder = getattr(combined, encoder_name)
+            encoder = getattr(scene, encoder_name)
             self._stages.append(encoder(encoder_config, input_shape))
 
     @property
@@ -48,6 +44,14 @@ class Encoder(nn.Module):
             inputs = stage(inputs)
 
         return inputs
+
+    @property
+    def num_params(self):
+        num_params = {}
+        for stage in self._stages:
+            num_params[stage.__class__.__name__] = get_num_params(stage)
+
+        return num_params
 
 
 # class Heads(nn.Module):
@@ -92,12 +96,12 @@ class ENROSPolicy(TorchModelV2, BaseModule):
     # pylint: disable=abstract-method,unused-argument
     def __init__(
         self,
-        obs_space: gym.spaces.Space,
-        action_space: gym.spaces.Space,
-        num_outputs: int,
-        model_config: ModelConfigDict,
-        name: str,
-        **custom_model_kwargs: dict,
+        obs_space,
+        action_space,
+        num_outputs,
+        model_config,
+        name,
+        **custom_model_kwargs,
     ):
         assert num_outputs is not None, "num_outputs must be set"
 
@@ -113,8 +117,7 @@ class ENROSPolicy(TorchModelV2, BaseModule):
 
         model_config = model_config["custom_model_config"]
         self._obs_space = obs_space
-        input_shape = obs_space.shape
-        self._encoder = Encoder(model_config["encoder"], input_shape)
+        self._encoder = Encoder(model_config["encoder"], obs_space)
 
         # ####### Heads
         # This could work with SlimConv2d, but it's unclear if it's actually faster
@@ -135,18 +138,8 @@ class ENROSPolicy(TorchModelV2, BaseModule):
 
         self._features = None
 
-        # TODO: add this as some logging option
-        # print('#################')
-        # print(self)
-        # print(count_parameters(self))
-
     @override(TorchModelV2)
-    def forward(
-        self,
-        input_dict: Dict[str, TensorType],
-        state: List[TensorType],
-        seq_lens: TensorType,
-    ):
+    def forward(self, input_dict, state, seq_lens):
         self._features = self._encoder(input_dict["obs"])
         logits = self._policy(self._features)
 
@@ -161,3 +154,10 @@ class ENROSPolicy(TorchModelV2, BaseModule):
         # squeeze(1) is needed because the value function is expected to be just
         # a single number per batch element, and not B x 1
         return self._vf(self._features).squeeze(1)
+
+    @property
+    def num_params(self):
+        num_params = self._encoder.num_params
+        num_params["policy"] = get_num_params(self._policy)
+        num_params["vf"] = get_num_params(self._vf)
+        return num_params

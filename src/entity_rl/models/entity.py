@@ -1,15 +1,20 @@
+import copy
 import sys
-from abc import ABC, abstractmethod
+from abc import abstractmethod
+from os import path as osp
 
-import numpy as np
+import torch
 from gymnasium import spaces
-from skimage.measure import label, regionprops
-from torch import nn
+from mmengine import Config
+from torch_geometric.data import Batch, Data
+
+from .base import BaseModule
+from .gdino import GDino
 
 module = sys.modules[__name__]
 
 
-class EntityEncoder(nn.Module, ABC):
+class EntityEncoder(BaseModule):
     def __init__(self, model_config, obs_space):
         super().__init__()
 
@@ -17,11 +22,12 @@ class EntityEncoder(nn.Module, ABC):
         self._obs_space = obs_space
 
     @abstractmethod
-    def get_out_channels(self):
+    def forward(self, inputs):
         pass
 
+    @property
     @abstractmethod
-    def forward(self, inputs):
+    def out_channels(self):
         pass
 
 
@@ -30,7 +36,8 @@ class EntityPassThrough(EntityEncoder):
         assert isinstance(obs_space, spaces.Graph)
         super().__init__(model_config, obs_space)
 
-    def get_out_channels(self):
+    @property
+    def out_channels(self):
         # TODO: add global features
         out_channels = {
             "node_features": self._obs_space.node_space.shape,
@@ -43,138 +50,47 @@ class EntityPassThrough(EntityEncoder):
         return inputs
 
 
-class ManualEntityEncoder(EntityEncoder):
+class GDINOEncoder(EntityEncoder):
     def __init__(self, model_config, obs_space):
         assert isinstance(obs_space, spaces.Box)
         super().__init__(model_config, obs_space)
 
-        # Due to frame stacking
-        self.stack_size = self._obs_space.shape[-1] // 3
+        self._model_config = model_config
+        current_dir = osp.dirname(osp.abspath(__file__))
+        gdino_cfg_file = osp.join(current_dir, model_config["gdino_cfg"])
+        assert osp.exists(gdino_cfg_file)
 
-    def get_out_channels(self):
-        # edge_index?
-        out_channels = {
-            "node_features": self.x_shape,
-            "edge_features": self.e_shape,
+        gdino_config = Config.fromfile(gdino_cfg_file).model
+        gdino_config.pop("language_model")
+        gdino_config.pop("type")
+        self._model = GDino(
+            prompt_size=model_config["prompt_size"], **copy.deepcopy(gdino_config)
+        )
+
+    @property
+    def out_channels(self):
+        # cls_feat, bbox normalized coords  (cx, cy, w, h), stack depth
+        x_shape = self._model.cls_features + 4 + 0
+        return {
+            "node_features": [x_shape],
+            "edge_features": None,
             "global_features": None,
         }
-        return out_channels
 
     def forward(self, inputs):
-        x = self.create_entity_features(inputs)
+        inputs = inputs.permute(0, 3, 1, 2)
+        inputs = inputs.to(torch.float32) / 255.0
+        # TODO: check normalization
 
-        if not self._config["add_edges"]:
-            return {"x": x}
+        # Only take 3 channels for now
+        inputs = inputs[:, :3]
+        outputs = self._model.forward(inputs, mode="tensor")
 
-        n_nodes = len(x)
-        # NOTE: this is simple fully connected graph
-        edge_index = [np.array([i, j]) for i in range(n_nodes) for j in range(n_nodes)]
+        g_batch = []
+        for sample in outputs:
+            # TODO: add stack depth
+            node_features = torch.cat([sample["features"], sample["bboxes"]], dim=1)
+            g_batch.append(Data(x=node_features))
 
-        # NOTE: this doesn't have edge features, only the
-        # connections
-        return {"x": x, "edge_index": edge_index}
-
-    @property
-    def e_shape(self):
-        if not self._config["add_edges"]:
-            return None
-        # Adjust for the number of channels
-        return (1,)
-
-    @property
-    def x_shape(self):
-        # colour (R, G, B), pos (row, col), size (row, col), stack depth -> 8
-        return (8,)
-
-    def create_entity_features(self, obs):
-        x = []
-
-        for stack_nr in range(self.stack_size):
-            c_min = stack_nr * 3
-            c_max = (stack_nr + 1) * 3
-            frame = obs[:, :, c_min:c_max]
-
-            segments = self.get_segments(frame)
-            props = regionprops(segments)
-
-            for p in props:
-                color = frame[p.coords[0][0], p.coords[0][1]] / 255
-                pos = np.array(p.centroid) / frame.shape[:2]
-                size = [
-                    p.bbox[2] - p.bbox[0],
-                    p.bbox[3] - p.bbox[1],
-                ]
-                size = np.array(size) / frame.shape[:2]
-
-                node_feat = np.concatenate(
-                    [
-                        color,
-                        pos,
-                        size,
-                        [stack_nr / self.stack_size],
-                    ]
-                ).astype(np.float32)
-                x.append(node_feat)
-
-        # self.obs_raw = frame
-        # self.segments = segments
-        # self.props = props
-
-        # if len(x) > self.max_elements:
-        #     print(
-        #         f"Num elements ({len(x)}) larger than max ({self.max_elements}) for ",
-        #         self._config["pg_name"],
-        #     )
-
-        # assert len(x) <= self.max_elements, (
-        #     f"Num elements ({len(x)}) larger than max",
-        #     f"({self.max_elements}) for " + self._config["pg_name"],
-        # )
-
-        return x
-
-    def get_segments(self, obs):
-        scaler = np.array([1, 500, 500 * 500])
-        colors = obs @ scaler
-
-        counts = np.bincount(colors.reshape(-1))
-        bg_color = np.argmax(counts)
-
-        labels = label(colors, background=bg_color, connectivity=2)
-        return labels
-
-    # TODO: this is used for rendering, needs to be integrated with the
-    # policy
-    # def full_scenario(self):
-    #     segm = self.obs_raw.copy()
-
-    #     for p in self.props:
-    #         size = [
-    #             p.bbox[2] - p.bbox[0],
-    #             p.bbox[3] - p.bbox[1],
-    #         ]
-
-    #         rr, cc = rectangle(start=p.bbox[:2], extent=size, shape=segm.shape)
-
-    #         color = self.obs_raw[p.coords[0][0], p.coords[0][1]]
-    #         segm[rr, cc] = color
-    #         rr, cc = rectangle_perimeter(
-    #             start=p.bbox[:2], extent=size, shape=segm.shape
-    #         )
-    #         segm[rr, cc] = [0, 0, 255]
-
-    #         rr, cc = disk(p.centroid, 1, shape=segm.shape)
-    #         segm[rr, cc] = [255, 0, 0]
-
-    #     line = img_as_ubyte(np.ones((segm.shape[0], 10, 3)))
-    #     img = np.concatenate(
-    #         [
-    #             img_as_ubyte(self.obs_raw),
-    #             line,
-    #             img_as_ubyte(segm),
-    #             line,
-    #             img_as_ubyte(label2rgb(self.segments)),
-    #         ],
-    #         axis=1,
-    #     )
-    #     return img
+        batch = Batch.from_data_list(g_batch)
+        return batch
