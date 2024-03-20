@@ -10,8 +10,12 @@ from ray.rllib.utils.typing import ModelConfigDict, TensorType
 from torch import nn
 
 
-def count_parameters(model):
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+def get_num_params(module):
+    num_params = {
+        "all": sum(p.numel() for p in module.parameters()),
+        "trainable": sum(p.numel() for p in module.parameters() if p.requires_grad),
+    }
+    return num_params
 
 
 class BaseModule(nn.Module, ABC):
@@ -21,10 +25,7 @@ class BaseModule(nn.Module, ABC):
 
     @property
     def num_params(self):
-        s = 0
-        for p in self.parameters():
-            s += p.sum()
-        return s.item()
+        return get_num_params(self)
 
 
 class BasePolicy(TorchModelV2, BaseModule, ABC):
