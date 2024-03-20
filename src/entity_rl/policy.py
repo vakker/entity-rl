@@ -75,10 +75,10 @@ class PPOTorchPolicyMP(PPOTorchPolicy):
             # self._optimizers[0].step()
 
 
-# pylint: disable=abstract-method
+# pylint: disable=abstract-method,arguments-differ,arguments-differ
 class PPOTrainerMP(PPOTrainer):
     _allow_unknown_configs = True
 
-    @classmethod
-    def get_default_policy_class(cls, config):
+    # @classmethod
+    def get_default_policy_class(self, config):
         return PPOTorchPolicyMP
