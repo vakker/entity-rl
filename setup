@@ -5,11 +5,14 @@ set -x
 # Install pytorch first because of torch-scatter (and others)
 pip install wheel
 pip install "torch~=2.1.0" torchvision
-pip install fairscale transformers nltk
+pip install transformers nltk
+# pip install "ray[rllib] @ https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-3.0.0.dev0-cp310-cp310-manylinux2014_x86_64.whl"
 
 pip install openmim
 mim install mmengine
 mim install "mmcv>=2.0.0"
 mim install "mmdet[tracking]"
 
-pip install -e ".[dev,test]"
+pip install -r requirements.txt
+
+# pip install -e ".[dev,test]"

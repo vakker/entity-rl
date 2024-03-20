@@ -41,6 +41,12 @@ RUN apt-get -y -qq update && \
     rsync && \
     rm -rf /var/lib/apt/lists/*
 
+# Install btop
+RUN git clone https://github.com/aristocratos/btop.git && \
+    cd btop && \
+    make GPU_SUPPORT=true && \
+    make install
+
 # Setup unison
 RUN wget https://github.com/bcpierce00/unison/releases/download/v2.53.0/unison-v2.53.0+ocaml-4.10.2+x86_64.linux.tar.gz && \
     unp unison-v2.53.0+ocaml-4.10.2+x86_64.linux.tar.gz && \
@@ -59,6 +65,6 @@ RUN wget -q https://www.python.org/ftp/python/${PYTHON}/Python-${PYTHON}.tgz && 
     python3 -m pip install --upgrade --no-cache-dir pip setuptools wheel
 
 COPY requirements.txt .
-RUN pip3 install torch==2.2.0 torchvision==0.17.0 && \
-    pip3 install -r requirements.txt && \
+COPY setup .
+RUN ./setup && \
     rm -rf /root/.cache/pip
