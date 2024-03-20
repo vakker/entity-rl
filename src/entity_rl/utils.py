@@ -16,6 +16,7 @@ from ray.tune.search.hebo import HEBOSearch
 from ray.tune.search.hyperopt import HyperOptSearch
 
 from . import callbacks
+from .policy import PPOTrainerMP
 
 
 class E(dict):
@@ -145,6 +146,13 @@ def get_configs(args):
         args["stop_at"] = 1
         args["num_samples"] = min(2, args["num_samples"])
 
+    if args["worker_gpu"]:
+        gpu_count = args["num_gpus"]
+        # Driver GPU
+        args["num_gpus"] = 0.0001
+        gpus_remaining = gpu_count - args["num_gpus"]
+        args["gpus_per_worker"] = gpus_remaining / args["num_workers"]
+
     # Split the resources for train and eval
     if args["eval_int"]:
         args["cpus_per_worker"] = args["cpus_per_worker"] / 2
@@ -160,9 +168,11 @@ def get_configs(args):
         "evaluation_duration_unit": "episodes",
         "num_cpus_per_worker": args["cpus_per_worker"],
         "num_gpus_per_worker": args["gpus_per_worker"],
-        "remote_env_batch_wait_ms": 0,
+        "remote_env_batch_wait_ms": 100,
         "evaluation_num_workers": args["num_workers"] if args["eval_int"] else 0,
         "num_gpus": args["num_gpus"],
+        "amp": args["amp"],
+        "show_model": args["show_model"],
         # "remote_worker_envs": True,
         "framework": "torch",
         "num_envs_per_worker": args["envs_per_worker"],
@@ -195,7 +205,8 @@ def get_configs(args):
     param_space = configs
 
     assert conf_yaml["run"] == "PPO"
-    experiment = "PPO"
+    # experiment = "PPO"
+    experiment = PPOTrainerMP
 
     tune_config = get_search_alg_sched(conf_yaml, args, is_grid_search)
 

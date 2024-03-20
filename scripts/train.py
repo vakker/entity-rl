@@ -60,6 +60,9 @@ if __name__ == "__main__":
     PARSER.add_argument("--envs-per-worker", type=int, default=1)
     PARSER.add_argument("--grace-period", type=float, default=0.25)
     PARSER.add_argument("--num-gpus", type=float, default=1.0)
+    PARSER.add_argument("--worker-gpu", action="store_true")
+    PARSER.add_argument("--amp", action="store_true")
+    PARSER.add_argument("--show-model", action="store_true")
     PARSER.add_argument("--checkpoint-freq", type=int, default=1)
     PARSER.add_argument("--keep-all-chkp", action="store_true")
     PARSER.add_argument("--eval-int", type=int)
@@ -72,12 +75,10 @@ if __name__ == "__main__":
 
     ARGS = PARSER.parse_args()
 
-    loglevel = "DEBUG" if ARGS.verbose else "INFO"
-    level = logging.getLevelName(loglevel)
-    log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    LOGLEVEL = "DEBUG" if ARGS.verbose else "INFO"
     logging.basicConfig(
-        level=level,
-        format=log_format,
+        level=logging.getLevelName(LOGLEVEL),
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         filename=osp.join(ARGS.logdir, "train.log"),
         filemode="a",
     )
