@@ -90,7 +90,20 @@ class GDINOEncoder(EntityEncoder):
         for sample in outputs:
             # TODO: add stack depth
             node_features = torch.cat([sample["features"], sample["bboxes"]], dim=1)
-            g_batch.append(Data(x=node_features))
+
+            if self._config.get("add_edges", False):
+                n_nodes = len(node_features)
+                edge_index = [[i, j] for i in range(n_nodes) for j in range(n_nodes)]
+                edge_index = (
+                    torch.tensor(edge_index, dtype=torch.long, device=self.device)
+                    .t()
+                    .contiguous()
+                )
+
+            else:
+                edge_index = None
+
+            g_batch.append(Data(x=node_features, edge_index=edge_index))
 
         batch = Batch.from_data_list(g_batch)
         return batch

@@ -1,9 +1,8 @@
 import sys
 from abc import abstractmethod
 
-import torch
 from torch import nn
-from torch_geometric.data import Batch, Data
+from torch_geometric.data import Batch
 from torch_geometric.nn import MLP, GATv2Conv, GINConv, global_mean_pool
 
 from .base import BaseModule
@@ -115,20 +114,14 @@ class GNNEncoder(BaseModule):
     def __init__(self, model_config, input_space):
         super().__init__()
 
-        # FIXME:
-        obs_space = input_space
-
-        in_channels = obs_space.original_space["x"].child_space.shape[0]
+        assert len(input_space["node_features"]) == 1
+        in_channels = input_space["node_features"][0]
 
         self._n_input_size = in_channels
-        graph_conv = model_config["custom_model_config"].get(
-            "graph_conv", "GATFeatures"
-        )
+        graph_conv = model_config.get("graph_conv", "GATFeatures")
 
-        gnn = getattr(module, graph_conv)(
-            n_input_features=in_channels,
-            **model_config["custom_model_config"].get("conv_config", {})
-        )
+        conv_conf = model_config.get("conv", {})
+        gnn = getattr(module, graph_conv)(n_input_features=in_channels, **conv_conf)
 
         self._encoder = nn.Sequential(gnn, nn.Flatten())
         self._out_channels = gnn.out_channels
@@ -138,66 +131,68 @@ class GNNEncoder(BaseModule):
         return self._out_channels
 
     def forward(self, inputs):
-        # TODO: refactor this
-        return self._hidden_layers(inputs)
+        assert isinstance(inputs, Batch)
 
-    def _hidden_layers(self, input_dict):
-        g_batch = []
-
-        if "edge_index" in input_dict["obs"]:
-            edge_index = torch.transpose(
-                input_dict["obs"]["edge_index"].values, 2, 1
-            ).long()
-            edge_index_len = input_dict["obs"]["edge_index"].lengths.long()
-
-        else:
-            edge_index = (None for _ in range(len(input_dict["obs_flat"])))
-            edge_index_len = (None for _ in range(len(input_dict["obs_flat"])))
-
-        data = zip(
-            input_dict["obs"]["x"].values,
-            input_dict["obs"]["x"].lengths.long(),
-            edge_index,
-            edge_index_len,
-        )
-
-        # TODO: the stacking is still a bit slow
-        for x, x_len, edge_index, ei_len in data:
-            if not x_len:
-                x_len = 1
-                ei_len = 1
-
-            if edge_index is None:
-                n_nodes = x_len
-
-                # For refecence:
-                # start_time = time.time()
-                # edge_index = [
-                #     torch.tensor([i, j], device=input_dict["obs_flat"].device)
-                #     for i in range(n_nodes)
-                #     for j in range(n_nodes)
-                # ]
-                # edge_index = torch.transpose(torch.stack(edge_index), 1, 0).long()
-                # print("edge_index", time.time() - start_time)
-
-                node_indices = torch.tensor(
-                    range(n_nodes),
-                    dtype=torch.long,
-                    device=input_dict["obs_flat"].device,
-                )
-
-                j_idx = node_indices.tile((n_nodes,))
-                i_idx = node_indices.repeat_interleave(n_nodes)
-                edge_index = torch.stack([i_idx, j_idx], dim=0)
-
-                ei_len = edge_index.shape[1]
-
-            g_batch.append(Data(x=x[:x_len], edge_index=edge_index[:, :ei_len]))
-
-        batch = Batch.from_data_list(g_batch)
-        features = self._encoder((batch.x, batch.edge_index, batch.batch))
-
+        features = self._encoder((inputs.x, inputs.edge_index, inputs.batch))
         return features
+
+    # def _hidden_layers(self, input_dict):
+    #     g_batch = []
+
+    #     if "edge_index" in input_dict["obs"]:
+    #         edge_index = torch.transpose(
+    #             input_dict["obs"]["edge_index"].values, 2, 1
+    #         ).long()
+    #         edge_index_len = input_dict["obs"]["edge_index"].lengths.long()
+
+    #     else:
+    #         edge_index = (None for _ in range(len(input_dict["obs_flat"])))
+    #         edge_index_len = (None for _ in range(len(input_dict["obs_flat"])))
+
+    #     data = zip(
+    #         input_dict["obs"]["x"].values,
+    #         input_dict["obs"]["x"].lengths.long(),
+    #         edge_index,
+    #         edge_index_len,
+    #     )
+
+    #     # TODO: the stacking is still a bit slow
+    #     for x, x_len, edge_index, ei_len in data:
+    #         if not x_len:
+    #             x_len = 1
+    #             ei_len = 1
+
+    #         if edge_index is None:
+    #             n_nodes = x_len
+
+    #             # For refecence:
+    #             # start_time = time.time()
+    #             # edge_index = [
+    #             #     torch.tensor([i, j], device=input_dict["obs_flat"].device)
+    #             #     for i in range(n_nodes)
+    #             #     for j in range(n_nodes)
+    #             # ]
+    #             # edge_index = torch.transpose(torch.stack(edge_index), 1, 0).long()
+    #             # print("edge_index", time.time() - start_time)
+
+    #             node_indices = torch.tensor(
+    #                 range(n_nodes),
+    #                 dtype=torch.long,
+    #                 device=input_dict["obs_flat"].device,
+    #             )
+
+    #             j_idx = node_indices.tile((n_nodes,))
+    #             i_idx = node_indices.repeat_interleave(n_nodes)
+    #             edge_index = torch.stack([i_idx, j_idx], dim=0)
+
+    #             ei_len = edge_index.shape[1]
+
+    #         g_batch.append(Data(x=x[:x_len], edge_index=edge_index[:, :ei_len]))
+
+    #     batch = Batch.from_data_list(g_batch)
+    #     features = self._encoder((batch.x, batch.edge_index, batch.batch))
+
+    #     return features
 
 
 # class SlotAttnDecoderRef(nn.Module):
