@@ -708,8 +708,6 @@ class GDino(DINO):
 
     def _forward(self, batch_inputs, batch_data_samples):
         return self.__forward(batch_inputs, batch_data_samples)
-        # with autocast(enabled=True):
-        #     return self.__forward(batch_inputs, batch_data_samples)
 
     def __forward(self, batch_inputs, batch_data_samples):
         if batch_data_samples is None:

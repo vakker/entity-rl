@@ -55,19 +55,6 @@ class GDINOEncoder(EntityEncoder):
         assert isinstance(obs_space, spaces.Box)
         super().__init__(model_config, obs_space)
 
-        mean = torch.tensor(
-            [123.675, 116.28, 103.53],
-            dtype=torch.float32,
-            device=self.device,
-        )
-        std = torch.tensor(
-            [58.395, 57.12, 57.375],
-            dtype=torch.float32,
-            device=self.device,
-        )
-        self.mean = mean.reshape([1, 3, 1, 1])
-        self.std = std.reshape([1, 3, 1, 1])
-
         self._model_config = model_config
         current_dir = osp.dirname(osp.abspath(__file__))
         gdino_cfg_file = osp.join(current_dir, model_config["gdino_cfg"])
@@ -83,6 +70,19 @@ class GDINOEncoder(EntityEncoder):
             prompt_size=model_config["prompt_size"], **copy.deepcopy(gdino_config)
         )
 
+        mean = torch.tensor(
+            [123.675, 116.28, 103.53],
+            dtype=torch.float32,
+            device=self.device,
+        )
+        std = torch.tensor(
+            [58.395, 57.12, 57.375],
+            dtype=torch.float32,
+            device=self.device,
+        )
+        self.mean = mean.reshape([1, 3, 1, 1])
+        self.std = std.reshape([1, 3, 1, 1])
+
     @property
     def out_channels(self):
         # cls_feat, bbox normalized coords  (cx, cy, w, h), stack depth
@@ -94,8 +94,15 @@ class GDINOEncoder(EntityEncoder):
         }
 
     def normalize(self, inputs):
+        stack_depth = inputs.shape[1] // 3
         inputs = inputs.to(torch.float32)
-        return (inputs - self.mean) / self.std
+
+        mean = self.mean.to(inputs.device)
+        std = self.mean.to(inputs.device)
+
+        mean = mean.repeat(1, stack_depth, 1, 1)
+        std = std.repeat(1, stack_depth, 1, 1)
+        return (inputs - mean) / std
 
     def forward(self, inputs):
         inputs = inputs.permute(0, 3, 1, 2)
