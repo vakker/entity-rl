@@ -61,6 +61,9 @@ class GDINOEncoder(EntityEncoder):
         assert osp.exists(gdino_cfg_file)
 
         gdino_config = Config.fromfile(gdino_cfg_file).model
+        if "num_queries" in model_config:
+            gdino_config["num_queries"] = model_config["num_queries"]
+
         gdino_config.pop("language_model")
         gdino_config.pop("type")
         self._model = GDino(
@@ -70,7 +73,7 @@ class GDINOEncoder(EntityEncoder):
     @property
     def out_channels(self):
         # cls_feat, bbox normalized coords  (cx, cy, w, h), stack depth
-        x_shape = self._model.cls_features + 4 + 0
+        x_shape = self._model.cls_features + 4 + 1
         return {
             "node_features": [x_shape],
             "edge_features": None,
@@ -82,17 +85,42 @@ class GDINOEncoder(EntityEncoder):
         inputs = inputs.to(torch.float32) / 255.0
         # TODO: check normalization
 
-        # Only take 3 channels for now
-        inputs = inputs[:, :3]
-        outputs = self._model.forward(inputs, mode="tensor")
+        assert inputs.shape[1] % 3 == 0
+        stack_depth = inputs.shape[1] // 3
+        batch_size = inputs.shape[0]
+
+        # This could be processed in parallel
+        # but that would require more memory
+        frame_nodes = []
+        for i in range(stack_depth):
+            frame = inputs[:, 3 * i : 3 * (i + 1)]
+            outputs = self._model.forward(frame, mode="tensor")
+
+            n_nodes = outputs["features"].shape[1]
+            stack_feature = torch.tensor(
+                [[i / stack_depth]], device=self.device
+            ).expand(batch_size, n_nodes, -1)
+            node_features = torch.cat(
+                [outputs["features"], outputs["bboxes"], stack_feature],
+                dim=2,
+            )
+
+            frame_nodes.append(node_features)
+
+        frame_nodes = torch.stack(frame_nodes, dim=0)
+        frame_nodes = frame_nodes.permute(1, 0, 2, 3)
+        # Frame nodes has shape (batch_size, stack_depth, n_nodes, node_features)
+        # The actual number of nodes should be stack_depth x n_nodes
+        frame_nodes = frame_nodes.reshape(
+            batch_size, stack_depth * frame_nodes.shape[2], -1
+        )
 
         g_batch = []
-        for sample in outputs:
-            # TODO: add stack depth
-            node_features = torch.cat([sample["features"], sample["bboxes"]], dim=1)
 
+        # This iterates over the batch dimension
+        for node_features in frame_nodes:
             if self._config.get("add_edges", False):
-                n_nodes = len(node_features)
+                n_nodes = node_features.shape[0]
                 edge_index = [[i, j] for i in range(n_nodes) for j in range(n_nodes)]
                 edge_index = (
                     torch.tensor(edge_index, dtype=torch.long, device=self.device)

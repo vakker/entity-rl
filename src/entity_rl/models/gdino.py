@@ -822,7 +822,11 @@ class GDino(DINO):
         #     cls_scores = torch.ones_like(cls_scores)
         #     print("######## cls_scores has inf ########")
 
-        return results
+        results_batched = {}
+        for k in results[0]:
+            results_batched[k] = torch.stack([r[k] for r in results])
+
+        return results_batched
 
     def _predict_single(self, cls_score, bbox_pred, max_per_img=None):
         cls_score = cls_score.sigmoid()
