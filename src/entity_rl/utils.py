@@ -168,7 +168,7 @@ def get_configs(args):
         "evaluation_duration_unit": "episodes",
         "num_cpus_per_worker": args["cpus_per_worker"],
         "num_gpus_per_worker": args["gpus_per_worker"],
-        "remote_env_batch_wait_ms": 100,
+        "remote_env_batch_wait_ms": 0,
         "evaluation_num_workers": args["num_workers"] if args["eval_int"] else 0,
         "num_gpus": args["num_gpus"],
         "amp": args["amp"],
