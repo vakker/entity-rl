@@ -55,6 +55,19 @@ class GDINOEncoder(EntityEncoder):
         assert isinstance(obs_space, spaces.Box)
         super().__init__(model_config, obs_space)
 
+        mean = torch.tensor(
+            [123.675, 116.28, 103.53],
+            dtype=torch.float32,
+            device=self.device,
+        )
+        std = torch.tensor(
+            [58.395, 57.12, 57.375],
+            dtype=torch.float32,
+            device=self.device,
+        )
+        self.mean = mean.reshape([1, 3, 1, 1])
+        self.std = std.reshape([1, 3, 1, 1])
+
         self._model_config = model_config
         current_dir = osp.dirname(osp.abspath(__file__))
         gdino_cfg_file = osp.join(current_dir, model_config["gdino_cfg"])
@@ -80,47 +93,67 @@ class GDINOEncoder(EntityEncoder):
             "global_features": None,
         }
 
+    def normalize(self, inputs):
+        inputs = inputs.to(torch.float32)
+        return (inputs - self.mean) / self.std
+
     def forward(self, inputs):
         inputs = inputs.permute(0, 3, 1, 2)
-        inputs = inputs.to(torch.float32) / 255.0
-        # TODO: check normalization
+        inputs = self.normalize(inputs)
 
         assert inputs.shape[1] % 3 == 0
         stack_depth = inputs.shape[1] // 3
         batch_size = inputs.shape[0]
 
-        # This could be processed in parallel
-        # but that would require more memory
-        frame_nodes = []
-        for i in range(stack_depth):
-            frame = inputs[:, 3 * i : 3 * (i + 1)]
-            outputs = self._model.forward(frame, mode="tensor")
+        if self._config.get("parallel-gdino"):
+            inputs = inputs.reshape(
+                batch_size * stack_depth, 3, inputs.shape[2], inputs.shape[3]
+            )
+            outputs = self._model.forward(inputs, mode="tensor")
 
-            n_nodes = outputs["features"].shape[1]
-            stack_feature = torch.tensor(
-                [[i / stack_depth]], device=self.device
-            ).expand(batch_size, n_nodes, -1)
-            node_features = torch.cat(
-                [outputs["features"], outputs["bboxes"], stack_feature],
-                dim=2,
+        else:
+            # This could be processed in parallel
+            # but that would require more memory
+            outputs = []
+            for i in range(stack_depth):
+                frame = inputs[:, 3 * i : 3 * (i + 1)]
+                _outputs = self._model.forward(frame, mode="tensor")
+                outputs.append(_outputs)
+
+            outputs = {k: torch.cat([o[k] for o in outputs], dim=0) for k in outputs[0]}
+
+        for k in outputs:
+            outputs[k] = outputs[k].reshape(
+                batch_size, stack_depth, *outputs[k].shape[1:]
             )
 
-            frame_nodes.append(node_features)
+        # outputs_all is shape (batch_size, stack_depth, n_nodes, node_features)
 
-        frame_nodes = torch.stack(frame_nodes, dim=0)
-        frame_nodes = frame_nodes.permute(1, 0, 2, 3)
+        stack_features = torch.tensor(
+            [[[[i]] for i in range(stack_depth)]], device=self.device
+        )
+        stack_features = stack_features.expand(
+            batch_size, stack_depth, outputs["features"].shape[2], -1
+        )
+        node_features = torch.cat(
+            [outputs["features"], outputs["bboxes"], stack_features],
+            dim=3,
+        )
+
         # Frame nodes has shape (batch_size, stack_depth, n_nodes, node_features)
         # The actual number of nodes should be stack_depth x n_nodes
-        frame_nodes = frame_nodes.reshape(
-            batch_size, stack_depth * frame_nodes.shape[2], -1
+        node_features = node_features.reshape(
+            batch_size,
+            stack_depth * node_features.shape[2],
+            -1,
         )
 
         g_batch = []
 
         # This iterates over the batch dimension
-        for node_features in frame_nodes:
+        for sample in node_features:
             if self._config.get("add_edges", False):
-                n_nodes = node_features.shape[0]
+                n_nodes = sample.shape[0]
                 edge_index = [[i, j] for i in range(n_nodes) for j in range(n_nodes)]
                 edge_index = (
                     torch.tensor(edge_index, dtype=torch.long, device=self.device)
@@ -131,7 +164,7 @@ class GDINOEncoder(EntityEncoder):
             else:
                 edge_index = None
 
-            g_batch.append(Data(x=node_features, edge_index=edge_index))
+            g_batch.append(Data(x=sample, edge_index=edge_index))
 
         batch = Batch.from_data_list(g_batch)
         return batch
