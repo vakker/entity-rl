@@ -1,6 +1,6 @@
 from os import path as osp
 
-import gym
+import gymnasium as gym
 import numpy as np
 import yaml
 from ray.rllib.utils.spaces.repeated import Repeated
@@ -35,6 +35,7 @@ class AtariSet(AtariEnv):
         self.max_elements = int(max_elements * 1.5)
         self.max_elements *= self.stack_size
 
+    # TODO: change this to render env or something
     def full_scenario(self):
         segm = self.obs_raw.copy()
 

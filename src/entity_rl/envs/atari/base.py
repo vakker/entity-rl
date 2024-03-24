@@ -53,10 +53,10 @@ class SimpleCorridor(gym.Env):
 class AtariEnv(gym.Env):
     """Custom Environment that follows gym interface"""
 
-    metadata = {"render.modes": ["human", "rgb_array"]}
+    metadata = {"render.modes": ["rgb_array"]}
 
     def __init__(self, config):
-        self.seed(config.get("seed"))
+        self._fix_seed = config.get("fix_seed", False)
 
         self._env = gym.make(config["pg_name"])
         wrap = config.get("wrap", {})
@@ -70,23 +70,21 @@ class AtariEnv(gym.Env):
         self.action_space = self._env.action_space
         self._config = config
 
-    def seed(self, seed=None):
-        if seed is None:
-            seed = 0
-
-        seed = (seed + id(self)) % (2**32)
-        random.seed(seed)
-        np.random.seed(seed)
-
     @property
     def observation_space(self):
         return self._env.observation_space
 
     def step(self, action):
-        return self._env.step(action)
+        step_result = self._env.step(action)
+        self.obs_raw = step_result[0]
+        return step_result
 
     def reset(self, *, seed=None, options=None):
-        self.seed(seed)
+        if self._fix_seed:
+            seed = 0
+
+        random.seed(seed)
+        np.random.seed(seed)
 
         obs, info = self._env.reset(seed=seed, options=options)
         self.obs_raw = obs
@@ -95,37 +93,45 @@ class AtariEnv(gym.Env):
         return obs, info
 
     def render(self):
-        if self.video_dir is None:
-            return None
+        # if self.video_dir is None:
+        #     return None
 
-        raise NotImplementedError()
+        assert self.render_mode == "rgb_array"
+
+        stack_depth = self.obs_raw.shape[2] // 3
+        img = np.concatenate(
+            [self.obs_raw[:, :, i * 3 : (i + 1) * 3] for i in range(stack_depth)], 1
+        )
+        return img
 
     def close(self):
         self._env.close()
-
-    def full_scenario(self):
-        return self.obs_raw
 
 
 class CropEnv(gym.ObservationWrapper):
     def __init__(self, env, crop):
         super().__init__(env)
 
+        # crop = (top, bottom, left, right)
         if isinstance(crop, int):
             crop = [crop] * 4
-
-        # crop = (top, bottom, left, right)
-        self._crop = crop
 
         orig = env.observation_space.shape
         cropped_shape = (
             orig[0] - (crop[0] + crop[1]),
             orig[1] - (crop[2] + crop[3]),
-            orig.shape[2],
+            orig[2],
         )
         assert (
             cropped_shape[0] > 0 and cropped_shape[1] > 1
         ), f"Crop too big, resulting shape: {cropped_shape}"
+
+        self._crop = (
+            crop[0],
+            orig[0] - crop[1],
+            crop[2],
+            orig[1] - crop[3],
+        )
 
         self.observation_space = gym.spaces.Box(
             low=np.amin(env.observation_space.low),
@@ -135,9 +141,7 @@ class CropEnv(gym.ObservationWrapper):
         )
 
     def observation(self, observation):
-        return observation[
-            self._crop[0] : -self._crop[1], self._crop[2] : -self._crop[3]
-        ]
+        return observation[self._crop[0] : self._crop[1], self._crop[2] : self._crop[3]]
 
 
 class ResizeEnv(gym.ObservationWrapper):
@@ -205,7 +209,6 @@ def wrap_deepmind(env, skip=0, stack=4, resize=None, crop=None):
         env = wrappers.FireResetEnv(env)
 
     if crop is not None:
-        # [25, 10, 0, 0]
         env = CropEnv(env, crop)
 
     if resize is not None:
