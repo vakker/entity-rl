@@ -205,8 +205,11 @@ def get_configs(args):
     param_space = configs
 
     assert conf_yaml["run"] == "PPO"
-    # experiment = "PPO"
-    experiment = PPOTrainerMP
+
+    if args["amp"]:
+        experiment = PPOTrainerMP
+    else:
+        experiment = "PPO"
 
     tune_config = get_search_alg_sched(conf_yaml, args, is_grid_search)
 
