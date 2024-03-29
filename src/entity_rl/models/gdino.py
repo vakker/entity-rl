@@ -101,8 +101,7 @@ class GDino(DINO):
 
         # This is the embedded prompt, which shouldn't be longer than the
         # original max_tokens (256)
-        self.text_embed = nn.Linear(1, self.prompt_size * language_dim, bias=False)
-        # self.text_embed = nn.Parameter(torch.Tensor(self.prompt_size, language_dim))
+        self.text_embed = nn.Embedding(self.prompt_size, language_dim)
 
         # Freeze everything, then only unfreeze the text_embed params
         # This way there's nothing missed (in theory)
@@ -726,10 +725,13 @@ class GDino(DINO):
         # Orig:
         # text_dict = self.language_model(list(text_prompts))
 
-        text_seed = torch.tensor([1.0], device=self.device)
         batch_size = len(batch_inputs)
 
-        embedded_text = self.text_embed(text_seed).reshape(self.prompt_size, -1)
+        embedded_text = self.text_embed.weight
+        # if self.text_embed.weight.grad is not None:
+        #     # print("grad", self.text_embed.weight.grad.norm())
+        #     print(embedded_text.norm())
+        #     print(embedded_text[0, :5])
         embedded_text = self.text_feat_map(embedded_text)
 
         # Zero-pad the embedded_text to the max_text_len
@@ -806,7 +808,6 @@ class GDino(DINO):
 
         # This is just filtering out all the -inf scores
         cls_scores = cls_scores[:, :, : self.prompt_size]
-        bbox_preds = bbox_preds[:, :, : self.prompt_size]
 
         results = []
         # TODO: this will return all queries, not just the top-k
