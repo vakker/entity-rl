@@ -434,9 +434,8 @@ class GDino(DINO):
         # multi-class classification, while DeformDETR, where the input
         # is `enc_outputs_class[..., 0]` selects according to scores of
         # binary classification.
-        topk_indices = torch.topk(
-            enc_outputs_class.max(-1)[0], k=self.num_queries, dim=1
-        )[1]
+        top_k = min(self.num_queries, enc_outputs_class.shape[1])
+        topk_indices = torch.topk(enc_outputs_class.max(-1)[0], k=top_k, dim=1)[1]
 
         topk_score = torch.gather(
             enc_outputs_class,
@@ -449,20 +448,31 @@ class GDino(DINO):
         topk_coords = topk_coords_unact.sigmoid()
         topk_coords_unact = topk_coords_unact.detach()
 
-        query = self.query_embedding.weight[:, None, :]
-        query = query.repeat(1, bs, 1).transpose(0, 1)
+        # NOTE: the actual number of proposals can be lower than the
+        # number of queries for small images, so we need to select
+        query = []
+        for i in range(bs):
+            query.append(self.query_embedding.weight[topk_indices[i]])
+
+        query = torch.stack(query, dim=0)
+
+        # query = self.query_embedding.weight[:, None, :]
+        # query = query.repeat(1, bs, 1).transpose(0, 1)
 
         # We don't need the DN queries for ENROS
         # TODO: clean this up
-        if self.training and False:
-            dn_label_query, dn_bbox_query, dn_mask, dn_meta = self.dn_query_generator(
-                batch_data_samples
-            )
-            query = torch.cat([dn_label_query, query], dim=1)
-            reference_points = torch.cat([dn_bbox_query, topk_coords_unact], dim=1)
-        else:
-            reference_points = topk_coords_unact
-            dn_mask, dn_meta = None, None
+        # if self.training:
+        #     dn_label_query, dn_bbox_query, dn_mask, dn_meta = self.dn_query_generator(
+        #         batch_data_samples
+        #     )
+        #     query = torch.cat([dn_label_query, query], dim=1)
+        #     reference_points = torch.cat([dn_bbox_query, topk_coords_unact], dim=1)
+        # else:
+        #     reference_points = topk_coords_unact
+        #     dn_mask, dn_meta = None, None
+
+        reference_points = topk_coords_unact
+        dn_mask, dn_meta = None, None
         reference_points = reference_points.sigmoid()
 
         decoder_inputs_dict = dict(
@@ -728,10 +738,6 @@ class GDino(DINO):
         batch_size = len(batch_inputs)
 
         embedded_text = self.text_embed.weight
-        # if self.text_embed.weight.grad is not None:
-        #     # print("grad", self.text_embed.weight.grad.norm())
-        #     print(embedded_text.norm())
-        #     print(embedded_text[0, :5])
         embedded_text = self.text_feat_map(embedded_text)
 
         # Zero-pad the embedded_text to the max_text_len
@@ -812,14 +818,7 @@ class GDino(DINO):
         results = []
         # TODO: this will return all queries, not just the top-k
         for cls_score, bbox_pred in zip(cls_scores, bbox_preds):
-            results.append(self._predict_single(cls_score, bbox_pred))
-
-        # if torch.isinf(cls_scores).any():
-        #     import ipdb
-
-        #     ipdb.set_trace()
-        #     cls_scores = torch.ones_like(cls_scores)
-        #     print("######## cls_scores has inf ########")
+            results.append(self._predict_single(cls_score, bbox_pred, 10))
 
         results_batched = {}
         for k in results[0]:
@@ -830,8 +829,11 @@ class GDino(DINO):
     def _predict_single(self, cls_score, bbox_pred, max_per_img=None):
         cls_score = cls_score.sigmoid()
         scores, _ = cls_score.max(-1)
+
         if max_per_img is None:
             max_per_img = self.num_queries
+
+        max_per_img = min(scores.shape[0], max_per_img)
         scores, indexes = scores.topk(max_per_img)
         bbox_pred = bbox_pred[indexes]
         cls_features = cls_score[indexes]
