@@ -6,6 +6,7 @@ from os import path as osp
 import torch
 from gymnasium import spaces
 from mmengine import Config
+from mmengine.runner.checkpoint import _load_checkpoint, _load_checkpoint_to_model
 from torch_geometric.data import Batch, Data
 
 from .base import BaseModule
@@ -60,7 +61,9 @@ class GDINOEncoder(EntityEncoder):
         gdino_cfg_file = osp.join(current_dir, model_config["gdino_cfg"])
         assert osp.exists(gdino_cfg_file)
 
-        gdino_config = Config.fromfile(gdino_cfg_file).model
+        gdino_config_full = Config.fromfile(gdino_cfg_file)
+        gdino_chkp_file = osp.join(current_dir, gdino_config_full.chkp)
+        gdino_config = gdino_config_full.model
         if "num_queries" in model_config:
             gdino_config["num_queries"] = model_config["num_queries"]
 
@@ -69,6 +72,18 @@ class GDINOEncoder(EntityEncoder):
         self._model = GDino(
             prompt_size=model_config["prompt_size"], **copy.deepcopy(gdino_config)
         )
+
+        chkp = _load_checkpoint(gdino_chkp_file)["state_dict"]
+
+        # ? "language_model.language_backbone.body.model.embeddings.position_ids"
+
+        to_remove = ["dn_query_generator.", "language_model."]
+        for k in list(chkp.keys()):
+            for prefix in to_remove:
+                if k.startswith(prefix):
+                    del chkp[k]
+
+        _load_checkpoint_to_model(self._model, chkp)
 
         mean = torch.tensor(
             [123.675, 116.28, 103.53],
@@ -143,7 +158,11 @@ class GDINOEncoder(EntityEncoder):
             batch_size, stack_depth, outputs["features"].shape[2], -1
         )
         node_features = torch.cat(
-            [outputs["features"], outputs["bboxes"], stack_features],
+            [
+                outputs["features"],
+                outputs["bboxes"],
+                stack_features,
+            ],
             dim=3,
         )
 
