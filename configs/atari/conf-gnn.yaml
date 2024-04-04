@@ -1,5 +1,7 @@
 run: PPO
 base:
+  batch_mode: truncate_episodes
+
   clip_rewards: false
   train_batch_size:  5000
   sgd_minibatch_size: 500
@@ -14,25 +16,36 @@ base:
   num_sgd_iter: 10
 
   model:
-    custom_model: gnn_net
+    custom_model: enros
     custom_model_config:
-      activation: ELU
-      dims:
-        - [16, 8]
-        - [16, 8]
+      encoder:
+        entity:
+          name: EntityPassThrough
+        scene:
+          name: GNNEncoder
+          config:
+            conv:
+              activation: ELU
+              dims:
+                - [16, 8]
+                - [16, 8]
 
   env: atari_graph
   env_config:
-    pg_name: "PongNoFrameskip-v4"
+   pg_name: "PongNoFrameskip-v4"
+   wrap:
+      skip: 4
+      stack: 4
+      resize: 100
 
 tune:
   env_config/pg_name:
     type: grid_search
     args:
+      - "PongNoFrameskip-v4"
       - "BreakoutNoFrameskip-v4"
       - "SpaceInvadersNoFrameskip-v4"
       - "SkiingNoFrameskip-v4"
-      - "PongNoFrameskip-v4"
 
 search_alg: hebo
 scheduled: AsyncHyperBandScheduler
