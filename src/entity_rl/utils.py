@@ -36,6 +36,7 @@ def register():
     # register_env("spg_graph", envs.PgGraph)
 
     register_env("atari_env", envs.AtariEnv)
+    register_env("atari_graph", envs.AtariGraph)
     register_env("corridor", envs.SimpleCorridor)
 
     ModelCatalog.register_custom_model("enros", models.ENROSPolicy)
@@ -138,6 +139,7 @@ def parse_tune_configs(configs, use_tune=False):
 
 
 def get_configs(args):
+    # pylint: disable=too-many-branches
     if args["local"] and args["num_workers"]:
         args["num_workers"] = 1
 

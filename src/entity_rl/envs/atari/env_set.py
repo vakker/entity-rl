@@ -13,6 +13,7 @@ from .base import AtariEnv
 
 
 class AtariSet(AtariEnv):
+    # TODO: this should be a wrapper
     def __init__(self, config):
         super().__init__(config)
 
@@ -26,9 +27,13 @@ class AtariSet(AtariEnv):
         with open(osp.join(dir_path, "max-x-for-game.yml")) as yaml_f:
             max_x = yaml.safe_load(yaml_f)
 
-        if config["pg_name"] in max_x:
-            max_elements = max_x[config["pg_name"]]
-        else:
+        max_elements = None
+        for pg_name in max_x:
+            if config["pg_name"].startswith(pg_name):
+                max_elements = max_x[pg_name]
+                break
+
+        if max_elements is None:
             max_elements = max(x for _, x in max_x.items())
             print("No info for ", config["pg_name"], "setting max x to ", max_elements)
 
@@ -89,7 +94,9 @@ class AtariSet(AtariEnv):
             ),
         }
 
-    def _set_obs_space(self):
+    @property
+    def observation_space(self):
+        # TODO: this could be probably stored
         return gym.spaces.Dict(self.entity_features)
 
     def create_entity_features(self, obs):

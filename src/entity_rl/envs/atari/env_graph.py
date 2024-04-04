@@ -1,4 +1,4 @@
-import gym
+import gymnasium as gym
 import numpy as np
 from ray.rllib.utils.spaces.repeated import Repeated
 
@@ -6,7 +6,10 @@ from .env_set import AtariSet
 
 
 class AtariGraph(AtariSet):
-    def _set_obs_space(self):
+    # TODO: this should be a wrapper
+    @property
+    def observation_space(self):
+        # TODO: this could be probably stored
         d = {
             **self.entity_features,
             "edge_index": Repeated(
