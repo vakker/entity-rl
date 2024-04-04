@@ -2,7 +2,6 @@
 
 import json
 
-import torch
 from ray.rllib.algorithms.ppo import PPO as PPOTrainer
 from ray.rllib.algorithms.ppo.ppo_torch_policy import PPOTorchPolicy
 from ray.rllib.policy.torch_policy import _directStepOptimizerSingleton
@@ -10,9 +9,11 @@ from ray.rllib.utils import force_list
 from torch.cuda.amp import GradScaler
 
 
-class PPOTorchPolicyMP(PPOTorchPolicy):
+class PPOTorchPolicyAMP(PPOTorchPolicy):
     def __init__(self, observation_space, action_space, config):
         config["amp"] = config.get("amp", False)
+        print(f"######################### AMP: {config['amp']}")
+        config["model"]["amp"] = config["amp"]
 
         # Scalers are initialized in optimizer()
         self._scalers = None
@@ -23,14 +24,6 @@ class PPOTorchPolicyMP(PPOTorchPolicy):
 
             # FIXME: these numbers are off
             print(json.dumps(self.model.num_params, indent=4))
-
-    def compute_actions_from_input_dict(self, *args, **kwargs):
-        with torch.autocast(device_type="cuda", enabled=self.config["amp"]):
-            return super().compute_actions_from_input_dict(*args, **kwargs)
-
-    def compute_log_likelihoods(self, *args, **kwargs):
-        with torch.autocast(device_type="cuda", enabled=self.config["amp"]):
-            return super().compute_log_likelihoods(*args, **kwargs)
 
     def loss(self, *args, **kwargs):
         losses = force_list(super().loss(*args, **kwargs))
@@ -76,9 +69,9 @@ class PPOTorchPolicyMP(PPOTorchPolicy):
 
 
 # pylint: disable=abstract-method,arguments-differ,arguments-differ
-class PPOTrainerMP(PPOTrainer):
+class PPOTrainerAMP(PPOTrainer):
     _allow_unknown_configs = True
 
     # @classmethod
     def get_default_policy_class(self, config):
-        return PPOTorchPolicyMP
+        return PPOTorchPolicyAMP

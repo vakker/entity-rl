@@ -19,19 +19,19 @@ class Encoder(BaseModule):
         self._stages = nn.ModuleList()
         if "combined" in model_config:
             encoder_name = model_config["combined"]["name"]
-            encoder_config = model_config["combined"]["config"]
+            encoder_config = model_config["combined"].get("config")
             encoder = getattr(combined, encoder_name)
             self._stages.append(encoder(encoder_config, obs_space))
 
         else:
             encoder_name = model_config["entity"]["name"]
-            encoder_config = model_config["entity"]["config"]
+            encoder_config = model_config["entity"].get("config")
             encoder = getattr(entity, encoder_name)
             self._stages.append(encoder(encoder_config, obs_space))
 
             input_shape = self._stages[-1].out_channels
             encoder_name = model_config["scene"]["name"]
-            encoder_config = model_config["scene"]["config"]
+            encoder_config = model_config["scene"].get("config")
             encoder = getattr(scene, encoder_name)
             self._stages.append(encoder(encoder_config, input_shape))
 
@@ -115,7 +115,12 @@ class ENROSPolicy(TorchModelV2, BaseModule):
         )
         BaseModule.__init__(self)
 
+        self.use_amp = model_config["amp"]
         model_config = model_config["custom_model_config"]
+
+        if hasattr(obs_space, "original_space"):
+            obs_space = obs_space.original_space
+
         self._obs_space = obs_space
         self._encoder = Encoder(model_config["encoder"], obs_space)
 
@@ -140,11 +145,12 @@ class ENROSPolicy(TorchModelV2, BaseModule):
 
     @override(TorchModelV2)
     def forward(self, input_dict, state, seq_lens):
-        self._features = self._encoder(input_dict["obs"])
-        logits = self._policy(self._features)
+        with torch.autocast(device_type="cuda", enabled=self.use_amp):
+            self._features = self._encoder(input_dict["obs"])
+            logits = self._policy(self._features)
 
-        # NOTE: this is a trick to avoid issues with the action distribution
-        logits = torch.tanh(logits) * 10
+            # NOTE: this is a trick to avoid issues with the action distribution
+            logits = torch.tanh(logits) * 10
         return logits, state
 
     @override(TorchModelV2)
@@ -153,7 +159,8 @@ class ENROSPolicy(TorchModelV2, BaseModule):
 
         # squeeze(1) is needed because the value function is expected to be just
         # a single number per batch element, and not B x 1
-        return self._vf(self._features).squeeze(1)
+        with torch.autocast(device_type="cuda", enabled=self.use_amp):
+            return self._vf(self._features).squeeze(1)
 
     @property
     def num_params(self):

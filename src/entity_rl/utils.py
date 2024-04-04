@@ -16,7 +16,7 @@ from ray.tune.search.hebo import HEBOSearch
 from ray.tune.search.hyperopt import HyperOptSearch
 
 from . import callbacks
-from .policy import PPOTrainerMP
+from .policy import PPOTrainerAMP
 
 
 class E(dict):
@@ -209,7 +209,7 @@ def get_configs(args):
     assert conf_yaml["run"] == "PPO"
 
     if args["amp"]:
-        experiment = PPOTrainerMP
+        experiment = PPOTrainerAMP
     else:
         experiment = "PPO"
 
@@ -258,6 +258,7 @@ def get_configs(args):
 
 
 def get_search_alg_sched(conf_yaml, args, is_grid_search):
+    # FIXME: This won't set the concurrency correctly if --tune is not set
     if not args["tune"]:
         return tune.TuneConfig(num_samples=args["num_samples"])
 
