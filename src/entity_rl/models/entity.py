@@ -34,21 +34,77 @@ class EntityEncoder(BaseModule):
 
 class EntityPassThrough(EntityEncoder):
     def __init__(self, model_config, obs_space):
-        assert isinstance(obs_space, spaces.Graph)
+        # NOTE: RLlib currently supports dict and repeated spaces
+        assert isinstance(obs_space, spaces.Dict)
+        # assert isinstance(obs_space, spaces.Graph)
         super().__init__(model_config, obs_space)
 
     @property
     def out_channels(self):
-        # TODO: add global features
         out_channels = {
-            "node_features": self._obs_space.node_space.shape,
-            "edge_features": self._obs_space.edge_space.shape,
+            "node_features": self._obs_space["x"].child_space.shape,
+            # "edge_features": self._obs_space.edge_features.shape,
+            "edge_features": None,
             "global_features": None,
         }
         return out_channels
 
     def forward(self, inputs):
-        return inputs
+        g_batch = []
+
+        batch_size = inputs["x"].values.shape[0]
+        device = inputs["x"].values.device
+
+        if "edge_index" in inputs:
+            edge_index = torch.transpose(inputs["edge_index"].values, 2, 1).long()
+            edge_index_len = inputs["edge_index"].lengths.long()
+
+        else:
+            edge_index = (None for _ in range(batch_size))
+            edge_index_len = (None for _ in range(batch_size))
+
+        data = zip(
+            inputs["x"].values,
+            inputs["x"].lengths.long(),
+            edge_index,
+            edge_index_len,
+        )
+
+        # TODO: the stacking is still a bit slow
+        for x, x_len, edge_index, ei_len in data:
+            if not x_len:
+                x_len = 1
+                ei_len = 1
+
+            if edge_index is None:
+                n_nodes = x_len
+
+                # For refecence:
+                # start_time = time.time()
+                # edge_index = [
+                #     torch.tensor([i, j], device=input_dict["obs_flat"].device)
+                #     for i in range(n_nodes)
+                #     for j in range(n_nodes)
+                # ]
+                # edge_index = torch.transpose(torch.stack(edge_index), 1, 0).long()
+                # print("edge_index", time.time() - start_time)
+
+                node_indices = torch.tensor(
+                    range(n_nodes),
+                    dtype=torch.long,
+                    device=device,
+                )
+
+                j_idx = node_indices.tile((n_nodes,))
+                i_idx = node_indices.repeat_interleave(n_nodes)
+                edge_index = torch.stack([i_idx, j_idx], dim=0)
+
+                ei_len = edge_index.shape[1]
+
+            g_batch.append(Data(x=x[:x_len], edge_index=edge_index[:, :ei_len]))
+
+        batch = Batch.from_data_list(g_batch)
+        return batch
 
 
 class GDINOEncoder(EntityEncoder):
