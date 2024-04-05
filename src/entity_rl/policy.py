@@ -12,7 +12,6 @@ from torch.cuda.amp import GradScaler
 class PPOTorchPolicyAMP(PPOTorchPolicy):
     def __init__(self, observation_space, action_space, config):
         config["amp"] = config.get("amp", False)
-        print(f"######################### AMP: {config['amp']}")
         config["model"]["amp"] = config["amp"]
 
         # Scalers are initialized in optimizer()
@@ -20,9 +19,7 @@ class PPOTorchPolicyAMP(PPOTorchPolicy):
         super().__init__(observation_space, action_space, config)
 
         if config.get("show_model"):
-            print("#################")
-
-            # FIXME: these numbers are off
+            print("################# Model parameters #################")
             print(json.dumps(self.model.num_params, indent=4))
 
     def loss(self, *args, **kwargs):
