@@ -18,6 +18,8 @@ class PPOTorchPolicyAMP(PPOTorchPolicy):
         self._scalers = None
         super().__init__(observation_space, action_space, config)
 
+        assert self.model.use_amp == config["amp"]
+
         if config.get("show_model"):
             print("################# Model parameters #################")
             print(json.dumps(self.model.num_params, indent=4))

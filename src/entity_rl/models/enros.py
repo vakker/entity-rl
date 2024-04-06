@@ -115,7 +115,7 @@ class ENROSPolicy(TorchModelV2, BaseModule):
         )
         BaseModule.__init__(self)
 
-        self.use_amp = model_config["amp"]
+        self.use_amp = model_config.get("amp", False)
         model_config = model_config["custom_model_config"]
 
         if hasattr(obs_space, "original_space"):
