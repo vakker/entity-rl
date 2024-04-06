@@ -1,3 +1,5 @@
+# pylint: disable=too-many-branches
+
 import json
 import time
 from datetime import datetime
@@ -139,6 +141,11 @@ def parse_tune_configs(configs, use_tune=False):
 
 
 def get_configs(args):
+    conf_yaml = load_configs(args["logdir"])
+    for k, v in conf_yaml.get("args", {}).items():
+        assert k in args, f"Argument {k} not found in args"
+        args[k] = v
+
     # pylint: disable=too-many-branches
     if args["local"] and args["num_workers"]:
         args["num_workers"] = 1
@@ -188,7 +195,6 @@ def get_configs(args):
     if args["no_gpu_workers"]:
         configs_base["custom_resources_per_worker"] = {"NO-GPU": 0.0001}
 
-    conf_yaml = load_configs(args["logdir"])
     configs, is_grid_search = parse_tune_configs(conf_yaml, args["tune"])
 
     # TODO: the same env_config is used for the built-in envs, should be renamed,
@@ -244,7 +250,7 @@ def get_configs(args):
             checkpoint_score_attribute=conf_yaml["metric"],
         ),
         failure_config=train.FailureConfig(
-            max_failures=1 if args["smoke"] else 2,
+            max_failures=0 if args["smoke"] else 2,
             fail_fast=args["smoke"],
         ),
     )
