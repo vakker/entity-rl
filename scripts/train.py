@@ -14,6 +14,8 @@ torch.backends.cudnn.benchmark = True
 
 def main(args):
     args_dict = vars(args)
+    # Get realpath for logdir
+    args_dict["logdir"] = osp.realpath(args_dict["logdir"])
     os.environ["TUNE_RESULT_DIR"] = args_dict["logdir"]
 
     ray.init(
