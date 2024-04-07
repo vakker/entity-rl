@@ -158,7 +158,10 @@ def get_configs(args):
     if args["worker_gpu"]:
         gpu_count = args["num_gpus"]
         # Driver GPU
-        args["num_gpus"] = 0.0001
+        # NOTE: This is a rough estimate, the placement should be
+        # also controlled by the placement groups to avoid over/under
+        # allocation per GPU
+        args["num_gpus"] = gpu_count / 2.0
         gpus_remaining = gpu_count - args["num_gpus"]
         args["gpus_per_worker"] = gpus_remaining / args["num_workers"]
 
