@@ -2,6 +2,7 @@
 
 import json
 
+import torch
 from ray.rllib.algorithms.ppo import PPO as PPOTrainer
 from ray.rllib.algorithms.ppo.ppo_torch_policy import PPOTorchPolicy
 from ray.rllib.policy.torch_policy import _directStepOptimizerSingleton
@@ -42,6 +43,17 @@ class PPOTorchPolicyAMP(PPOTorchPolicy):
 
         return super().extra_grad_process(local_optimizer, loss)
 
+    def stats_fn(self, train_batch):
+        stats = super().stats_fn(train_batch)
+        grads = [p.grad for p in self.model.parameters() if p.grad is not None]
+        if grads:
+            grads = [torch.linalg.vector_norm(g) ** 2 for g in grads]
+            stats["grad_norm"] = torch.sqrt(sum(grads)).item()
+        else:
+            stats["grad_norm"] = None
+
+        return stats
+
     def optimizer(self):
         optimizers = super().optimizer()
         self._scalers = [GradScaler(enabled=self.config["amp"]) for _ in optimizers]
@@ -52,7 +64,6 @@ class PPOTorchPolicyAMP(PPOTorchPolicy):
             for opt, scaler in zip(self._optimizers, self._scalers):
                 scaler.step(opt)
                 scaler.update()
-                # opt.step()
         else:
             raise NotImplementedError("apply_gradients")
             # # TODO(sven): Not supported for multiple optimizers yet.
