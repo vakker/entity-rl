@@ -15,7 +15,8 @@ from simple_playgrounds.engine import Engine
 from simple_playgrounds.playground.playground import PlaygroundRegister
 from simple_playgrounds.playground.playgrounds.rl import foraging
 from skimage import io as skio
-from spg_experiments import playgrounds
+
+from entity_rl import playgrounds
 
 # Import needed because of the register, and this is needed because of the linters
 foraging = foraging
@@ -131,10 +132,12 @@ class PlaygroundEnv(gym.Env, ABC):
 
         sensors_config = get_sensor_config(sensors_name, fov, resolution, 400)
         for sensor_cls, sensor_params in sensors_config:
+            if "normalize" not in sensor_params:
+                sensor_params["normalize"] = True
+
             agent.add_sensor(
                 sensor_cls(
                     anchor=agent.base_platform,
-                    normalize=True,
                     invisible_elements=agent.parts,
                     **sensor_params,
                 )
@@ -196,7 +199,8 @@ class PlaygroundEnv(gym.Env, ABC):
         if self.video_dir is not None:
             self.render()
 
-        return self.observations, reward, done, info
+        truncated = False
+        return self.observations, reward, done, truncated, info
 
     def full_scenario(self):
         return (255 * self.engine.generate_agent_image(self.agent)).astype(np.uint8)
@@ -208,16 +212,14 @@ class PlaygroundEnv(gym.Env, ABC):
             sensor_values[sensor.name] = sensor.sensor_values
         return self.process_obs(sensor_values)
 
-    def reset(self, *, seed=None, return_info=False, options=None):
-        assert not return_info
-
+    def reset(self, *, seed=None, options=None):
         self.engine.reset()
         self.engine.elapsed_time = 0
         self.episodes += 1
         self.engine.update_observations()
         self.time_steps = 0
 
-        return self.observations
+        return self.observations, {}
 
     def render(self, mode="human"):
         if self.video_dir is None:
@@ -267,6 +269,25 @@ class PgFlat(PlaygroundEnv):
             high=1,
             shape=(elems,),
             dtype=np.float64,
+        )
+
+
+class PgTopdown(PlaygroundEnv):
+    def _create_agent(self, agent_type, sensors_name, fov, resolution, keyboard=False):
+        sensors_name = "topdown_local"
+
+        super()._create_agent(agent_type, sensors_name, fov, resolution, keyboard)
+
+    def process_obs(self, obs):
+        return obs["topdown_local"]
+
+    def _set_obs_space(self):
+        shape = self.agent.sensors[0].shape
+        self.observation_space = spaces.Box(
+            low=0,
+            high=255,
+            shape=shape,
+            dtype=np.uint8,
         )
 
 
@@ -325,6 +346,18 @@ class PgDict(PlaygroundEnv):
 
 
 def get_sensor_config(sensors_name, fov=360, resolution=64, max_range=300):
+    if sensors_name == "topdown_local":
+        return [
+            (
+                sensors.TopdownLocal,
+                {
+                    "resolution": resolution,
+                    "name": "topdown_local",
+                    "normalize": False,
+                },
+            )
+        ]
+
     if sensors_name == "blind":
         return [
             (

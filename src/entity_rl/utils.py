@@ -31,11 +31,12 @@ def register():
 
     from . import envs, models
 
-    # register_env("spg_flat", envs.PgFlat)
-    # register_env("spg_dict", envs.PgDict)
-    # register_env("spg_stacked", envs.PgStacked)
-    # register_env("spg_set", envs.PgSet)
-    # register_env("spg_graph", envs.PgGraph)
+    register_env("spg_flat", envs.PgFlat)
+    register_env("spg_dict", envs.PgDict)
+    register_env("spg_stacked", envs.PgStacked)
+    register_env("spg_set", envs.PgSet)
+    register_env("spg_graph", envs.PgGraph)
+    register_env("spg_topdown", envs.PgTopdown)
 
     register_env("atari_env", envs.AtariEnv)
     register_env("atari_graph", envs.AtariGraph)
@@ -57,7 +58,7 @@ def exp_name(prefix):
 
 def trial_str_creator(trial):
     trial_base_name = f"trial-{trial.trial_id}"
-    if not trial.evaluated_params or len(trial.evaluated_params) > 3:
+    if not trial.evaluated_params or len(trial.evaluated_params) > 5:
         return trial_base_name
 
     params = {
