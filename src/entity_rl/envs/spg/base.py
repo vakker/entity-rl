@@ -8,6 +8,7 @@ from os import path as osp
 import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
+from ray.rllib.env.wrappers import atari_wrappers as wrappers
 from simple_playgrounds.agent import agents, controllers
 from simple_playgrounds.device import sensors
 from simple_playgrounds.element.elements.activable import Dispenser
@@ -17,6 +18,7 @@ from simple_playgrounds.playground.playgrounds.rl import foraging
 from skimage import io as skio
 
 from entity_rl import playgrounds
+from entity_rl.envs.atari.base import SkipEnv
 
 # Import needed because of the register, and this is needed because of the linters
 foraging = foraging
@@ -289,6 +291,43 @@ class PgTopdown(PlaygroundEnv):
             shape=shape,
             dtype=np.uint8,
         )
+
+
+def wrap_deepmind_spg(env, skip=0, stack=4):
+    if skip > 0:
+        env = SkipEnv(env, skip=skip)
+
+    if stack > 1:
+        env = wrappers.FrameStack(env, stack)
+
+    return env
+
+
+class PgTopdownWrapped(gym.Env):
+    def __init__(self, config):
+        wrap = config.pop("wrap")
+        env = PgTopdown(config)
+        if wrap:
+            env = wrap_deepmind_spg(env, **wrap)
+
+        self._env = env
+
+    def step(self, *args, **kwargs):
+        return self._env.step(*args, **kwargs)
+
+    def reset(self, *args, **kwargs):
+        return self._env.reset(*args, **kwargs)
+
+    @property
+    def observation_space(self):
+        return self._env.observation_space
+
+    @property
+    def action_space(self):
+        return self._env.action_space
+
+    def render(self):
+        pass
 
 
 class PgStacked(PlaygroundEnv):

@@ -37,6 +37,7 @@ def register():
     register_env("spg_set", envs.PgSet)
     register_env("spg_graph", envs.PgGraph)
     register_env("spg_topdown", envs.PgTopdown)
+    register_env("spg_topdown_wrapped", envs.PgTopdownWrapped)
 
     register_env("atari_env", envs.AtariEnv)
     register_env("atari_graph", envs.AtariGraph)
