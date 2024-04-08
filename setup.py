@@ -18,7 +18,7 @@ install_requires = [
     "tensorboard",
     "attrdict",
     "yacs",
-    "scikit-image",
+    "scikit-image<0.20",
     "imagecodecs",
     "gymnasium[atari,box2d]",
     "autorom[accept-rom-license]",
@@ -26,8 +26,9 @@ install_requires = [
     "torch-scatter",
     "torch-sparse",
     "torch-geometric",
-    "simple-playgrounds",
+    "simple-playgrounds @ git+https://github.com/vakker/simple-playgrounds#egg=simple-playgrounds",
     "gputil",
+    "pillow<9.0",
     "mmengine",
 ]
 
