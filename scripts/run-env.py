@@ -75,7 +75,6 @@ def main(args):
 
             else:
                 act = env.action_space.sample()
-                act = j % len(env._env.unwrapped.get_action_meanings())
 
             obs, _, done, _, _ = env.step(act)
 
