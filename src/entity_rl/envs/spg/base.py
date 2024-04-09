@@ -1,9 +1,7 @@
 # pylint: disable=self-assigning-variable
 
-import os
 import random
 from abc import ABC, abstractmethod
-from os import path as osp
 
 import gymnasium as gym
 import numpy as np
@@ -15,7 +13,6 @@ from simple_playgrounds.element.elements.activable import Dispenser
 from simple_playgrounds.engine import Engine
 from simple_playgrounds.playground.playground import PlaygroundRegister
 from simple_playgrounds.playground.playgrounds.rl import foraging
-from skimage import io as skio
 
 from entity_rl import playgrounds
 from entity_rl.envs.atari.base import SkipEnv
@@ -62,6 +59,7 @@ class PlaygroundEnv(gym.Env, ABC):
             assert isinstance(multisteps, int)
             self.multisteps = multisteps
         self.time_steps = 0
+        self.obs_raw = None
 
     @property
     def entity_types_map(self):
@@ -137,10 +135,12 @@ class PlaygroundEnv(gym.Env, ABC):
             if "normalize" not in sensor_params:
                 sensor_params["normalize"] = True
 
+            if "invisible_elements" not in sensor_params:
+                sensor_params["invisible_elements"] = agent.parts
+
             agent.add_sensor(
                 sensor_cls(
                     anchor=agent.base_platform,
-                    invisible_elements=agent.parts,
                     **sensor_params,
                 )
             )
@@ -223,24 +223,23 @@ class PlaygroundEnv(gym.Env, ABC):
 
         return self.observations, {}
 
-    def render(self, mode="human"):
-        if self.video_dir is None:
-            return None
+    def render(self):
+        return self.full_scenario()
+        # if self.video_dir is None:
+        #     return None
 
-        img = self.full_scenario()
+        # step_id = self.engine.elapsed_time
+        # video_dir = osp.join(self.video_dir, str(id(self)), str(self.episodes))
+        # frame_path = osp.join(video_dir, f"f-{step_id:06d}.png")
+        # if not osp.exists(video_dir):
+        #     os.makedirs(video_dir, exist_ok=True)
 
-        step_id = self.engine.elapsed_time
-        video_dir = osp.join(self.video_dir, str(id(self)), str(self.episodes))
-        frame_path = osp.join(video_dir, f"f-{step_id:06d}.png")
-        if not osp.exists(video_dir):
-            os.makedirs(video_dir, exist_ok=True)
+        # skio.imsave(frame_path, img)
 
-        skio.imsave(frame_path, img)
+        # if self.render_mode == "human":
+        #     return img
 
-        if mode == "human":
-            return img
-
-        return None
+        # return None
 
     def close(self):
         self.engine.terminate()
@@ -276,12 +275,16 @@ class PgFlat(PlaygroundEnv):
 
 class PgTopdown(PlaygroundEnv):
     def _create_agent(self, agent_type, sensors_name, fov, resolution, keyboard=False):
-        sensors_name = "topdown_local"
+        assert sensors_name.startswith(
+            "topdown"
+        ), f"Wrong sensors_name for topdown env: {sensors_name}"
 
         super()._create_agent(agent_type, sensors_name, fov, resolution, keyboard)
 
     def process_obs(self, obs):
-        return obs["topdown_local"]
+        obs = obs[list(obs.keys())[0]]
+        self.obs_raw = obs.astype(np.uint8)
+        return self.obs_raw
 
     def _set_obs_space(self):
         shape = self.agent.sensors[0].shape
@@ -292,12 +295,22 @@ class PgTopdown(PlaygroundEnv):
             dtype=np.uint8,
         )
 
+    def render(self):
+        # return self.full_scenario()
+        # assert self.render_mode == "rgb_array"
+
+        stack_depth = self.obs_raw.shape[2] // 3
+        img = np.concatenate(
+            [self.obs_raw[:, :, i * 3 : (i + 1) * 3] for i in range(stack_depth)], 1
+        )
+        return img
+
 
 def wrap_deepmind_spg(env, skip=0, stack=4):
     if skip > 0:
         env = SkipEnv(env, skip=skip)
 
-    if stack > 1:
+    if stack > 0:
         env = wrappers.FrameStack(env, stack)
 
     return env
@@ -305,18 +318,18 @@ def wrap_deepmind_spg(env, skip=0, stack=4):
 
 class PgTopdownWrapped(gym.Env):
     def __init__(self, config):
-        wrap = config.pop("wrap")
+        wrap = config.pop("wrap", None)
         env = PgTopdown(config)
         if wrap:
             env = wrap_deepmind_spg(env, **wrap)
 
         self._env = env
 
-    def step(self, *args, **kwargs):
-        return self._env.step(*args, **kwargs)
+    def step(self, action):
+        return self._env.step(action)
 
-    def reset(self, *args, **kwargs):
-        return self._env.reset(*args, **kwargs)
+    def reset(self, *, seed=None, options=None):
+        return self._env.reset(seed=seed, options=options)
 
     @property
     def observation_space(self):
@@ -327,7 +340,7 @@ class PgTopdownWrapped(gym.Env):
         return self._env.action_space
 
     def render(self):
-        pass
+        return self._env.render()
 
 
 class PgStacked(PlaygroundEnv):
@@ -385,14 +398,30 @@ class PgDict(PlaygroundEnv):
 
 
 def get_sensor_config(sensors_name, fov=360, resolution=64, max_range=300):
-    if sensors_name == "topdown_local":
+    if sensors_name == "topdown-local":
         return [
             (
                 sensors.TopdownLocal,
                 {
+                    "fov": fov,
                     "resolution": resolution,
-                    "name": "topdown_local",
+                    "name": "topdown-local",
                     "normalize": False,
+                    "invisible_elements": [],
+                },
+            )
+        ]
+
+    if sensors_name == "topdown-global":
+        return [
+            (
+                sensors.TopDownGlobal,
+                {
+                    "fov": fov,
+                    "resolution": resolution,
+                    "name": "topdown-global",
+                    "normalize": False,
+                    "invisible_elements": [],
                 },
             )
         ]
