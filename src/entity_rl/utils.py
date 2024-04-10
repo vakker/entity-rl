@@ -35,6 +35,7 @@ def register():
     register_env("spg_dict", envs.PgDict)
     register_env("spg_stacked", envs.PgStacked)
     register_env("spg_set", envs.PgSet)
+    register_env("spg_set_wrapped", envs.PgSetWrapped)
     register_env("spg_graph", envs.PgGraph)
     register_env("spg_topdown", envs.PgTopdown)
     register_env("spg_topdown_wrapped", envs.PgTopdownWrapped)
@@ -193,6 +194,7 @@ def get_configs(args):
         "batch_mode": "truncate_episodes",
         "observation_filter": "NoFilter",
         "log_sys_usage": False,
+        # "disable_env_checking": True,
         # "preprocessor_pref": None,
         # "_enable_new_api_stack": True,
     }
