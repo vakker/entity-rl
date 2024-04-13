@@ -24,8 +24,6 @@ from mmdet.registry import MODELS
 from mmdet.structures import DetDataSample, OptSampleList, SampleList
 from mmdet.utils import ConfigType
 from mmengine.registry import DefaultScope
-
-# from mmengine.runner.amp import autocast
 from torch import Tensor
 
 # This is needed for MM to handle the registry properly
@@ -36,6 +34,7 @@ class GDino(DINO):
     def __init__(
         self,
         prompt_size,
+        max_per_image,
         # language_model,
         *args,
         use_autocast=False,
@@ -47,7 +46,7 @@ class GDino(DINO):
         self._special_tokens = ". "
         self.use_autocast = use_autocast
         self.max_text_len = kwargs["bbox_head"]["contrastive_cfg"]["max_text_len"]
-        # = prompt_size
+        self.max_per_img = max_per_image
         super().__init__(*args, **kwargs)
 
         # This is added in DINO.__init__, so it's a bit of a pain to work around it.
@@ -436,6 +435,7 @@ class GDino(DINO):
         # binary classification.
         top_k = min(self.num_queries, enc_outputs_class.shape[1])
         topk_indices = torch.topk(enc_outputs_class.max(-1)[0], k=top_k, dim=1)[1]
+        # import ipdb; ipdb.set_trace()
 
         topk_score = torch.gather(
             enc_outputs_class,
@@ -818,7 +818,7 @@ class GDino(DINO):
         results = []
         # TODO: this will return all queries, not just the top-k
         for cls_score, bbox_pred in zip(cls_scores, bbox_preds):
-            results.append(self._predict_single(cls_score, bbox_pred, 10))
+            results.append(self._predict_single(cls_score, bbox_pred, self.max_per_img))
 
         results_batched = {}
         for k in results[0]:

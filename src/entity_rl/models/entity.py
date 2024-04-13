@@ -126,7 +126,9 @@ class GDINOEncoder(EntityEncoder):
         gdino_config.pop("language_model")
         gdino_config.pop("type")
         self._model = GDino(
-            prompt_size=model_config["prompt_size"], **copy.deepcopy(gdino_config)
+            prompt_size=model_config["prompt_size"],
+            max_per_image=model_config["max_per_image"],
+            **copy.deepcopy(gdino_config),
         )
 
         chkp = _load_checkpoint(gdino_chkp_file)["state_dict"]
@@ -154,6 +156,19 @@ class GDINOEncoder(EntityEncoder):
         self.mean = mean.reshape([1, 3, 1, 1])
         self.std = std.reshape([1, 3, 1, 1])
 
+        if self._config.get("add_edges", False):
+            stack_depth = obs_space.shape[2] // 3
+            n_nodes = model_config["max_per_image"] * stack_depth
+            edge_index = [[i, j] for i in range(n_nodes) for j in range(n_nodes)]
+            self.edge_index = (
+                torch.tensor(edge_index, dtype=torch.long, device=self.device)
+                .t()
+                .contiguous()
+            )
+
+        else:
+            self.edge_index = None
+
     @property
     def out_channels(self):
         # cls_feat, bbox normalized coords  (cx, cy, w, h), stack depth
@@ -177,9 +192,9 @@ class GDINOEncoder(EntityEncoder):
 
     def forward(self, inputs):
         inputs = inputs.permute(0, 3, 1, 2)
-        inputs = self.normalize(inputs)
-
         assert inputs.shape[1] % 3 == 0
+
+        inputs = self.normalize(inputs)
         stack_depth = inputs.shape[1] // 3
         batch_size = inputs.shape[0]
 
@@ -231,22 +246,14 @@ class GDINOEncoder(EntityEncoder):
         )
 
         g_batch = []
+        if self.edge_index is not None and self.edge_index.device != self.device:
+            self.edge_index = self.edge_index.to(self.device)
 
         # This iterates over the batch dimension
         for sample in node_features:
-            if self._config.get("add_edges", False):
-                n_nodes = sample.shape[0]
-                edge_index = [[i, j] for i in range(n_nodes) for j in range(n_nodes)]
-                edge_index = (
-                    torch.tensor(edge_index, dtype=torch.long, device=self.device)
-                    .t()
-                    .contiguous()
-                )
-
-            else:
-                edge_index = None
-
-            g_batch.append(Data(x=sample, edge_index=edge_index))
+            # To make sure that it's fully connected
+            assert self.edge_index.shape[1] == sample.shape[0] ** 2
+            g_batch.append(Data(x=sample, edge_index=self.edge_index))
 
         batch = Batch.from_data_list(g_batch)
         return batch
