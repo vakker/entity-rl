@@ -319,10 +319,11 @@ def get_search_alg_sched(conf_yaml, args, is_grid_search):
 
 
 class TicToc:
-    def __init__(self):
+    def __init__(self, enabled=True):
         self.start = 0
         self.lap = 0
         self.counter = 0
+        self.enabled = enabled
 
         self.tic()
 
@@ -332,6 +333,9 @@ class TicToc:
         self.counter = 0
 
     def toc(self, message=""):
+        if not self.enabled:
+            return
+
         now = time.time()
         elapsed_1 = now - self.start
         elapsed_2 = now - self.lap
