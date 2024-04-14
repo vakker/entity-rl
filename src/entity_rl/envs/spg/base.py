@@ -15,7 +15,7 @@ from simple_playgrounds.playground.playground import PlaygroundRegister
 from simple_playgrounds.playground.playgrounds.rl import foraging
 
 from entity_rl import playgrounds
-from entity_rl.envs.atari.base import SkipEnv
+from entity_rl.envs.atari.base import ResizeEnv, SkipEnv
 
 # Import needed because of the register, and this is needed because of the linters
 foraging = foraging
@@ -306,9 +306,12 @@ class PgTopdown(PlaygroundEnv):
         return img
 
 
-def wrap_deepmind_spg(env, skip=0, stack=4):
+def wrap_deepmind_spg(env, skip=0, stack=4, resize=None):
     if skip > 0:
         env = SkipEnv(env, skip=skip)
+
+    if resize is not None:
+        env = ResizeEnv(env, resize)
 
     if stack > 0:
         env = wrappers.FrameStack(env, stack)
@@ -444,8 +447,8 @@ def get_sensor_config(sensors_name, fov=360, resolution=64, max_range=300):
                 # FIXME: use SemanticRay instead
                 sensors.PerfectSemantic,
                 {
-                    "max_range": max_range,
-                    "resolution": resolution,
+                    "max_range": 100,
+                    "resolution": 100,
                     "name": "semantic",
                 },
             )
