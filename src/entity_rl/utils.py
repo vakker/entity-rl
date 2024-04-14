@@ -155,7 +155,7 @@ def get_configs(args):
 
     if args["smoke"]:
         args["stop_attr"] = "training_iteration"
-        args["stop_at"] = 1
+        args["stop_at"] = 2
         args["num_samples"] = min(2, args["num_samples"])
 
     if args["worker_gpu"]:
