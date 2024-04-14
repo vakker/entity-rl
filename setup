@@ -4,15 +4,21 @@ set -x
 
 # Install pytorch first because of torch-scatter (and others)
 pip install wheel
-pip install "torch~=2.1.0" torchvision
+pip install "pillow<9.0" "scikit-image<0.20" "ray[rllib]==2.9.3" "numpy==1.23.5"
+# pip install "torch~=2.1.0" torchvision -I
+pip install "torch~=2.2.0" torchvision
 pip install transformers nltk
 # pip install "ray[rllib] @ https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-3.0.0.dev0-cp310-cp310-manylinux2014_x86_64.whl"
 
 pip install openmim
 mim install mmengine
 mim install "mmcv>=2.0.0"
-mim install "mmdet[tracking]"
+mim install mmdet
 
-pip install -r requirements.txt
+pip install pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv \
+    -f https://data.pyg.org/whl/torch-2.2.0+cu121.html
+pip install torch_geometric
+
+# pip install -r requirements.txt
 
 # pip install -e ".[dev,test]"
