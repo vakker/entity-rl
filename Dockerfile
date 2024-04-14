@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
+FROM nvidia/cuda:12.2.2-cudnn8-devel-ubuntu22.04
 
 ARG DEBIAN_FRONTEND=noninteractive
 ENV TZ=Etc/UTC
@@ -38,6 +38,7 @@ RUN apt-get -y -qq update && \
     htop \
     swig \
     vim \
+    ninja-build \
     rsync && \
     rm -rf /var/lib/apt/lists/*
 
@@ -64,7 +65,7 @@ RUN wget -q https://www.python.org/ftp/python/${PYTHON}/Python-${PYTHON}.tgz && 
     rm -rf Python-${PYTHON} Python-${PYTHON}.tgz && \
     python3 -m pip install --upgrade --no-cache-dir pip setuptools wheel
 
-COPY requirements.txt .
-COPY setup .
-RUN ./setup && \
-    rm -rf /root/.cache/pip
+# COPY requirements.txt .
+# COPY setup .
+# RUN ./setup && \
+#     rm -rf /root/.cache/pip
