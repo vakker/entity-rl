@@ -40,8 +40,7 @@ class AtariSet(AtariEnv):
         self.max_elements = int(max_elements * 1.5)
         self.max_elements *= self.stack_size
 
-    # TODO: change this to render env or something
-    def full_scenario(self):
+    def render(self):
         segm = self.obs_raw.copy()
 
         for p in self.props:

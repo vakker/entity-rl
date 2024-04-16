@@ -76,8 +76,8 @@ class AtariEnv(gym.Env):
 
     def step(self, action):
         step_result = self._env.step(action)
+        self.obs_raw = step_result[0]
         obs = self.process_obs(step_result[0])
-        self.obs_raw = obs
         return obs, *step_result[1:]
 
     def reset(self, *, seed=None, options=None):
@@ -88,8 +88,8 @@ class AtariEnv(gym.Env):
         np.random.seed(seed)
 
         obs, info = self._env.reset(seed=seed, options=options)
-        obs = self.process_obs(obs)
         self.obs_raw = obs
+        obs = self.process_obs(obs)
         self.episodes += 1
 
         return obs, info
