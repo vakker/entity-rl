@@ -13,13 +13,13 @@ from .base import PlaygroundEnv, type_str
 class PgSet(PlaygroundEnv):
     max_elements = 80
 
-    def _create_agent(self, agent_type, sensors_name, fov, resolution, keyboard=False):
+    def _create_agent(self, agent_type, sensors_name, keyboard=False):
         if sensors_name != "semantic":
             warnings.warn("Setting sensors_name to semantic.")
 
             sensors_name = "semantic"
 
-        super()._create_agent(agent_type, sensors_name, fov, resolution, keyboard)
+        super()._create_agent(agent_type, sensors_name, keyboard)
 
     @property
     def x_shape(self):
