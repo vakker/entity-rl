@@ -39,6 +39,8 @@ class EntityPassThrough(EntityEncoder):
         # assert isinstance(obs_space, spaces.Graph)
         super().__init__(model_config, obs_space)
 
+        self._edge_index_map = {}
+
     @property
     def out_channels(self):
         out_channels = {
@@ -78,28 +80,39 @@ class EntityPassThrough(EntityEncoder):
 
             if edge_index is None:
                 n_nodes = x_len
+                if not isinstance(n_nodes, int):
+                    n_nodes = n_nodes.item()
 
-                # For refecence:
-                # start_time = time.time()
-                # edge_index = [
-                #     torch.tensor([i, j], device=input_dict["obs_flat"].device)
-                #     for i in range(n_nodes)
-                #     for j in range(n_nodes)
-                # ]
-                # edge_index = torch.transpose(torch.stack(edge_index), 1, 0).long()
-                # print("edge_index", time.time() - start_time)
+                # print("#", n_nodes, self._edge_index_map.keys())
 
-                node_indices = torch.tensor(
-                    range(n_nodes),
-                    dtype=torch.long,
-                    device=device,
-                )
+                if n_nodes in self._edge_index_map:
+                    edge_index = self._edge_index_map[n_nodes]
 
-                j_idx = node_indices.tile((n_nodes,))
-                i_idx = node_indices.repeat_interleave(n_nodes)
-                edge_index = torch.stack([i_idx, j_idx], dim=0)
+                else:
 
-                ei_len = edge_index.shape[1]
+                    # For refecence:
+                    # start_time = time.time()
+                    # edge_index = [
+                    #     torch.tensor([i, j], device=input_dict["obs_flat"].device)
+                    #     for i in range(n_nodes)
+                    #     for j in range(n_nodes)
+                    # ]
+                    # edge_index = torch.transpose(torch.stack(edge_index), 1, 0).long()
+                    # print("edge_index", time.time() - start_time)
+
+                    node_indices = torch.tensor(
+                        range(n_nodes),
+                        dtype=torch.long,
+                        device=device,
+                    )
+
+                    j_idx = node_indices.tile((n_nodes,))
+                    i_idx = node_indices.repeat_interleave(n_nodes)
+                    edge_index = torch.stack([i_idx, j_idx], dim=0)
+
+                    self._edge_index_map[n_nodes] = edge_index
+
+                    ei_len = edge_index.shape[1]
 
             g_batch.append(Data(x=x[:x_len], edge_index=edge_index[:, :ei_len]))
 
