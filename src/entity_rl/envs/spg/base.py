@@ -29,8 +29,6 @@ class PlaygroundEnv(gym.Env, ABC):
 
     def __init__(self, config):
         sensors_name = config.get("sensors_name", "rgb_depth")
-        sensors_fov = config.get("sensors_fov", 360)
-        sensors_res = config.get("sensors_res", 64)
         multisteps = config.get("multisteps")
         keyboard = config.get("keyboard")
         self.include_agent_in_obs = config.get("include_agent", False)
@@ -50,7 +48,7 @@ class PlaygroundEnv(gym.Env, ABC):
         self.episodes = 0
         self._entity_types = None
 
-        self._create_agent("base", sensors_name, sensors_fov, sensors_res, keyboard)
+        self._create_agent("base", sensors_name, keyboard)
         self._set_action_space(continuous_action_space)
         self._set_obs_space()
 
@@ -117,7 +115,7 @@ class PlaygroundEnv(gym.Env, ABC):
 
             self.action_space = spaces.MultiDiscrete(act_spaces)
 
-    def _create_agent(self, agent_type, sensors_name, fov, resolution, keyboard=False):
+    def _create_agent(self, agent_type, sensors_name, keyboard=False):
         if agent_type == "base":
             agent_cls = agents.BaseAgent
         else:
@@ -130,7 +128,7 @@ class PlaygroundEnv(gym.Env, ABC):
 
         agent = agent_cls(controller=cont)
 
-        sensors_config = get_sensor_config(sensors_name, fov, resolution, 400)
+        sensors_config = get_sensor_config(sensors_name)
         for sensor_cls, sensor_params in sensors_config:
             if "normalize" not in sensor_params:
                 sensor_params["normalize"] = True
@@ -274,12 +272,12 @@ class PgFlat(PlaygroundEnv):
 
 
 class PgTopdown(PlaygroundEnv):
-    def _create_agent(self, agent_type, sensors_name, fov, resolution, keyboard=False):
+    def _create_agent(self, agent_type, sensors_name, keyboard=False):
         assert sensors_name.startswith(
             "topdown"
         ), f"Wrong sensors_name for topdown env: {sensors_name}"
 
-        super()._create_agent(agent_type, sensors_name, fov, resolution, keyboard)
+        super()._create_agent(agent_type, sensors_name, keyboard)
 
     def process_obs(self, obs):
         obs = obs[list(obs.keys())[0]]
@@ -400,14 +398,18 @@ class PgDict(PlaygroundEnv):
         self.observation_space = spaces.Dict(d)
 
 
-def get_sensor_config(sensors_name, fov=360, resolution=64, max_range=300):
+def get_sensor_config(sensors_name):
+    fov = 360
+    resolution = 100
+    max_range = 300
+
     if sensors_name == "topdown-local":
         return [
             (
                 sensors.TopdownLocal,
                 {
                     "fov": fov,
-                    "resolution": resolution,
+                    "resolution": max_range * 2,
                     "name": "topdown-local",
                     "normalize": False,
                     "invisible_elements": [],
@@ -416,18 +418,19 @@ def get_sensor_config(sensors_name, fov=360, resolution=64, max_range=300):
         ]
 
     if sensors_name == "topdown-global":
-        return [
-            (
-                sensors.TopDownGlobal,
-                {
-                    "fov": fov,
-                    "resolution": resolution,
-                    "name": "topdown-global",
-                    "normalize": False,
-                    "invisible_elements": [],
-                },
-            )
-        ]
+        raise NotImplementedError()
+        # return [
+        #     (
+        #         sensors.TopDownGlobal,
+        #         {
+        #             "fov": fov,
+        #             "resolution": resolution,
+        #             "name": "topdown-global",
+        #             "normalize": False,
+        #             "invisible_elements": [],
+        #         },
+        #     )
+        # ]
 
     if sensors_name == "blind":
         return [
@@ -447,7 +450,8 @@ def get_sensor_config(sensors_name, fov=360, resolution=64, max_range=300):
                 # FIXME: use SemanticRay instead
                 sensors.PerfectSemantic,
                 {
-                    "max_range": 100,
+                    "fov": fov,
+                    "max_range": max_range,
                     "resolution": 100,
                     "name": "semantic",
                 },
