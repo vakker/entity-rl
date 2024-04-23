@@ -2,10 +2,11 @@
 
 import argparse
 import os
+import pickle
 import shutil
 from os import path as osp
 
-import matplotlib.pyplot as plt
+import numpy as np
 import requests
 from skimage import io as skio
 from tqdm import trange
@@ -59,7 +60,8 @@ def main(args):
 
         os.mkdir(frames_base)
 
-    plot_obj = None
+    # plot_obj = None
+    dataset = []
 
     for i in trange(args.episodes, disable=args.no_bar):
         frames_dir = osp.join(frames_base, f"episode-{i:02d}")
@@ -75,10 +77,14 @@ def main(args):
 
             else:
                 act = env.action_space.sample()
+                # act[0] = 2
 
-            obs, _, done, _, _ = env.step(act)
+            obs, reward, done, _, _ = env.step(act)
 
             if args.save:
+                dataset.append({"obs": obs, "act": act, "reward": reward})
+
+            if args.render:
                 if not osp.exists(frames_dir):
                     os.mkdir(frames_dir)
 
@@ -88,22 +94,38 @@ def main(args):
                 img_path = osp.join(frames_dir, f"f-{j:06d}.png")
                 skio.imsave(img_path, img, check_contrast=False)
 
-            if args.render:
-                if plot_obj is None:
-                    img = env.render()
-                    assert img.shape[-1] == 3
+            # if args.render:
+            #     if plot_obj is None:
+            #         img = env.render()
+            #         assert img.shape[-1] == 3
 
-                    plot_obj = plt.imshow(img)
-                    plt.show(block=False)
+            #         plot_obj = plt.imshow(img)
+            #         plt.show(block=False)
 
-                plot_obj.set_data(env.full_scenario())
-                plt.gcf().canvas.draw_idle()
-                plt.gcf().canvas.start_event_loop(0.01)
+            #     plot_obj.set_data(env.full_scenario())
+            #     plt.gcf().canvas.draw_idle()
+            #     plt.gcf().canvas.start_event_loop(0.01)
 
             if done:
                 break
 
         env.reset()
+
+    if args.save:
+        print("Saving dataset")
+        data_filtered = [d for d in dataset if d["reward"] != 0]
+        zero_rewards = [d for d in dataset if d["reward"] == 0]
+        data_filtered.extend(np.random.choice(zero_rewards, len(data_filtered)))
+        rewards = [d["reward"] for d in data_filtered]
+        print("Data stats:")
+        print(f"Total: {len(data_filtered)}")
+        values, counts = np.unique(rewards, return_counts=True)
+        for v, n in zip(values, counts):
+            print(f"Reward {v}: {n}")
+
+        pkl_path = osp.join(frames_base, "dataset.pkl")
+        with open(pkl_path, "wb") as file:
+            pickle.dump(data_filtered, file)
 
 
 if __name__ == "__main__":
