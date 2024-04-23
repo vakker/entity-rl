@@ -137,6 +137,7 @@ class ENROSPolicy(TorchModelV2, BaseModule):
         self._vf = SlimFC(
             self._encoder.out_channels,
             1,
+            # 3,
             # initializer=normc_initializer(0.01), # ?
             activation_fn=None,
         )

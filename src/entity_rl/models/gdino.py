@@ -38,6 +38,7 @@ class GDino(DINO):
         # language_model,
         *args,
         use_autocast=False,
+        unfreeze_backbone=False,
         **kwargs,
     ) -> None:
 
@@ -47,6 +48,7 @@ class GDino(DINO):
         self.use_autocast = use_autocast
         self.max_text_len = kwargs["bbox_head"]["contrastive_cfg"]["max_text_len"]
         self.max_per_img = max_per_image
+        self.unfreeze_backbone = unfreeze_backbone
         super().__init__(*args, **kwargs)
 
         # This is added in DINO.__init__, so it's a bit of a pain to work around it.
@@ -106,6 +108,8 @@ class GDino(DINO):
         # This way there's nothing missed (in theory)
         self.freeze(self)
         self.unfreeze(self.text_embed)
+        if self.unfreeze_backbone:
+            self.unfreeze(self.backbone)
 
     def init_weights(self) -> None:
         """Initialize weights for Transformer and other components."""

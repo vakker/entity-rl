@@ -128,10 +128,12 @@ class GDINOEncoder(EntityEncoder):
         self._model = GDino(
             prompt_size=model_config["prompt_size"],
             max_per_image=model_config["max_per_image"],
+            unfreeze_backbone=model_config.get("unfreeze_backbone", False),
             **copy.deepcopy(gdino_config),
         )
 
         chkp = _load_checkpoint(gdino_chkp_file)["state_dict"]
+        self.gdino_outputs = None
 
         # ? "language_model.language_backbone.body.model.embeddings.position_ids"
 
@@ -172,6 +174,7 @@ class GDINOEncoder(EntityEncoder):
     @property
     def out_channels(self):
         # cls_feat, bbox normalized coords  (cx, cy, w, h), stack depth
+        # x_shape = 4 + 1
         x_shape = self._model.cls_features + 4 + 1
         return {
             "node_features": [x_shape],
@@ -215,10 +218,12 @@ class GDINOEncoder(EntityEncoder):
 
             outputs = {k: torch.cat([o[k] for o in outputs], dim=0) for k in outputs[0]}
 
+        self.gdino_outputs = {}
         for k in outputs:
             outputs[k] = outputs[k].reshape(
                 batch_size, stack_depth, *outputs[k].shape[1:]
             )
+            self.gdino_outputs[k] = outputs[k].detach().cpu()  # .numpy()
 
         # outputs_all is shape (batch_size, stack_depth, n_nodes, node_features)
 
