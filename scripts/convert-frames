@@ -6,7 +6,7 @@ cd $frames_dir
 
 mkdir -p vids
 for e in episode-0*; do
-    ffmpeg -y -framerate 24 -i $e/f-%06d.png -c:v libx264 -pix_fmt yuv420p vids/$e.mp4
+    ffmpeg -y -framerate 24 -i $e/f-%06d.png -c:v libx264 -pix_fmt yuv420p -vf "pad=ceil(iw/2)*2:ceil(ih/2)*2" vids/$e.mp4
 done
 
 ffmpeg -y \
