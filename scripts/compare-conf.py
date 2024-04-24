@@ -17,9 +17,14 @@ def main(args):
         value1 = config1[element]
         value2 = config2[element]
         if value1 != value2:
-            print(f"Element {element} differs")
+            print(f"!! {element}")
             print(f"Config 1: {value1}")
             print(f"Config 2: {value2}")
+            print()
+
+        elif args.print:
+            print(f"== {element}")
+            print(value1)
             print()
 
 
@@ -27,5 +32,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("config1", help="Config file")
     parser.add_argument("config2", help="Config file")
+    parser.add_argument("-p", "--print", action="store_true")
     args = parser.parse_args()
     main(args)
