@@ -183,8 +183,11 @@ class PlaygroundEnv(gym.Env, ABC):
         reward = self.agent.reward
         done = self.playground.done or not self.engine.game_on
 
-        if hasattr(self.playground, "portals"):
-            portal_used = int(any(p.energized for p in self.playground.portals))
+        # if hasattr(self.playground, "portals"):
+        #     portal_used = int(any(p.energized for p in self.playground.portals))
+
+        if self.agent.teleported_to:
+            portal_used = 1
         else:
             portal_used = 0
 
