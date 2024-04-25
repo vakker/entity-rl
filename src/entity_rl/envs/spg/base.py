@@ -328,12 +328,19 @@ class PgTopdownWrapped(gym.Env):
             env = wrap_deepmind_spg(env, **wrap)
 
         self._env = env
+        self.obs_raw = None
 
     def step(self, action):
-        return self._env.step(action)
+        r = self._env.step(action)
+        self.obs_raw = r[0]
+
+        return r
 
     def reset(self, *, seed=None, options=None):
-        return self._env.reset(seed=seed, options=options)
+        r = self._env.reset(seed=seed, options=options)
+        self.obs_raw = r[0]
+
+        return r
 
     @property
     def observation_space(self):
@@ -344,7 +351,12 @@ class PgTopdownWrapped(gym.Env):
         return self._env.action_space
 
     def render(self):
-        return self._env.render()
+
+        stack_depth = self.obs_raw.shape[2] // 3
+        img = np.concatenate(
+            [self.obs_raw[:, :, i * 3 : (i + 1) * 3] for i in range(stack_depth)], 1
+        )
+        return img
 
 
 class PgStacked(PlaygroundEnv):
