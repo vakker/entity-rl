@@ -42,6 +42,7 @@ def register():
 
     register_env("atari_env", envs.AtariEnv)
     register_env("atari_graph", envs.AtariGraph)
+    register_env("atari_set", envs.AtariSet)
     register_env("corridor", envs.SimpleCorridor)
 
     ModelCatalog.register_custom_model("enros", models.ENROSPolicy)
