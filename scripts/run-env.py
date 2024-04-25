@@ -52,7 +52,7 @@ def main(args):
     if args.output_dir:
         frames_base = osp.join(args.output_dir, frames_base)
 
-    if args.save:
+    if args.save or args.render:
         print(f"Saving frames to {frames_base}")
         if osp.exists(frames_base):
             print("Frames dir exists, removing")
