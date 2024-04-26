@@ -17,7 +17,7 @@ def main(args):
 
     keys = set(elements_1) | set(elements_2)
 
-    for element in keys:
+    for element in sorted(keys):
         value1 = config1.get(element)
         value2 = config2.get(element)
         if value1 != value2:

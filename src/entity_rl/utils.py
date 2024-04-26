@@ -64,12 +64,10 @@ def trial_str_creator(trial):
     if not trial.evaluated_params or len(trial.evaluated_params) > 5:
         return trial_base_name
 
-    params = {
-        k.split("/")[-1]: p[-1] if isinstance(p, list) else str(p)
-        for k, p in trial.evaluated_params.items()
-    }
+    params = {k.split("/")[-1]: str(p) for k, p in trial.evaluated_params.items()}
     name = "-".join([f"{k}:{p}" for k, p in params.items()])
     name = name.replace("/", "_")
+    name = name.replace(" ", "")
     return f"{trial_base_name}-{name}"
 
 
