@@ -41,6 +41,9 @@ class AtariSet(AtariEnv):
         self.max_elements *= self.stack_size
 
     def render(self):
+        if not self.is_eval:
+            return None
+
         segm = self.obs_raw.copy()
 
         for p in self.props:

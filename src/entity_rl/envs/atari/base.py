@@ -63,6 +63,8 @@ class AtariEnv(gym.Env):
         self._env = wrap_deepmind(self._env, **wrap)
 
         self.video_dir = config.get("video_dir")
+        self.time_limit = config.get("time_limit")
+        self.is_eval = config.get("is_eval", False)
         self.episodes = 0
         self.time_steps = 0
         self.obs_raw = None
@@ -75,10 +77,19 @@ class AtariEnv(gym.Env):
         return self._env.observation_space
 
     def step(self, action):
-        step_result = self._env.step(action)
-        self.obs_raw = step_result[0]
-        obs = self.process_obs(step_result[0])
-        return obs, *step_result[1:]
+        obs, reward, done, truncated, info = self._env.step(action)
+        self.obs_raw = obs
+        obs = self.process_obs(obs)
+        self.time_steps += 1
+
+        info["data"] = {"running": {"raw_reward": reward}}
+        if self.is_eval:
+            info["media"] = {"render": self.render()}
+
+        if self.time_limit is not None and self.time_steps >= self.time_limit:
+            done = True
+
+        return obs, reward, done, truncated, info
 
     def reset(self, *, seed=None, options=None):
         if self._fix_seed:
@@ -91,14 +102,17 @@ class AtariEnv(gym.Env):
         self.obs_raw = obs
         obs = self.process_obs(obs)
         self.episodes += 1
+        self.time_steps = 0
+        if self.is_eval:
+            info["media"] = {"render": self.render()}
 
         return obs, info
 
     def render(self):
-        # if self.video_dir is None:
-        #     return None
+        if not self.is_eval:
+            return None
 
-        assert self.render_mode == "rgb_array"
+        # assert self.render_mode == "rgb_array"
 
         stack_depth = self.obs_raw.shape[2] // 3
         img = np.concatenate(
@@ -189,6 +203,12 @@ class SkipEnv(gym.Wrapper):
             total_reward += reward
             if done:
                 break
+
+        # There must be a better way to do this
+        if "data" in info:
+            if "running" in info["data"]:
+                if "raw_reward" in info["data"]["running"]:
+                    info["data"]["running"]["raw_reward"] = reward
 
         return obs, total_reward, done, truncated, info
 

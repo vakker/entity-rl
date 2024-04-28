@@ -199,8 +199,8 @@ class PlaygroundEnv(gym.Env, ABC):
             },
         }
 
-        if self.video_dir is not None:
-            self.render()
+        # if self.video_dir is not None:
+        #     self.render()
 
         truncated = False
         return self.observations, reward, done, truncated, info

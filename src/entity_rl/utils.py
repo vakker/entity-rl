@@ -219,7 +219,7 @@ def get_configs(args):
     param_space = configs
 
     assert conf_yaml["run"] == "PPO"
-    assert conf_yaml["metric"] == "reward"
+    # assert conf_yaml["metric"] == "reward"
 
     if args["amp"]:
         experiment = PPOTrainerAMP
