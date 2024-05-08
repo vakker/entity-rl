@@ -2,6 +2,10 @@ logs
 data
 .aim
 mlruns
+backup
+outputs
+frames
+results
 
 TAGS
 

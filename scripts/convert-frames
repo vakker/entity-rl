@@ -1,0 +1,15 @@
+#!/bin/bash
+
+frames_dir=$1
+
+cd $frames_dir
+
+mkdir -p vids
+for e in episode-0*; do
+    ffmpeg -y -framerate 24 -i $e/f-%06d.png -c:v libx264 -pix_fmt yuv420p -vf "pad=ceil(iw/2)*2:ceil(ih/2)*2" vids/$e.mp4
+done
+
+ffmpeg -y \
+    $(for e in vids/episode-0*.mp4; do echo "-i $e "; done | tr -d '\n') \
+    -filter_complex "[0:v][1:v][2:v][3:v][4:v]hstack=inputs=5[row1]; [5:v][6:v][7:v][8:v][9:v]hstack=inputs=5[row2]; [row1][row2]vstack=inputs=2[output]" \
+    -map "[output]" output.mp4

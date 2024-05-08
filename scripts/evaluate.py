@@ -1,6 +1,6 @@
 from ray.rllib import evaluate
 
-from spg_experiments import utils
+from entity_rl import utils
 
 if __name__ == "__main__":
     utils.register()

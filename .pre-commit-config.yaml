@@ -1,18 +1,18 @@
 repos:
   - repo: https://github.com/ambv/black
-    rev: 21.12b0
+    rev: 24.2.0
     hooks:
       - id: black
         language_version: python3
   - repo: https://github.com/pycqa/isort
-    rev: 5.10.1
+    rev: 5.13.2
     hooks:
       - id: isort
         language_version: python3
         args: ["--filter-files"]
 
   - repo: https://github.com/pycqa/flake8
-    rev: 4.0.1
+    rev: 7.0.0
     hooks:
       - id: flake8
         language_version: python3
@@ -24,10 +24,10 @@ repos:
         entry: pylint
         language: system
         types: [python]
-        args: ["-j 0"]
+        args: ["-j 0", "-v"]
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.0.1
+    rev: v4.5.0
     hooks:
       - id: trailing-whitespace
         language_version: python3
