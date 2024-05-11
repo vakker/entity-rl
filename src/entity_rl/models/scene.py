@@ -1,6 +1,7 @@
 import sys
 from abc import abstractmethod
 
+import torch_geometric.nn as pyg_nn
 from torch import nn
 from torch_geometric.data import Batch
 from torch_geometric.nn import MLP, GATv2Conv, aggr
@@ -45,7 +46,8 @@ class GATFeatures(BaseModule):
         activation=None,
         norm=None,
         dropout=0.0,
-        aggr_layer="attn",
+        aggr_layer="mean",
+        norm_layer=None,
     ):
         # pylint: disable=unused-argument
         super().__init__()
@@ -55,22 +57,36 @@ class GATFeatures(BaseModule):
         else:
             self.act = nn.ELU()
 
-        # TODO: add normalization if needed
-        # if norm:
-        #     norm_layer = getattr(pyg_nn, norm)
-        # else:
-        #     norm_layer = nn.Identity
+        # TODO: dropout?
 
-        convs = []
+        if norm_layer is None:
+            norm_cls = nn.Identity
+
+        elif norm_layer == "batch":
+            norm_cls = pyg_nn.BatchNorm
+
+        elif norm_layer == "instance":
+            norm_cls = pyg_nn.InstanceNorm
+
+        else:
+            raise ValueError("Wrong norm_layer")
+
+        # TODO: pre-norm?
+        self._convs = nn.ModuleList()
+        self._norms = nn.ModuleList()
         in_channels = n_input_features
         for dim, heads in dims:
-            convs.append(GATv2Conv(in_channels, dim, heads))
+            self._convs.append(GATv2Conv(in_channels, dim, heads))
             in_channels = dim * heads
+            self._norm.append(norm_cls(in_channels))
 
-        self._convs = nn.ModuleList(convs)
         self._out_channels = in_channels
 
-        if aggr_layer == "attn":
+        if aggr_layer is None:
+            self._aggr = None
+
+        elif aggr_layer == "attn":
+            # TODO: change act to LeakyReLU
             gate_nn = MLP([in_channels, 1])
             feat_nn = MLP([in_channels, in_channels])
             self._aggr = aggr.AttentionalAggregation(gate_nn, feat_nn)
@@ -79,7 +95,7 @@ class GATFeatures(BaseModule):
             self._aggr = aggr.MeanAggregation()
 
         else:
-            self._aggr = None
+            raise ValueError("Wrong aggr_layer")
 
     @property
     def out_channels(self):
@@ -87,8 +103,8 @@ class GATFeatures(BaseModule):
 
     def forward(self, inputs):
         x, edge_index, batch = inputs
-        for conv in self._convs:
-            x = self.act(conv(x, edge_index))
+        for conv, norm in zip(self._convs, self._norms):
+            x = self.act(norm(conv(x, edge_index)))
 
         if self._aggr is not None:
             x = self._aggr(x, batch)
