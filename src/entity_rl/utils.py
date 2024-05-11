@@ -1,6 +1,7 @@
 # pylint: disable=too-many-branches
 
 import json
+import socket
 import time
 from datetime import datetime
 from functools import wraps
@@ -236,8 +237,11 @@ def get_configs(args):
                 callbacks.DataLoggerCallback(),
             )
         if "aim" in args["callbacks"]:
+            repo_name = ".aim" + "-" + socket.gethostname()
             callback_list.append(
-                callbacks.AimLoggerCallback(experiment_name=args["exp_name"])
+                callbacks.AimLoggerCallback(
+                    experiment_name=args["exp_name"], repo=repo_name
+                )
             )
     else:
         callback_list = None
