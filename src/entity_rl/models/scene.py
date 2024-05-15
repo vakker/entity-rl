@@ -65,8 +65,12 @@ class GATFeatures(BaseModule):
         elif norm_layer == "batch":
             norm_cls = pyg_nn.BatchNorm
 
+        elif norm_layer == "layer":
+            norm_cls = pyg_nn.LayerNorm
+
         elif norm_layer == "instance":
-            norm_cls = pyg_nn.InstanceNorm
+            raise ValueError("InstanceNorm makes no sense for single feature vectors.")
+            # norm_cls = pyg_nn.InstanceNorm
 
         else:
             raise ValueError("Wrong norm_layer")
@@ -78,7 +82,7 @@ class GATFeatures(BaseModule):
         for dim, heads in dims:
             self._convs.append(GATv2Conv(in_channels, dim, heads))
             in_channels = dim * heads
-            self._norm.append(norm_cls(in_channels))
+            self._norms.append(norm_cls(in_channels))
 
         self._out_channels = in_channels
 
