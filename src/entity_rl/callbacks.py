@@ -130,7 +130,7 @@ class AimLoggerCallback(LoggerCallback):
         run["hparams"] = self._clear_hparams(config)
 
     def _clear_hparams(self, hparams: Dict):
-        flat_params = flatten_dict(hparams, delimiter=".")
+        flat_params = flatten_dict(hparams, delimiter="_")
         scrubbed_params = {
             k: v for k, v in flat_params.items() if isinstance(v, self.VALID_HPARAMS)
         }
@@ -168,6 +168,9 @@ class AimLoggerCallback(LoggerCallback):
 
         for attr, value in flat_result.items():
             full_attr = "/".join(path + [attr])
+            full_attr = full_attr.replace("/", "_")
+            full_attr = full_attr.replace(".", "_")
+
             if isinstance(value, tuple(self.VALID_SUMMARY_TYPES)) and not np.isnan(
                 value
             ):
