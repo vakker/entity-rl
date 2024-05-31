@@ -1,6 +1,8 @@
 # pylint: disable=too-many-branches
 
 import json
+import os
+import socket
 import time
 from datetime import datetime
 from functools import wraps
@@ -9,6 +11,7 @@ from os import path as osp
 import yaml
 from ray import train, tune
 from ray.rllib.models import ModelCatalog
+from ray.tune.logger import TBXLoggerCallback
 
 # from ray.tune import CLIReporter
 from ray.tune.registry import ENV_CREATOR, _global_registry, register_env
@@ -19,6 +22,8 @@ from ray.tune.search.hyperopt import HyperOptSearch
 
 from . import callbacks
 from .policy import PPOTrainerAMP
+
+os.environ["TUNE_DISABLE_AUTO_CALLBACK_LOGGERS"] = "1"
 
 
 class E(dict):
@@ -230,14 +235,17 @@ def get_configs(args):
 
     # These are general logging callbacks
     if args["callbacks"]:
-        callback_list = []
+        callback_list = [TBXLoggerCallback()]
         if "data" in args["callbacks"]:
             callback_list.append(
                 callbacks.DataLoggerCallback(),
             )
         if "aim" in args["callbacks"]:
+            repo_name = ".aim" + "-" + socket.gethostname()
             callback_list.append(
-                callbacks.AimLoggerCallback(experiment_name=args["exp_name"])
+                callbacks.AimLoggerCallback(
+                    experiment_name=args["exp_name"], repo=repo_name
+                )
             )
     else:
         callback_list = None

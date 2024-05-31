@@ -30,6 +30,7 @@ install_requires = [
     "gputil",
     "pillow<9.0",
     "mmengine",
+    "HEBO>=0.2.0",
 ]
 
 test_requires = [

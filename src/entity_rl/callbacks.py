@@ -24,7 +24,6 @@ class CustomCallbacks(DefaultCallbacks):
     def on_episode_start(
         self, *, worker, base_env, policies, episode, env_index, **kwargs
     ):
-        episode.media["episode_data"] = defaultdict(list)
         episode.user_data = {"final": {}, "running": defaultdict(list)}
 
     def on_episode_step(self, *, worker, base_env, episode, env_index, **kwargs):
@@ -40,13 +39,17 @@ class CustomCallbacks(DefaultCallbacks):
 
         # Arbitrary episode media
         media = episode.last_info_for().get("media", {})
+        if media:
+            if "episode_data" not in episode.media:
+                episode.media["episode_data"] = {}
+
         for name, value in media.items():
             episode.media["episode_data"][name].append(value)
 
     def on_episode_end(
         self, *, worker, base_env, policies, episode, env_index, **kwargs
     ):
-        for name, value in episode.media["episode_data"].items():
+        for name, value in episode.media.get("episode_data", {}).items():
             episode.media["episode_data"][name] = np.array(value).tolist()
 
         for data_type, data_subset in episode.user_data.items():
@@ -110,6 +113,7 @@ class AimLoggerCallback(LoggerCallback):
         if trial not in self._trial_runs:
             run = aim.Run(
                 experiment=self.experiment_name,
+                repo=self.repo,
                 system_tracking_interval=None,
                 capture_terminal_logs=False,
             )
@@ -126,7 +130,7 @@ class AimLoggerCallback(LoggerCallback):
         run["hparams"] = self._clear_hparams(config)
 
     def _clear_hparams(self, hparams: Dict):
-        flat_params = flatten_dict(hparams, delimiter=".")
+        flat_params = flatten_dict(hparams, delimiter="_")
         scrubbed_params = {
             k: v for k, v in flat_params.items() if isinstance(v, self.VALID_HPARAMS)
         }
@@ -164,6 +168,9 @@ class AimLoggerCallback(LoggerCallback):
 
         for attr, value in flat_result.items():
             full_attr = "/".join(path + [attr])
+            full_attr = full_attr.replace("/", "_")
+            full_attr = full_attr.replace(".", "_")
+
             if isinstance(value, tuple(self.VALID_SUMMARY_TYPES)) and not np.isnan(
                 value
             ):
@@ -183,7 +190,7 @@ class AimLoggerCallback(LoggerCallback):
 
                     # Otherwise it's some distribution
                     d = aim.Distribution(
-                        distribution=value,
+                        samples=value,
                         bin_count=50,
                     )
                     self._trial_runs[trial].track(

@@ -1,14 +1,25 @@
 import sys
 from abc import abstractmethod
 
+import torch_geometric.nn as pyg_nn
 from torch import nn
 from torch_geometric.data import Batch
-from torch_geometric.nn import MLP, GATv2Conv, GINConv, global_mean_pool
+from torch_geometric.nn import MLP, GATv2Conv, aggr
 
 from .base import BaseModule
 from .slot_attention import SlotAttention
 
 module = sys.modules[__name__]
+
+
+def get_conv_layer(in_channels, config):
+    layer_class = getattr(module, config["conv_name"])
+    return layer_class(n_input_features=in_channels, **config["conv_config"])
+
+
+# def get_aggr_layer(config):
+#     layer_class = getattr(aggr, config['name'])
+#     return layer_class(**config['config'])
 
 
 class SceneEncoder(BaseModule):
@@ -28,7 +39,16 @@ class SceneEncoder(BaseModule):
 
 
 class GATFeatures(BaseModule):
-    def __init__(self, n_input_features, dims, activation=None, norm=None, dropout=0.0):
+    def __init__(
+        self,
+        n_input_features,
+        dims,
+        activation=None,
+        norm=None,
+        dropout=0.0,
+        aggr_layer="mean",
+        norm_layer=None,
+    ):
         # pylint: disable=unused-argument
         super().__init__()
 
@@ -37,20 +57,49 @@ class GATFeatures(BaseModule):
         else:
             self.act = nn.ELU()
 
-        # TODO: add normalization if needed
-        # if norm:
-        #     norm_layer = getattr(pyg_nn, norm)
-        # else:
-        #     norm_layer = nn.Identity
+        # TODO: dropout?
 
-        convs = []
+        if norm_layer is None:
+            norm_cls = nn.Identity
+
+        elif norm_layer == "batch":
+            norm_cls = pyg_nn.BatchNorm
+
+        elif norm_layer == "layer":
+            norm_cls = pyg_nn.LayerNorm
+
+        elif norm_layer == "instance":
+            raise ValueError("InstanceNorm makes no sense for single feature vectors.")
+            # norm_cls = pyg_nn.InstanceNorm
+
+        else:
+            raise ValueError("Wrong norm_layer")
+
+        # TODO: pre-norm?
+        self._convs = nn.ModuleList()
+        self._norms = nn.ModuleList()
         in_channels = n_input_features
         for dim, heads in dims:
-            convs.append(GATv2Conv(in_channels, dim, heads))
+            self._convs.append(GATv2Conv(in_channels, dim, heads))
             in_channels = dim * heads
+            self._norms.append(norm_cls(in_channels))
 
-        self._convs = nn.ModuleList(convs)
         self._out_channels = in_channels
+
+        if aggr_layer is None:
+            self._aggr = None
+
+        elif aggr_layer == "attn":
+            # TODO: change act to LeakyReLU
+            gate_nn = MLP([in_channels, 1])
+            feat_nn = MLP([in_channels, in_channels])
+            self._aggr = aggr.AttentionalAggregation(gate_nn, feat_nn)
+
+        elif aggr_layer == "mean":
+            self._aggr = aggr.MeanAggregation()
+
+        else:
+            raise ValueError("Wrong aggr_layer")
 
     @property
     def out_channels(self):
@@ -58,56 +107,58 @@ class GATFeatures(BaseModule):
 
     def forward(self, inputs):
         x, edge_index, batch = inputs
-        for conv in self._convs:
-            x = self.act(conv(x, edge_index))
+        for conv, norm in zip(self._convs, self._norms):
+            x = self.act(norm(conv(x, edge_index)))
 
-        x = global_mean_pool(x, batch)
+        if self._aggr is not None:
+            x = self._aggr(x, batch)
+
         return x
 
 
-class GINFeatures(BaseModule):
-    def __init__(self, n_input_features, dims, activation=None, norm=None, dropout=0.0):
-        # pylint: disable=unused-argument
-        super().__init__()
+# class GINFeatures(BaseModule):
+#     def __init__(self, n_input_features, dims, activation=None, norm=None, dropout=0.0):
+#         # pylint: disable=unused-argument
+#         super().__init__()
 
-        if activation:
-            self.act = getattr(nn, activation)()
-        else:
-            self.act = nn.ReLU()
+#         if activation:
+#             self.act = getattr(nn, activation)()
+#         else:
+#             self.act = nn.ReLU()
 
-        # TODO: add normalization if needed
-        # if norm:
-        #     norm_layer = getattr(pyg_nn, norm)
-        # else:
-        #     norm_layer = nn.Identity
+#         # TODO: add normalization if needed
+#         # if norm:
+#         #     norm_layer = getattr(pyg_nn, norm)
+#         # else:
+#         #     norm_layer = nn.Identity
 
-        convs = []
-        in_channels = n_input_features
-        for dim in dims:
-            mlp = MLP([in_channels, dim, dim], act=self.act)
-            convs.append(GINConv(nn=mlp, train_eps=False))
-            in_channels = dim
+#         convs = []
+#         in_channels = n_input_features
+#         for dim in dims:
+#             mlp = MLP([in_channels, dim, dim], act=self.act)
+#             convs.append(GINConv(nn=mlp, train_eps=False))
+#             in_channels = dim
 
-        self._convs = nn.ModuleList(convs)
-        self.mlp = MLP(
-            [in_channels, in_channels, in_channels],
-            norm=None,
-            dropout=dropout,
-        )
+#         self._convs = nn.ModuleList(convs)
+#         self.mlp = MLP(
+#             [in_channels, in_channels, in_channels],
+#             norm=None,
+#             dropout=dropout,
+#         )
 
-        self._out_channels = in_channels
+#         self._out_channels = in_channels
 
-    @property
-    def out_channels(self):
-        return self._out_channels
+#     @property
+#     def out_channels(self):
+#         return self._out_channels
 
-    def forward(self, inputs):
-        x, edge_index, batch = inputs
-        for conv in self._convs:
-            x = self.act(conv(x, edge_index))
+#     def forward(self, inputs):
+#         x, edge_index, batch = inputs
+#         for conv in self._convs:
+#             x = self.act(conv(x, edge_index))
 
-        x = global_mean_pool(x, batch)
-        return self.mlp(x)
+#         x = global_mean_pool(x, batch)
+#         return self.mlp(x)
 
 
 class GNNEncoder(BaseModule):
@@ -118,13 +169,11 @@ class GNNEncoder(BaseModule):
         in_channels = input_space["node_features"][0]
 
         self._n_input_size = in_channels
-        graph_conv = model_config.get("graph_conv", "GATFeatures")
 
-        conv_conf = model_config.get("conv", {})
-        gnn = getattr(module, graph_conv)(n_input_features=in_channels, **conv_conf)
+        conv_layer = get_conv_layer(in_channels, model_config)
 
-        self._encoder = nn.Sequential(gnn, nn.Flatten())
-        self._out_channels = gnn.out_channels
+        self._encoder = nn.Sequential(conv_layer, nn.Flatten())
+        self._out_channels = conv_layer.out_channels
 
     @property
     def out_channels(self):
