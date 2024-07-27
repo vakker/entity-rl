@@ -1,9 +1,0 @@
-#!/bin/bash
-
-export https_proxy=http://hpc-proxy00.city.ac.uk:3128
-
-#echo "$SLURM_CPUS_PER_TASK"
-#env | grep -i cpu
-ulimit -Sn 65535
-flight env activate singularity
-singularity run --nv container.sif "$@" --num-cpus="$SLURM_CPUS_ON_NODE"
