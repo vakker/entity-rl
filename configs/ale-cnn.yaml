@@ -1,0 +1,72 @@
+run: PPO
+base:
+  num_gpus: 1
+  batch_mode: truncate_episodes
+
+  gamma: 0.99
+  lambda: 0.95
+  kl_coeff: 0.5
+  clip_rewards: True
+  clip_param: 0.1
+  vf_clip_param: 10.0
+  entropy_coeff: 0.01
+  vf_loss_coeff: 1.0
+  grad_clip: null
+
+  lr: 0.0001
+
+  train_batch_size: 5000
+  sgd_minibatch_size: 500
+  num_sgd_iter: 10
+
+  model:
+    custom_model: enros
+    custom_model_config:
+      heads: {}
+      encoder:
+        combined:
+          name: CNNEncoder
+          config:
+            conv_activation: elu
+            conv_filters:
+              [
+                [32, [3, 3], 2],
+                [32, [3, 3], 2],
+                [32, [3, 3], 2],
+                [32, [3, 3], 2],
+              ]
+
+  env: atari_env
+  env_config:
+    pg_name: "PongNoFrameskip-v4"
+    wrap:
+      skip: 4
+      stack: 4
+      resize: 100
+
+tune:
+  env_config/pg_name:
+    type: grid_search
+    args:
+      - "SkiingNoFrameskip-v4"
+      - "BreakoutNoFrameskip-v4"
+      - "SpaceInvadersNoFrameskip-v4"
+      - "PongNoFrameskip-v4"
+
+search_alg: hyperopt
+scheduled: AsyncHyperBandScheduler
+metric: episode_reward_mean
+
+args:
+  num_workers: 4
+  envs_per_worker: 32
+  checkpoint_freq: 50
+  cpus_per_worker: 0.001
+  num_gpus: 0.49
+  stop_at: 20000000
+  worker_gpu: true
+  no_sched: true
+  tune: true
+  num_samples: 2
+    #concurrency: 2
+  amp: true

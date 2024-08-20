@@ -1,0 +1,143 @@
+run: PPO
+base:
+  gamma: 0.95
+  lambda: 1.0
+  kl_coeff: 0.2
+  clip_rewards: true
+  clip_param: 0.3
+  vf_clip_param: 10.0
+  entropy_coeff: 0.0
+  vf_loss_coeff: 1.0
+  grad_clip: null
+
+  lr: 0.001
+
+  train_batch_size: 20000
+  sgd_minibatch_size: 500
+  num_sgd_iter: 30
+
+
+  model:
+    custom_model: enros
+    custom_model_config:
+      encoder:
+        entity:
+          name: EntityPassThrough
+        scene:
+          name: GNNEncoder
+          config:
+            conv_name: GATFeatures
+            conv_config:
+              norm_layer: null
+              aggr_layer: mean
+              activation: LeakyReLU
+              dims:
+                - [64, 8]
+                - [64, 4]
+
+  env: atari_set
+  env_config:
+   pg_name: "PongNoFrameskip-v4"
+   wrap:
+      skip: 4
+      stack: 2
+      crop: [34, 16, 0, 0]
+
+tune:
+  model/custom_model_config/encoder/scene/config/conv_config/norm_layer:
+    type: choice
+    args:
+      - null
+      - batch
+
+  model/custom_model_config/encoder/scene/config/conv_config/aggr_layer:
+    type: choice
+    args:
+      - mean
+      - attn
+
+        #model/custom_model_config/encoder/scene/config/conv_config/dims:
+        # type: choice
+        # args:
+        # - [[8, 8], [8, 8]]
+      #- [[32, 8], [32, 1]]
+      # - [[64, 8], [64, 4]]
+      #- [[64, 8], [64, 1]]
+      #- [[8, 8], [8, 2]]
+      #- [[8, 8], [8, 8], [8, 1]]
+      #- [[8, 16], [8, 16], [8, 1]]
+      #- [[32, 16], [32, 16], [8, 1]]
+
+  gamma:
+    type: choice
+    args:
+      - 0.95
+      - 0.99
+
+  lambda:
+    type: choice
+    args:
+      - 0.95
+      - 1.0
+
+  entropy_coeff:
+    type: choice
+    args:
+      - 0.0
+      - 0.01
+
+  kl_coeff:
+    type: choice
+    args:
+      - 0.0
+      - 0.2
+      - 0.5
+
+  clip_param:
+    type: choice
+    args:
+      - 0.3
+      - 0.1
+
+  train_batch_size:
+    type: choice
+    args:
+      - 1000
+      - 5000
+      - 20000
+
+  num_sgd_iter:
+    type: choice
+    args:
+      - 10
+      - 20
+      - 30
+
+  lr:
+    type: choice
+    args:
+      - 0.01
+      - 0.001
+      - 0.0001
+      - 0.00001
+
+
+
+search_alg: hebo
+scheduled: AsyncHyperBandScheduler
+metric: episode_reward_mean
+
+args:
+  num_workers: 10
+  envs_per_worker: 1
+  checkpoint_freq: 50000000
+  cpus_per_worker: 0.01
+  num_gpus: 0.499
+  stop_at: 4000000
+  grace_period: 0.5
+  worker_gpu: false
+  no_sched: false
+  tune: true
+  num_samples: 200
+  concurrency: 10
+  amp: false

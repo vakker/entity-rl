@@ -1,0 +1,73 @@
+run: PPO
+base:
+  gamma: 0.95
+  kl_coeff: 0.2
+  clip_rewards: false
+  clip_param: 0.1
+  entropy_coeff: 0.01
+  vf_clip_param: 10.0
+  vf_loss_coeff: 0.1
+  grad_clip: 5
+
+  lr: 0.0001
+
+  train_batch_size: 5000
+  sgd_minibatch_size: 500
+  num_sgd_iter: 30
+
+
+  model:
+    custom_model: enros
+    custom_model_config:
+      encoder:
+        combined:
+          name: CNNEncoder
+          config:
+            conv_activation: elu
+            conv_filters: [
+              [32, [3, 3], 2],
+              [32, [3, 3], 2],
+              [32, [3, 3], 2],
+              [32, [3, 3], 2],
+            ]
+
+
+  env: spg_topdown_wrapped
+  env_config:
+    pg_name: "wall/candy_poison"
+    sensors_res: 200
+    sensors_name: topdown-local
+    wrap:
+      stack: 4
+      resize: 100
+
+
+tune:
+  env_config/pg_name:
+    type: grid_search
+    args:
+      #- "wall/candy_poison"
+      #- "wall/candy_fireballs"
+      - "wall/dispenser_fireballs"
+        #- "wall/candy_poison_large"
+        #- "wall/candy_fireballs_large"
+      - "wall/dispenser_fireballs_large"
+
+search_alg: hyperopt
+scheduled: AsyncHyperBandScheduler
+metric: episode_reward_mean
+
+args:
+  num_workers: 8
+  envs_per_worker: 8
+  checkpoint_freq: 50
+  cpus_per_worker: 0.001
+  num_gpus: 0.49
+  stop_at: 8000000
+  worker_gpu: true
+  no_sched: true
+  tune: true
+  num_samples: 4
+  #concurrency: 2
+  amp: true
+
