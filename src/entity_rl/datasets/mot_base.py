@@ -1,0 +1,158 @@
+"""
+Base class for MOT-based datasets.
+
+This module provides the common interface and functionality shared by all MOT datasets.
+"""
+
+import random
+from abc import ABC, abstractmethod
+from typing import Any, Dict, List, Tuple
+
+from torch.utils.data import Dataset
+
+from .mot_data import MOTDataLoader
+
+
+class MOTBaseDataset(Dataset, ABC):
+    """
+    Abstract base class for MOT-based datasets.
+
+    This class provides common initialization, validation, and utilities
+    that are shared across different MOT dataset implementations.
+    """
+
+    def __init__(
+        self,
+        mot_data_dirs: List[str],
+        agent_radius: int = 15,
+        num_samples_per_epoch: int = 1000,
+        image_size: Tuple[int, int] = (100, 100),
+        use_gt: bool = True,
+    ):
+        """
+        Initialize base MOT dataset.
+
+        Args:
+            mot_data_dirs: List of MOT data directories
+            agent_radius: Radius of synthetic agent for collision detection
+            num_samples_per_epoch: Number of samples to generate per epoch
+            image_size: Target image size (width, height)
+            use_gt: Whether to use ground truth (gt.txt) or detections (det.txt)
+        """
+        self.mot_data_dirs = mot_data_dirs
+        self.agent_radius = agent_radius
+        self.num_samples_per_epoch = num_samples_per_epoch
+        self.image_size = image_size
+        self.use_gt = use_gt
+
+        # Validate parameters
+        self._validate_parameters()
+
+        # Load MOT data
+        self.data_loader = MOTDataLoader(mot_data_dirs, use_gt)
+        self.mot_data = self._load_data()
+
+        if not self.mot_data:
+            raise ValueError("No valid MOT data found in the provided directories")
+
+        print(f"Loaded MOT data from {len(self.mot_data_dirs)} directories")
+        print(
+            f"Total frames available: {sum(len(frames) for frames in self.mot_data.values())}"
+        )
+
+    def _validate_parameters(self) -> None:
+        """Validate initialization parameters."""
+        if not self.mot_data_dirs:
+            raise ValueError("mot_data_dirs cannot be empty")
+
+        if self.agent_radius <= 0:
+            raise ValueError("agent_radius must be positive")
+
+        if self.num_samples_per_epoch <= 0:
+            raise ValueError("num_samples_per_epoch must be positive")
+
+        if len(self.image_size) != 2 or any(s <= 0 for s in self.image_size):
+            raise ValueError("image_size must be a tuple of two positive integers")
+
+        # Check that agent can fit in image
+        if (
+            self.agent_radius * 2 >= self.image_size[0]
+            or self.agent_radius * 2 >= self.image_size[1]
+        ):
+            raise ValueError("agent_radius too large for image_size")
+
+    @abstractmethod
+    def _load_data(self) -> Dict[str, Dict]:
+        """
+        Load MOT data specific to the dataset implementation.
+
+        Returns:
+            Loaded MOT data in the format required by the specific dataset
+        """
+        pass
+
+    @abstractmethod
+    def _generate_sample(self) -> Tuple[Any, int]:
+        """
+        Generate a single sample.
+
+        Returns:
+            Tuple of (sample_data, reward)
+        """
+        pass
+
+    def select_random_frame(self) -> Tuple[str, int, List[Tuple]]:
+        """
+        Select a random frame from the loaded data.
+
+        Returns:
+            Tuple of (data_dir, frame_id, bboxes)
+        """
+        # Randomly select data directory and frame
+        data_dir = random.choice(list(self.mot_data.keys()))
+        frame_ids = list(self.mot_data[data_dir].keys())
+        frame_id = random.choice(frame_ids)
+        bboxes = self.mot_data[data_dir][frame_id]
+
+        return data_dir, frame_id, bboxes
+
+    def generate_agent_position(self) -> Tuple[int, int]:
+        """
+        Generate a random agent position within the image bounds.
+
+        Returns:
+            Tuple of (agent_x, agent_y)
+        """
+        agent_x = random.randint(self.agent_radius, self.image_size[0] - self.agent_radius)
+        agent_y = random.randint(self.agent_radius, self.image_size[1] - self.agent_radius)
+
+        return agent_x, agent_y
+
+    def __len__(self) -> int:
+        """Return the number of samples per epoch."""
+        return self.num_samples_per_epoch
+
+    def __getitem__(self, idx: int) -> Tuple[Any, int]:
+        """
+        Get a sample by index.
+
+        Args:
+            idx: Sample index (ignored, samples are generated randomly)
+
+        Returns:
+            Generated sample
+        """
+        return self._generate_sample()
+
+    @property
+    def total_frames(self) -> int:
+        """Get total number of frames across all datasets."""
+        return sum(len(frames) for frames in self.mot_data.values())
+
+    @property
+    def dataset_info(self) -> Dict[str, int]:
+        """Get information about loaded datasets."""
+        info = {}
+        for data_dir, frames in self.mot_data.items():
+            info[data_dir] = len(frames)
+        return info
