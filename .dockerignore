@@ -1,4 +1,6 @@
 logs*
 results
 backup
+data
+data-sync
 *.sif
