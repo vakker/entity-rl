@@ -128,29 +128,28 @@ def collate_graph_batch(batch):
     return batched_obs, reward_tensor
 
 
-def create_graph_observation_space(node_feature_dim: int = 6) -> gym.spaces.Dict:
+def create_graph_observation_space(node_feature_dim: int = 6, max_elements: int = 80) -> gym.spaces.Dict:
     """
-    Create observation space for graph data.
+    Create observation space for graph data, matching SPG environment format.
 
     Args:
         node_feature_dim: Dimension of node features
+        max_elements: Maximum number of elements/nodes
 
     Returns:
         Dictionary observation space for graph data
     """
+    from ray.rllib.utils.spaces.repeated import Repeated
+
     return gym.spaces.Dict({
-        'x': gym.spaces.Box(
-            low=-np.inf, high=np.inf,
-            shape=(None, node_feature_dim), dtype=np.float32
+        'x': Repeated(
+            gym.spaces.Box(-1, 1, shape=(node_feature_dim,), dtype=np.float32),
+            max_elements,
         ),
-        'edge_index': gym.spaces.Box(
-            low=0, high=np.inf,
-            shape=(2, None), dtype=np.int64
+        'edge_index': Repeated(
+            gym.spaces.Box(0, max_elements, shape=(2,), dtype=np.int64),
+            max_elements**2,
         ),
-        'batch': gym.spaces.Box(
-            low=0, high=np.inf,
-            shape=(None,), dtype=np.int64
-        )
     })
 
 
