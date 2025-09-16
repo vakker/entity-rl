@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Tuple
 
 from torch.utils.data import Dataset
 
-from .mot_data import MOTDataLoader
+from .mot_data import MOTDataLoader, check_rectangle_overlap, scale_bboxes
 
 
 class MOTBaseDataset(Dataset, ABC):
@@ -82,12 +82,12 @@ class MOTBaseDataset(Dataset, ABC):
             raise ValueError("agent_radius too large for image_size")
 
     @abstractmethod
-    def _load_data(self) -> Dict[str, Dict]:
+    def _load_data(self) -> Dict[str, Dict[int, List[Tuple[int, int, int, int, int]]]]:
         """
         Load MOT data specific to the dataset implementation.
 
         Returns:
-            Loaded MOT data in the format required by the specific dataset
+            Loaded MOT data as {data_dir: {frame_id: [(x, y, w, h, track_id), ...]}}
         """
         pass
 
@@ -123,10 +123,25 @@ class MOTBaseDataset(Dataset, ABC):
         Returns:
             Tuple of (agent_x, agent_y)
         """
-        agent_x = random.randint(self.agent_radius, self.image_size[0] - self.agent_radius)
-        agent_y = random.randint(self.agent_radius, self.image_size[1] - self.agent_radius)
+        agent_x = random.randint(
+            self.agent_radius, self.image_size[0] - self.agent_radius
+        )
+        agent_y = random.randint(
+            self.agent_radius, self.image_size[1] - self.agent_radius
+        )
 
         return agent_x, agent_y
+
+    def _compute_reward(self, scaled_bboxes, agent_x, agent_y) -> int:
+        """Compute reward based on agent collision with bounding boxes."""
+        if len(scaled_bboxes) > 0:
+            has_collision = check_rectangle_overlap(
+                agent_x, agent_y, self.agent_radius, scaled_bboxes
+            )
+            return -1 if has_collision else 1
+        else:
+            # No entities, always safe
+            return 1
 
     def __len__(self) -> int:
         """Return the number of samples per epoch."""
@@ -156,3 +171,4 @@ class MOTBaseDataset(Dataset, ABC):
         for data_dir, frames in self.mot_data.items():
             info[data_dir] = len(frames)
         return info
+

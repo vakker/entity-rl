@@ -26,15 +26,12 @@ class MOTDataLoader:
         self.mot_data_dirs = mot_data_dirs
         self.use_gt = use_gt
 
-    def load_mot_data(self, include_track_id: bool = False) -> Dict[str, Dict[int, List[Tuple]]]:
+    def load_mot_data(self) -> Dict[str, Dict[int, List[Tuple[int, int, int, int, int]]]]:
         """
         Load MOT annotation data from all specified directories.
 
-        Args:
-            include_track_id: Whether to include track IDs in the output
-
         Returns:
-            Dictionary mapping data_dir -> {frame_id: [(x, y, w, h, track_id?), ...]}
+            Dictionary mapping data_dir -> {frame_id: [(x, y, w, h, track_id), ...]}
         """
         mot_data = {}
 
@@ -58,7 +55,7 @@ class MOTDataLoader:
                 continue
 
             # Parse MOT annotations
-            frame_data = self._parse_mot_annotations(ann_file, include_track_id)
+            frame_data = self._parse_mot_annotations(ann_file)
 
             # Only include frames that have corresponding image files
             valid_frame_data = self._validate_frames(frame_data, img_dir)
@@ -69,18 +66,15 @@ class MOTDataLoader:
 
         return mot_data
 
-    def _parse_mot_annotations(
-        self, ann_file: Path, include_track_id: bool = False
-    ) -> Dict[int, List[Tuple]]:
+    def _parse_mot_annotations(self, ann_file: Path) -> Dict[int, List[Tuple[int, int, int, int, int]]]:
         """
         Parse MOT annotation file.
 
         Args:
             ann_file: Path to annotation file
-            include_track_id: Whether to include track IDs
 
         Returns:
-            Dictionary mapping frame_id to list of bounding boxes
+            Dictionary mapping frame_id to list of (x, y, w, h, track_id) tuples
         """
         frame_data = {}
 
@@ -102,10 +96,7 @@ class MOTDataLoader:
                     if frame_id not in frame_data:
                         frame_data[frame_id] = []
 
-                    if include_track_id:
-                        frame_data[frame_id].append((x, y, w, h, track_id))
-                    else:
-                        frame_data[frame_id].append((x, y, w, h))
+                    frame_data[frame_id].append((x, y, w, h, track_id))
 
         except Exception as e:
             print(f"Error reading {ann_file}: {e}")
@@ -156,22 +147,20 @@ class MOTDataLoader:
 
 
 def scale_bboxes(
-    bboxes: List[Tuple],
+    bboxes: List[Tuple[int, int, int, int, int]],
     original_size: Tuple[int, int],
     target_size: Tuple[int, int],
-    include_track_id: bool = False,
-) -> List[Tuple]:
+) -> List[Tuple[int, int, int, int, int]]:
     """
     Scale bounding boxes to match target image size.
 
     Args:
-        bboxes: List of bounding boxes
+        bboxes: List of (x, y, w, h, track_id) tuples
         original_size: Original image size (width, height)
         target_size: Target image size (width, height)
-        include_track_id: Whether bboxes include track IDs
 
     Returns:
-        List of scaled bounding boxes
+        List of scaled (x, y, w, h, track_id) tuples
     """
     if not bboxes:
         return []
@@ -183,21 +172,12 @@ def scale_bboxes(
     scale_y = target_h / orig_h
 
     scaled_bboxes = []
-    for bbox in bboxes:
-        if include_track_id:
-            x, y, w, h, track_id = bbox
-            scaled_x = int(x * scale_x)
-            scaled_y = int(y * scale_y)
-            scaled_w = int(w * scale_x)
-            scaled_h = int(h * scale_y)
-            scaled_bboxes.append((scaled_x, scaled_y, scaled_w, scaled_h, track_id))
-        else:
-            x, y, w, h = bbox
-            scaled_x = int(x * scale_x)
-            scaled_y = int(y * scale_y)
-            scaled_w = int(w * scale_x)
-            scaled_h = int(h * scale_y)
-            scaled_bboxes.append((scaled_x, scaled_y, scaled_w, scaled_h))
+    for x, y, w, h, track_id in bboxes:
+        scaled_x = int(x * scale_x)
+        scaled_y = int(y * scale_y)
+        scaled_w = int(w * scale_x)
+        scaled_h = int(h * scale_y)
+        scaled_bboxes.append((scaled_x, scaled_y, scaled_w, scaled_h, track_id))
 
     return scaled_bboxes
 
@@ -206,8 +186,7 @@ def check_rectangle_overlap(
     agent_x: int,
     agent_y: int,
     agent_radius: int,
-    bboxes: List[Tuple],
-    include_track_id: bool = False,
+    bboxes: List[Tuple[int, int, int, int, int]],
 ) -> bool:
     """
     Check if a rectangular agent overlaps with any bounding box.
@@ -215,8 +194,7 @@ def check_rectangle_overlap(
     Args:
         agent_x, agent_y: Center of the agent rectangle
         agent_radius: Half-width/height of the agent
-        bboxes: List of bounding boxes
-        include_track_id: Whether bboxes include track IDs
+        bboxes: List of (x, y, w, h, track_id) tuples
 
     Returns:
         True if agent overlaps with any bounding box, False otherwise
@@ -227,12 +205,7 @@ def check_rectangle_overlap(
     agent_right = agent_x + agent_radius
     agent_bottom = agent_y + agent_radius
 
-    for bbox in bboxes:
-        if include_track_id:
-            x, y, w, h, _ = bbox
-        else:
-            x, y, w, h = bbox
-
+    for x, y, w, h, _ in bboxes:
         # Check if rectangles overlap
         if (
             agent_left < x + w

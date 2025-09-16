@@ -23,8 +23,8 @@ class MOTSyntheticDataset(MOTBaseDataset):
     """
 
     def _load_data(self):
-        """Load MOT data without track IDs for synthetic dataset."""
-        return self.data_loader.load_mot_data(include_track_id=False)
+        """Load MOT data for synthetic dataset."""
+        return self.data_loader.load_mot_data()
 
     def _generate_sample(self) -> Tuple[torch.Tensor, int]:
         """
@@ -42,15 +42,11 @@ class MOTSyntheticDataset(MOTBaseDataset):
         img = load_and_resize_image(data_dir, frame_id, self.image_size)
 
         if img is None:
-            # Fallback to black image if loading fails
-            img = np.zeros((self.image_size[1], self.image_size[0], 3), dtype=np.uint8)
-            scaled_bboxes = []
+            raise RuntimeError("Failed to load or resize image")
         else:
             # Get original dimensions and scale bboxes
             orig_w, orig_h = self.data_loader.get_image_dimensions(data_dir, frame_id)
-            scaled_bboxes = scale_bboxes(
-                original_bboxes, (orig_w, orig_h), self.image_size, include_track_id=False
-            )
+            scaled_bboxes = scale_bboxes(original_bboxes, (orig_w, orig_h), self.image_size)
 
         # Generate random agent position
         agent_x, agent_y = self.generate_agent_position()
@@ -59,10 +55,7 @@ class MOTSyntheticDataset(MOTBaseDataset):
         agent_image = self._draw_agent(img.copy(), agent_x, agent_y)
 
         # Determine reward based on overlap
-        has_overlap = check_rectangle_overlap(
-            agent_x, agent_y, self.agent_radius, scaled_bboxes, include_track_id=False
-        )
-        reward = -1 if has_overlap else 1
+        reward = self._compute_reward(scaled_bboxes, agent_x, agent_y)
 
         return torch.from_numpy(agent_image.astype(np.uint8)), reward
 

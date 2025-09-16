@@ -54,8 +54,8 @@ class MOTGNNDataset(MOTBaseDataset):
         super().__init__(mot_data_dirs, agent_radius, num_samples_per_epoch, image_size, use_gt)
 
     def _load_data(self):
-        """Load MOT data with track IDs for GNN dataset."""
-        return self.data_loader.load_mot_data(include_track_id=True)
+        """Load MOT data for GNN dataset."""
+        return self.data_loader.load_mot_data()
 
     def _generate_sample(self) -> Tuple[Data, int]:
         """
@@ -73,9 +73,7 @@ class MOTGNNDataset(MOTBaseDataset):
 
         # Get original dimensions and scale bboxes
         orig_w, orig_h = self.data_loader.get_image_dimensions(data_dir, frame_id)
-        scaled_bboxes = scale_bboxes(
-            original_bboxes, (orig_w, orig_h), self.image_size, include_track_id=True
-        )
+        scaled_bboxes = scale_bboxes(original_bboxes, (orig_w, orig_h), self.image_size)
 
         # Create node features
         node_features = create_node_features(
@@ -85,25 +83,15 @@ class MOTGNNDataset(MOTBaseDataset):
         # Create edges
         edge_index = create_edges(node_features, self.connect_threshold, self.image_size)
 
+        agent_x, agent_y = self.generate_agent_position()
         # Generate synthetic agent position and check collision
-        reward = self._compute_reward(scaled_bboxes)
+        reward = self._compute_reward(scaled_bboxes, agent_x, agent_y)
 
         # Create PyTorch Geometric Data object
         graph_data = self._create_graph_data(node_features, edge_index)
 
         return graph_data, reward
 
-    def _compute_reward(self, scaled_bboxes) -> int:
-        """Compute reward based on agent collision with bounding boxes."""
-        if len(scaled_bboxes) > 0:
-            agent_x, agent_y = self.generate_agent_position()
-            has_collision = check_rectangle_overlap(
-                agent_x, agent_y, self.agent_radius, scaled_bboxes, include_track_id=True
-            )
-            return -1 if has_collision else 1
-        else:
-            # No entities, always safe
-            return 1
 
     def _create_graph_data(self, node_features: torch.Tensor, edge_index: torch.Tensor) -> Data:
         """Create PyTorch Geometric Data object."""
