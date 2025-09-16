@@ -13,7 +13,7 @@ from .mot_base import MOTBaseDataset
 from .mot_data import check_rectangle_overlap, load_and_resize_image, scale_bboxes
 
 
-class MOTSyntheticDataset(MOTBaseDataset):
+class MOTVisDataset(MOTBaseDataset):
     """
     Dataset that generates synthetic agent-environment data from MOT tracking data.
 

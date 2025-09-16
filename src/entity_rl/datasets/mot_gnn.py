@@ -15,7 +15,7 @@ from .mot_base import MOTBaseDataset
 from .mot_data import check_rectangle_overlap, scale_bboxes
 
 
-class MOTGNNDataset(MOTBaseDataset):
+class MOTGraphDataset(MOTBaseDataset):
     """
     Dataset that creates graph representations from MOT ground truth data for GNN training.
 

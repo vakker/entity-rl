@@ -16,7 +16,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm, trange
 
 from entity_rl import utils
-from entity_rl.datasets import MOTSyntheticDataset
+from entity_rl.datasets import MOTVisDataset
 from entity_rl.models.enros import ENROSPolicy
 from entity_rl.training import (
     RewardLabelAdapter,
@@ -37,7 +37,7 @@ def main(args):
     print(f"Output directory: {args.output_dir}")
 
     # Create datasets
-    train_dataset = MOTSyntheticDataset(
+    train_dataset = MOTVisDataset(
         mot_data_dirs=args.mot_dirs,
         agent_radius=args.agent_radius,
         num_samples_per_epoch=int(args.num_samples * 0.8),
@@ -45,7 +45,7 @@ def main(args):
         use_gt=not args.use_detections,
     )
 
-    val_dataset = MOTSyntheticDataset(
+    val_dataset = MOTVisDataset(
         mot_data_dirs=args.mot_dirs,
         agent_radius=args.agent_radius,
         num_samples_per_epoch=int(args.num_samples * 0.2),

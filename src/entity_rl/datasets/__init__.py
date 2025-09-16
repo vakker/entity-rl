@@ -2,12 +2,12 @@
 
 from .mot_base import MOTBaseDataset
 from .mot_data import MOTDataLoader
-from .mot_gnn import MOTGNNDataset
-from .mot_synthetic import MOTSyntheticDataset
+from .mot_gnn import MOTGraphDataset
+from .mot_synthetic import MOTVisDataset
 
 __all__ = [
     "MOTBaseDataset",
     "MOTDataLoader",
-    "MOTGNNDataset",
-    "MOTSyntheticDataset",
+    "MOTGraphDataset",
+    "MOTVisDataset",
 ]
