@@ -22,10 +22,6 @@ class MOTVisDataset(MOTBaseDataset):
     - A reward signal based on whether the agent overlaps with tracked objects
     """
 
-    def _load_data(self):
-        """Load MOT data for synthetic dataset."""
-        return self.data_loader.load_mot_data()
-
     def _generate_sample(self) -> Tuple[torch.Tensor, int]:
         """
         Generate a single synthetic sample.

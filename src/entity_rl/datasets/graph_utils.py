@@ -1,14 +1,8 @@
-"""
-Graph utilities for GNN-based MOT datasets.
-
-This module provides utilities for creating graph representations from bounding boxes.
-"""
-
 import gymnasium as gym
 import numpy as np
 import torch
 from torch_geometric.data import Batch, Data
-from typing import Dict, List, Tuple
+from typing import List, Tuple
 
 
 def create_node_features(
@@ -81,7 +75,7 @@ def create_edges(
 
     # Normalize threshold to [0, 1] space
     normalized_threshold = connect_threshold / max(image_size)
-
+    # NOTE: this is slow AF
     for i in range(num_nodes):
         for j in range(i + 1, num_nodes):
             dist = torch.norm(centers[i] - centers[j])
@@ -123,7 +117,7 @@ def collate_graph_batch(batch):
     }
 
     # Convert rewards to tensor
-    reward_tensor = torch.tensor(rewards, dtype=torch.long)
+    reward_tensor = torch.tensor(rewards, dtype=torch.float32)
 
     return batched_obs, reward_tensor
 

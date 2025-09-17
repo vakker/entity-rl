@@ -52,6 +52,11 @@ class EntityPassThrough(EntityEncoder):
         return out_channels
 
     def forward(self, inputs):
+        return Batch(**inputs)
+
+        if isinstance(inputs, Batch):
+            return inputs
+
         g_batch = []
 
         batch_size = inputs["x"].values.shape[0]

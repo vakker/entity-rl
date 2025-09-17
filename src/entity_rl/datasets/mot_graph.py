@@ -1,11 +1,6 @@
-"""
-MOT-based dataset for GNN training using ground truth bounding boxes.
-
-This dataset creates graph representations directly from MOT ground truth annotations.
-"""
-
 import random
-from typing import Tuple
+import time
+from typing import Optional, Tuple
 
 import torch
 from torch_geometric.data import Data
@@ -35,6 +30,7 @@ class MOTGraphDataset(MOTBaseDataset):
         max_entities: int = 20,
         connect_threshold: float = 50.0,
         use_gt: bool = True,
+        max_samples: Optional[int] = None,
     ):
         """
         Initialize the MOT GNN dataset.
@@ -51,11 +47,14 @@ class MOTGraphDataset(MOTBaseDataset):
         self.max_entities = max_entities
         self.connect_threshold = connect_threshold
 
-        super().__init__(mot_data_dirs, agent_radius, num_samples_per_epoch, image_size, use_gt)
-
-    def _load_data(self):
-        """Load MOT data for GNN dataset."""
-        return self.data_loader.load_mot_data()
+        super().__init__(
+            mot_data_dirs,
+            agent_radius,
+            num_samples_per_epoch,
+            image_size,
+            use_gt,
+            max_samples,
+        )
 
     def _generate_sample(self) -> Tuple[Data, int]:
         """
@@ -81,9 +80,12 @@ class MOTGraphDataset(MOTBaseDataset):
         )
 
         # Create edges
-        edge_index = create_edges(node_features, self.connect_threshold, self.image_size)
+        edge_index = create_edges(
+            node_features, self.connect_threshold, self.image_size
+        )
 
         agent_x, agent_y = self.generate_agent_position()
+
         # Generate synthetic agent position and check collision
         reward = self._compute_reward(scaled_bboxes, agent_x, agent_y)
 
@@ -92,8 +94,9 @@ class MOTGraphDataset(MOTBaseDataset):
 
         return graph_data, reward
 
-
-    def _create_graph_data(self, node_features: torch.Tensor, edge_index: torch.Tensor) -> Data:
+    def _create_graph_data(
+        self, node_features: torch.Tensor, edge_index: torch.Tensor
+    ) -> Data:
         """Create PyTorch Geometric Data object."""
         if len(node_features) == 0:
             # Handle empty graphs with dummy node
@@ -102,5 +105,5 @@ class MOTGraphDataset(MOTBaseDataset):
         return Data(
             x=node_features,
             edge_index=edge_index,
-            num_nodes=len(node_features)
+            num_nodes=len(node_features),
         )

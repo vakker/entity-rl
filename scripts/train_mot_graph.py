@@ -11,11 +11,15 @@ import argparse
 import gymnasium as gym
 import torch
 from torch.utils.data import DataLoader
+from torch_geometric.data import Batch, Data
 from tqdm import tqdm, trange
 
 from entity_rl import utils
 from entity_rl.datasets import MOTGraphDataset
-from entity_rl.datasets.graph_utils import collate_graph_batch, create_graph_observation_space
+from entity_rl.datasets.graph_utils import (
+    collate_graph_batch,
+    create_graph_observation_space,
+)
 from entity_rl.models.enros import ENROSPolicy
 from entity_rl.training import (
     RewardLabelAdapter,
@@ -39,9 +43,9 @@ class GNNDatasetAdapter(RewardLabelAdapter):
 
         # Format as dict observation expected by ENROS
         obs_dict = {
-            'x': graph_data.x,
-            'edge_index': graph_data.edge_index,
-            'batch': torch.zeros(graph_data.num_nodes, dtype=torch.long)
+            "x": graph_data.x,
+            "edge_index": graph_data.edge_index,
+            "batch": torch.zeros(graph_data.num_nodes, dtype=torch.long),
         }
 
         return obs_dict, reward_class
@@ -52,25 +56,33 @@ def main(args):
     print(f"Using MOT directories: {args.mot_dirs}")
     print(f"Output directory: {args.output_dir}")
 
+    tng_dirs = args.mot_dirs[: len(args.mot_dirs) // 2]
+    val_dirs = args.mot_dirs[len(args.mot_dirs) // 2 :]
+
+    assert len(tng_dirs) > 0
+    assert len(val_dirs) > 0
+
     # Create datasets
     train_dataset = MOTGraphDataset(
-        mot_data_dirs=args.mot_dirs,
+        mot_data_dirs=tng_dirs,
         agent_radius=args.agent_radius,
-        num_samples_per_epoch=int(args.num_samples * 0.8),
+        num_samples_per_epoch=args.num_samples,
         image_size=tuple(args.image_size),
         max_entities=args.max_entities,
         connect_threshold=args.connect_threshold,
         use_gt=not args.use_detections,
+        max_samples=args.max_samples,
     )
 
     val_dataset = MOTGraphDataset(
-        mot_data_dirs=args.mot_dirs,
+        mot_data_dirs=val_dirs,
         agent_radius=args.agent_radius,
-        num_samples_per_epoch=int(args.num_samples * 0.2),
+        num_samples_per_epoch=args.num_samples,
         image_size=tuple(args.image_size),
         max_entities=args.max_entities,
         connect_threshold=args.connect_threshold,
         use_gt=not args.use_detections,
+        max_samples=args.max_samples,
     )
 
     print(f"Train samples: {len(train_dataset)}, Val samples: {len(val_dataset)}")
@@ -79,24 +91,27 @@ def main(args):
     train_wrapped = GNNDatasetAdapter(train_dataset)
     val_wrapped = GNNDatasetAdapter(val_dataset)
 
+    batch_size = min(args.batch_size, len(train_wrapped))
+
     # Create data loaders
     train_loader = DataLoader(
         train_wrapped,
-        batch_size=args.batch_size,
+        batch_size=batch_size,
         shuffle=True,
         drop_last=True,
-        num_workers=2,
+        num_workers=args.num_workers,
         collate_fn=collate_graph_batch,
     )
 
     val_loader = DataLoader(
         val_wrapped,
-        batch_size=args.batch_size,
+        batch_size=batch_size,
         shuffle=False,
         drop_last=True,
-        num_workers=2,
+        num_workers=args.num_workers,
         collate_fn=collate_graph_batch,
     )
+    assert len(train_loader)
 
     # Set up model with graph observation space
     obs_space = create_graph_observation_space(node_feature_dim=6)
@@ -109,6 +124,7 @@ def main(args):
     # Ensure we're using EntityPassThrough + GNNEncoder
     if "combined" in model_config:
         print("Modifying config for GNN-only training")
+        # FIXME: dims hardcoded
         model_config = {
             "encoder": {
                 "entity": {"name": "EntityPassThrough"},
@@ -146,60 +162,110 @@ def main(args):
     for epoch in trange(args.epochs, desc="Training epochs"):
         # Training
         model.train()
-        epoch_loss = 0
+        tng_loss = 0
         num_batches = 0
 
-        for obs_batch, reward_batch in tqdm(train_loader, desc=f"Epoch {epoch+1}"):
+        for obs_batch, reward_batch in tqdm(
+            train_loader,
+            desc=f"Epoch {epoch+1} TNG",
+            leave=False,
+        ):
             # Move to device
+            # obs_batch = Batch(**obs_batch).to(device)
             obs_batch = {k: v.to(device) for k, v in obs_batch.items()}
+            # Count each individual reward
+            # reward_stats = torch.nn.functional.one_hot(reward_batch.long()).sum(
+            #     dim=0
+            # ) / len(reward_batch)
+            # tqdm.write(f"Reward stats: {reward_stats}")
             reward_batch = reward_batch.to(device)
 
             # Forward pass
             _ = model({"obs": obs_batch})
             reward_pred = model.value_function()
+            print(reward_pred)
 
             # Backward pass
             loss = loss_fn(reward_pred, reward_batch)
-            optimizer.zero_grad()
             loss.backward()
 
             if args.grad_clip > 0:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
 
             optimizer.step()
+            optimizer.zero_grad()
 
             # Logging
-            epoch_loss += loss.item()
+            tng_loss += loss.item()
             num_batches += 1
             global_step += 1
 
-            if global_step % args.log_interval == 0:
-                writer.add_scalar("train_loss", loss.item(), global_step)
+            # if global_step % args.log_interval == 0:
+            #     writer.add_scalar("train_loss", loss.item(), global_step)
+
+        avg_tng_loss = tng_loss / num_batches
+        tqdm.write(f"Epoch {epoch+1} - TNG Loss: {avg_tng_loss:.4f}")
 
         # Validation
-        val_loss, val_acc = evaluate_model(model, val_loader, loss_fn, device)
-        writer.add_scalar("val_loss", val_loss, global_step)
-        writer.add_scalar("val_accuracy", val_acc, global_step)
+        val_loss = 0
+        num_batches = 0
+        for obs_batch, reward_batch in tqdm(
+            val_loader,
+            desc=f"Epoch {epoch+1} VAL",
+            leave=False,
+        ):
+            # Move to device
+            obs_batch = {k: v.to(device) for k, v in obs_batch.items()}
+            reward_batch = reward_batch.to(device)
+            # reward_stats = torch.nn.functional.one_hot(reward_batch.long()).sum(
+            #     dim=0
+            # ) / len(reward_batch)
 
-        print(f"Epoch {epoch+1} - Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}")
+            # Forward pass
+            _ = model({"obs": obs_batch})
+            reward_pred = model.value_function()
+            # print(reward_pred)
 
-        # Save best model
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            save_model_checkpoint(
-                model, optimizer, epoch, val_loss, val_acc, args.output_dir
-            )
+            # Backward pass
+            loss = loss_fn(reward_pred, reward_batch)
+            val_loss += loss.item()
+            num_batches += 1
+
+        avg_val_loss = val_loss / num_batches
+        tqdm.write(f"Epoch {epoch+1} - VAL Loss: {avg_val_loss:.4f}")
+
+        # val_loss, val_acc = evaluate_model(model, val_loader, loss_fn, device)
+        # writer.add_scalar("val_loss", val_loss, global_step)
+        # writer.add_scalar("val_accuracy", val_acc, global_step)
+        #
+        # print(f"Epoch {epoch+1} - Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}")
+        #
+        # # Save best model
+        # if val_loss < best_val_loss:
+        #     best_val_loss = val_loss
+        #     save_model_checkpoint(
+        #         model, optimizer, epoch, val_loss, val_acc, args.output_dir
+        #     )
 
     writer.close()
     print("Training completed!")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Train GNN component of ENROS on MOT ground truth")
+    parser = argparse.ArgumentParser(
+        description="Train GNN component of ENROS on MOT ground truth"
+    )
 
     # Data arguments
-    parser.add_argument("--mot-dirs", nargs="+", required=True, help="MOT data directories")
-    parser.add_argument("--use-detections", action="store_true", help="Use detections instead of ground truth")
+    parser.add_argument(
+        "--mot-dirs", nargs="+", required=True, help="MOT data directories"
+    )
+    parser.add_argument(
+        "--use-detections",
+        action="store_true",
+        help="Use detections instead of ground truth",
+    )
+    parser.add_argument("--max-samples", type=int, help="Max samples to load")
 
     # Model arguments
     parser.add_argument("--cfg", required=True, help="Config file path")
@@ -209,14 +275,28 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", type=int, default=20, help="Number of epochs")
     parser.add_argument("--lr", type=float, required=True, help="Learning rate")
     parser.add_argument("--batch-size", type=int, default=32, help="Batch size")
-    parser.add_argument("--num-samples", type=int, default=2000, help="Samples per epoch")
-    parser.add_argument("--grad-clip", type=float, default=1.0, help="Gradient clipping")
+    parser.add_argument(
+        "--num-samples", type=int, default=2000, help="Samples per epoch"
+    )
+    parser.add_argument(
+        "--grad-clip", type=float, default=1.0, help="Gradient clipping"
+    )
     parser.add_argument("--log-interval", type=int, default=50, help="Logging interval")
 
     # Dataset arguments
-    parser.add_argument("--agent-radius", type=int, default=15, help="Agent radius")
-    parser.add_argument("--max-entities", type=int, default=20, help="Max entities per sample")
-    parser.add_argument("--connect-threshold", type=float, default=50.0, help="Edge connection threshold")
-    parser.add_argument("--image-size", nargs=2, type=int, default=[100, 100], help="Image size")
+    parser.add_argument("--agent-radius", type=int, default=10, help="Agent radius")
+    parser.add_argument(
+        "--max-entities", type=int, default=100, help="Max entities per sample"
+    )
+    parser.add_argument("--num-workers", type=int, default=10)
+    parser.add_argument(
+        "--connect-threshold",
+        type=float,
+        default=50.0,
+        help="Edge connection threshold",
+    )
+    parser.add_argument(
+        "--image-size", nargs=2, type=int, default=[500, 500], help="Image size"
+    )
 
     main(parser.parse_args())

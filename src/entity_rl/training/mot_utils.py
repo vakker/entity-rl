@@ -27,7 +27,7 @@ class RewardLabelAdapter:
             base_dataset: Base dataset to wrap
         """
         self.base_dataset = base_dataset
-        self.label_map = {0: 0, 1: 1, -1: 2}
+        self.label_map = {0: 0.0, 1: 1.0, -1: 2.0}
 
     def __len__(self):
         return len(self.base_dataset)
@@ -98,12 +98,13 @@ def evaluate_model(
             num_batches += 1
 
             # Accuracy
-            pred_classes = torch.argmax(reward_pred, dim=1)
-            correct_predictions += (pred_classes == reward_batch).sum().item()
+            # pred_classes = torch.argmax(reward_pred, dim=1)
+            # correct_predictions += (pred_classes == reward_batch).sum().item()
             total_predictions += reward_batch.size(0)
 
     avg_loss = total_loss / num_batches if num_batches > 0 else 0
-    accuracy = correct_predictions / total_predictions if total_predictions > 0 else 0
+    # accuracy = correct_predictions / total_predictions if total_predictions > 0 else 0
+    accuracy = 0
 
     return avg_loss, accuracy
 
@@ -302,7 +303,8 @@ def create_loss_function(device: torch.device):
     Returns:
         CrossEntropyLoss function
     """
-    return torch.nn.CrossEntropyLoss().to(device)
+    return torch.nn.MSELoss().to(device)
+    # return torch.nn.CrossEntropyLoss().to(device)
 
 
 def setup_amp_scaler(model: ENROSPolicy) -> torch.cuda.amp.GradScaler:

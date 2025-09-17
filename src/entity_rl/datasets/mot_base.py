@@ -1,12 +1,6 @@
-"""
-Base class for MOT-based datasets.
-
-This module provides the common interface and functionality shared by all MOT datasets.
-"""
-
 import random
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from torch.utils.data import Dataset
 
@@ -28,6 +22,7 @@ class MOTBaseDataset(Dataset, ABC):
         num_samples_per_epoch: int = 1000,
         image_size: Tuple[int, int] = (100, 100),
         use_gt: bool = True,
+        max_samples: Optional[int] = None,
     ):
         """
         Initialize base MOT dataset.
@@ -41,24 +36,34 @@ class MOTBaseDataset(Dataset, ABC):
         """
         self.mot_data_dirs = mot_data_dirs
         self.agent_radius = agent_radius
-        self.num_samples_per_epoch = num_samples_per_epoch
         self.image_size = image_size
         self.use_gt = use_gt
 
-        # Validate parameters
-        self._validate_parameters()
-
         # Load MOT data
         self.data_loader = MOTDataLoader(mot_data_dirs, use_gt)
-        self.mot_data = self._load_data()
+        self.mot_data = self.data_loader.load_mot_data(max_rows=max_samples)
 
         if not self.mot_data:
             raise ValueError("No valid MOT data found in the provided directories")
 
+        total_frames = sum(len(frames) for frames in self.mot_data.values())
+        entities = []
+        for frames in self.mot_data.values():
+            for frame in frames.values():
+                entities.append(len(frame))
+
+
+        self.num_samples_per_epoch = min(total_frames, num_samples_per_epoch)
+
         print(f"Loaded MOT data from {len(self.mot_data_dirs)} directories")
+        print(f"Total frames available: {total_frames}")
+
         print(
-            f"Total frames available: {sum(len(frames) for frames in self.mot_data.values())}"
+            f"Max detections: {max(entities)}, Min detections: {min(entities)}, Avg detections: {sum(entities) / len(entities)}"
         )
+        # Validate parameters
+        self._validate_parameters()
+
 
     def _validate_parameters(self) -> None:
         """Validate initialization parameters."""
@@ -80,16 +85,6 @@ class MOTBaseDataset(Dataset, ABC):
             or self.agent_radius * 2 >= self.image_size[1]
         ):
             raise ValueError("agent_radius too large for image_size")
-
-    @abstractmethod
-    def _load_data(self) -> Dict[str, Dict[int, List[Tuple[int, int, int, int, int]]]]:
-        """
-        Load MOT data specific to the dataset implementation.
-
-        Returns:
-            Loaded MOT data as {data_dir: {frame_id: [(x, y, w, h, track_id), ...]}}
-        """
-        pass
 
     @abstractmethod
     def _generate_sample(self) -> Tuple[Any, int]:
@@ -171,4 +166,3 @@ class MOTBaseDataset(Dataset, ABC):
         for data_dir, frames in self.mot_data.items():
             info[data_dir] = len(frames)
         return info
-

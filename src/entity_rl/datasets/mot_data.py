@@ -1,9 +1,3 @@
-"""
-MOT data loading utilities for ENROS datasets.
-
-This module provides common functionality for loading and processing MOT annotation files.
-"""
-
 import csv
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
@@ -26,7 +20,7 @@ class MOTDataLoader:
         self.mot_data_dirs = mot_data_dirs
         self.use_gt = use_gt
 
-    def load_mot_data(self) -> Dict[str, Dict[int, List[Tuple[int, int, int, int, int]]]]:
+    def load_mot_data(self, max_rows: Optional[int] = None) -> Dict[str, Dict[int, List[Tuple[int, int, int, int, int]]]]:
         """
         Load MOT annotation data from all specified directories.
 
@@ -55,7 +49,7 @@ class MOTDataLoader:
                 continue
 
             # Parse MOT annotations
-            frame_data = self._parse_mot_annotations(ann_file)
+            frame_data = self._parse_mot_annotations(ann_file, max_rows)
 
             # Only include frames that have corresponding image files
             valid_frame_data = self._validate_frames(frame_data, img_dir)
@@ -66,7 +60,7 @@ class MOTDataLoader:
 
         return mot_data
 
-    def _parse_mot_annotations(self, ann_file: Path) -> Dict[int, List[Tuple[int, int, int, int, int]]]:
+    def _parse_mot_annotations(self, ann_file: Path, max_rows: None) -> Dict[int, List[Tuple[int, int, int, int, int]]]:
         """
         Parse MOT annotation file.
 
@@ -81,11 +75,14 @@ class MOTDataLoader:
         try:
             with open(ann_file, "r") as f:
                 reader = csv.reader(f)
-                for row in reader:
+                for i, row in enumerate(reader):
                     if len(row) < 6:
                         continue
 
                     frame_id = int(row[0])
+                    if max_rows is not None and frame_id > max_rows:
+                        continue
+
                     track_id = int(row[1]) if len(row) > 1 else -1
                     x, y, w, h = map(int, row[2:6])
 
@@ -97,6 +94,7 @@ class MOTDataLoader:
                         frame_data[frame_id] = []
 
                     frame_data[frame_id].append((x, y, w, h, track_id))
+
 
         except Exception as e:
             print(f"Error reading {ann_file}: {e}")
