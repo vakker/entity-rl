@@ -205,6 +205,13 @@ def check_rectangle_overlap(
     agent_bottom = agent_y + agent_radius
 
     for x, y, w, h, _ in bboxes:
+        # NOTE: debuggin
+        # if agent_x < x:
+        #     return True
+        #
+        # else:
+        #     return False
+
         # Check if rectangles overlap
         if (
             agent_left < x + w
@@ -244,4 +251,3 @@ def load_and_resize_image(
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
     return img
-

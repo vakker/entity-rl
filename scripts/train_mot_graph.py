@@ -114,27 +114,12 @@ def main(args):
     assert len(train_loader)
 
     # Set up model with graph observation space
-    obs_space = create_graph_observation_space(node_feature_dim=2)
+    obs_space = create_graph_observation_space(node_feature_dim=5)
     action_space = gym.spaces.MultiDiscrete([3, 3])
 
     # Load and modify config for GNN training
     conf = utils.load_dict(args.cfg)["base"]
     model_config = conf["model"]["custom_model_config"]
-
-    # Ensure we're using EntityPassThrough + GNNEncoder
-    if "combined" in model_config:
-        print("Modifying config for GNN-only training")
-        # FIXME: dims hardcoded
-        model_config = {
-            "encoder": {
-                "entity": {"name": "EntityPassThrough"},
-                "scene": {
-                    "name": "GNNEncoder",
-                    "config": {"conv": {"activation": "ELU", "dims": [[4, 8], [8, 1]]}},
-                },
-            }
-        }
-        conf["model"]["custom_model_config"] = model_config
 
     model = ENROSPolicy(
         obs_space,
@@ -164,6 +149,7 @@ def main(args):
         model.train()
         tng_loss = 0
         num_batches = 0
+        matches = 0
 
         for obs_batch, reward_batch in tqdm(
             train_loader,
@@ -173,18 +159,43 @@ def main(args):
         ):
             # Move to device
             # obs_batch = Batch(**obs_batch).to(device)
-            # print(obs_batch["x"])
+            # print(obs_batch['x'])
+            # Concat x to reward_batch
+            # __import__('ipdb').set_trace()
+            # print(torch.cat([obs_batch["x"], reward_batch.unsqueeze(1)], dim=1))
+            # torch.all((obs_batch["x"][0::2]<=obs_batch["x"][1::2]) == reward_batch.bool())
+            # if not torch.all(
+            #     (obs_batch["x"][0::2, 0] >= obs_batch["x"][1::2, 0])
+            #     == reward_batch.bool()
+            # ):
+            #     __import__("ipdb").set_trace()
+
+            # if not torch.all((obs_batch["x"].squeeze()<=0.5) == reward_batch.bool()):
+            #     __import__('ipdb').set_trace()
+
             obs_batch = {k: v.to(device) for k, v in obs_batch.items()}
             # Count each individual reward
             # __import__('ipdb').set_trace()
             unique_values, counts = torch.unique(reward_batch, return_counts=True)
-            # tqdm.write(f"Reward stats: {unique_values}, {counts/len(reward_batch)}")
+            tqdm.write(
+                f"Reward targ stats: {unique_values}, {counts/len(reward_batch)}"
+            )
             reward_batch = reward_batch.to(device)
 
             # Forward pass
             _ = model({"obs": obs_batch})
             reward_pred = model.value_function()
-            # print(reward_batch, reward_pred)
+            # __import__('ipdb').set_trace()
+            preds = torch.zeros_like(reward_batch)
+            preds[reward_pred >= 0.5] = 1.0
+            preds[reward_pred < 0.5] = 0.0
+            match = (preds == reward_batch).float().mean().item()
+            matches += match
+
+            # unique_values, counts = torch.unique(reward_pred, return_counts=True)
+            # tqdm.write(f"Reward pred stats: {unique_values}, {counts/len(reward_pred)}")
+            # print("reward_batch", reward_batch)
+            # print("reward_pred", reward_pred)
 
             # Backward pass
             loss = loss_fn(reward_pred, reward_batch)
@@ -205,36 +216,44 @@ def main(args):
             #     writer.add_scalar("train_loss", loss.item(), global_step)
 
         avg_tng_loss = tng_loss / num_batches
+        avg_tng_acc = matches / num_batches
         tqdm.write(f"Epoch {epoch+1} - TNG Loss: {avg_tng_loss:.4f}")
-        continue
+        tqdm.write(f"Epoch {epoch+1} - TNG Acc: {avg_tng_acc:.4f}")
 
         # Validation
+        model.eval()
         val_loss = 0
         num_batches = 0
+        matches = 0
         for obs_batch, reward_batch in tqdm(
             val_loader,
             desc=f"Epoch {epoch+1} VAL",
             leave=False,
+            disable=args.no_bar,
         ):
             # Move to device
             obs_batch = {k: v.to(device) for k, v in obs_batch.items()}
             reward_batch = reward_batch.to(device)
-            # reward_stats = torch.nn.functional.one_hot(reward_batch.long()).sum(
-            #     dim=0
-            # ) / len(reward_batch)
 
             # Forward pass
             _ = model({"obs": obs_batch})
             reward_pred = model.value_function()
+            preds = torch.zeros_like(reward_batch)
+            preds[reward_pred >= 0.5] = 1.0
+            preds[reward_pred < 0.5] = 0.0
+            match = (preds == reward_batch).float().mean().item()
             # print(reward_pred)
 
             # Backward pass
             loss = loss_fn(reward_pred, reward_batch)
             val_loss += loss.item()
+            matches += match
             num_batches += 1
 
         avg_val_loss = val_loss / num_batches
+        avg_val_acc = matches / num_batches
         tqdm.write(f"Epoch {epoch+1} - VAL Loss: {avg_val_loss:.4f}")
+        tqdm.write(f"Epoch {epoch+1} - VAL Acc: {avg_val_acc:.4f}")
 
         # val_loss, val_acc = evaluate_model(model, val_loader, loss_fn, device)
         # writer.add_scalar("val_loss", val_loss, global_step)
@@ -267,10 +286,7 @@ if __name__ == "__main__":
         action="store_true",
         help="Use detections instead of ground truth",
     )
-    parser.add_argument(
-        "--no-bar",
-        action="store_true"
-    )
+    parser.add_argument("--no-bar", action="store_true")
     parser.add_argument("--max-samples", type=int, help="Max samples to load")
 
     # Model arguments
@@ -290,7 +306,7 @@ if __name__ == "__main__":
     parser.add_argument("--log-interval", type=int, default=50, help="Logging interval")
 
     # Dataset arguments
-    parser.add_argument("--agent-radius", type=int, default=0.02, help="Agent radius")
+    parser.add_argument("--agent-radius", type=float, default=0.02, help="Agent radius")
     parser.add_argument(
         "--max-entities", type=int, default=100, help="Max entities per sample"
     )

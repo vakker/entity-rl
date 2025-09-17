@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from torch.utils.data import Dataset
 
-from .mot_data import MOTDataLoader, check_rectangle_overlap, scale_bboxes
+from .mot_data import MOTDataLoader, check_rectangle_overlap
 
 
 class MOTBaseDataset(Dataset, ABC):
@@ -52,7 +52,6 @@ class MOTBaseDataset(Dataset, ABC):
             for frame in frames.values():
                 entities.append(len(frame))
 
-
         self.num_samples_per_epoch = min(total_frames, num_samples_per_epoch)
 
         print(f"Loaded MOT data from {len(self.mot_data_dirs)} directories")
@@ -63,7 +62,6 @@ class MOTBaseDataset(Dataset, ABC):
         )
         # Validate parameters
         self._validate_parameters()
-
 
     def _validate_parameters(self) -> None:
         """Validate initialization parameters."""
@@ -148,7 +146,10 @@ class MOTBaseDataset(Dataset, ABC):
         Returns:
             Generated sample
         """
-        return self._generate_sample()
+        # start_time = time.time()
+        sample = self._generate_sample()
+        # print(f"Generated sample in {time.time() - start_time:.2f} seconds")
+        return sample
 
     @property
     def total_frames(self) -> int:

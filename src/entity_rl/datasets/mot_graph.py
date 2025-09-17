@@ -79,7 +79,10 @@ class MOTGraphDataset(MOTBaseDataset):
 
         # Create node features relative to agent position (like SPG environment)
         node_features = self._create_relative_node_features(
-            scaled_bboxes, agent_x, agent_y
+            scaled_bboxes,
+            agent_x,
+            agent_y,
+            self.agent_radius,
         )
 
         # Create edges
@@ -94,10 +97,15 @@ class MOTGraphDataset(MOTBaseDataset):
         # Create PyTorch Geometric Data object
         graph_data = self._create_graph_data(node_features, edge_index)
 
+        # print(graph_data.x, reward)
         return graph_data, reward
 
     def _create_relative_node_features(
-        self, scaled_bboxes, agent_x: int, agent_y: int
+        self,
+        scaled_bboxes,
+        agent_x: float,
+        agent_y: float,
+        agent_radius: float,
     ) -> torch.Tensor:
         """
         Create node features relative to agent position (like SPG environment).
@@ -110,16 +118,22 @@ class MOTGraphDataset(MOTBaseDataset):
         - Agent node: [0, 1, 0, 1] (distance=0, cos=1, sin=0, entity_type=1 for agent)
         - Obstacle nodes: [distance, cos(rel_angle), sin(rel_angle), 0] (entity_type=0 for obstacles)
         """
+        # return torch.tensor([[agent_x]], dtype=torch.float32)
         features = []
 
         # Add agent node first (like SPG does)
         # Agent is at distance 0 from itself, facing "right" (angle=0)
         # agent_feature = [0.0, 1.0, 0.0, 1.0]  # [distance, cos, sin, is_agent]
-        agent_feature = [0.0, 1.0]  # [distance, cos, sin, is_agent]
+        agent_feature = [0.0, 0.0, agent_radius, agent_radius, 1.0]
+        # agent_feature = [agent_x, 0.0]
         features.append(agent_feature)
 
         # Add obstacle nodes relative to agent position
         for x, y, w, h, _ in scaled_bboxes:
+            # NOTE: debugging
+            # features.append([x, 1.0])
+            # break
+
             # Calculate obstacle center
             obs_center_x = x + w / 2
             obs_center_y = y + h / 2
@@ -141,7 +155,7 @@ class MOTGraphDataset(MOTBaseDataset):
 
             # Obstacle feature: [distance, cos(angle), sin(angle), is_agent=0]
             # obstacle_feature = [norm_distance, cos_angle, sin_angle, 0.0]
-            obstacle_feature = [distance, 0.0]
+            obstacle_feature = [rel_x, rel_y, w, h, 0.0]
             features.append(obstacle_feature)
 
         return torch.tensor(features, dtype=torch.float32)
