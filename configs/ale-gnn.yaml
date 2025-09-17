@@ -29,7 +29,7 @@ base:
             conv_name: GATFeatures
             conv_config:
               norm_layer: null
-              aggr_layer: mean
+              aggr_layer: attn
               activation: LeakyReLU
               dims:
                 - [64, 8]
