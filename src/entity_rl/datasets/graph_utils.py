@@ -1,8 +1,9 @@
+from typing import List, Tuple
+
 import gymnasium as gym
 import numpy as np
 import torch
 from torch_geometric.data import Batch, Data
-from typing import List, Tuple
 
 
 def create_node_features(
@@ -31,10 +32,10 @@ def create_node_features(
 
     for x, y, w, h, _ in bboxes:
         # Normalize coordinates to [0, 1] based on target image size
-        norm_x = (x / orig_w) * (target_w / target_w)
-        norm_y = (y / orig_h) * (target_h / target_h)
-        norm_w = (w / orig_w) * (target_w / target_w)
-        norm_h = (h / orig_h) * (target_h / target_h)
+        norm_x = x / orig_w
+        norm_y = y / orig_h
+        norm_w = w / orig_w
+        norm_h = h / orig_h
 
         # Center coordinates
         center_x = norm_x + norm_w / 2
@@ -45,14 +46,16 @@ def create_node_features(
         aspect_ratio = norm_w / (norm_h + 1e-6)
 
         # Feature vector
-        node_feature = [center_x, center_y, norm_w, norm_h, area, aspect_ratio]
+        node_feature = [center_x, center_y, norm_w, norm_h]
+        # node_feature = [center_x, center_y, norm_w, norm_h, area, aspect_ratio]
         features.append(node_feature)
 
     return torch.tensor(features, dtype=torch.float32)
 
 
 def create_edges(
-    node_features: torch.Tensor, connect_threshold: float, image_size: Tuple[int, int]
+    node_features: torch.Tensor,
+    connect_threshold: float,
 ) -> torch.Tensor:
     """
     Create edge connectivity based on spatial proximity.
@@ -73,13 +76,11 @@ def create_edges(
     num_nodes = centers.shape[0]
     edge_indices = []
 
-    # Normalize threshold to [0, 1] space
-    normalized_threshold = connect_threshold / max(image_size)
     # NOTE: this is slow AF
     for i in range(num_nodes):
         for j in range(i + 1, num_nodes):
             dist = torch.norm(centers[i] - centers[j])
-            if dist < normalized_threshold:
+            if dist < connect_threshold:
                 edge_indices.extend([[i, j], [j, i]])  # Undirected edges
 
     if not edge_indices:
@@ -103,7 +104,7 @@ def collate_graph_batch(batch):
     # Create list of Data objects for batching
     data_list = []
     for obs in obs_list:
-        data = Data(x=obs['x'], edge_index=obs['edge_index'])
+        data = Data(x=obs["x"], edge_index=obs["edge_index"])
         data_list.append(data)
 
     # Batch graphs using PyTorch Geometric's Batch
@@ -111,9 +112,9 @@ def collate_graph_batch(batch):
 
     # Create batched observation dict
     batched_obs = {
-        'x': batched_graphs.x,
-        'edge_index': batched_graphs.edge_index,
-        'batch': batched_graphs.batch
+        "x": batched_graphs.x,
+        "edge_index": batched_graphs.edge_index,
+        "batch": batched_graphs.batch,
     }
 
     # Convert rewards to tensor
@@ -122,7 +123,9 @@ def collate_graph_batch(batch):
     return batched_obs, reward_tensor
 
 
-def create_graph_observation_space(node_feature_dim: int = 6, max_elements: int = 80) -> gym.spaces.Dict:
+def create_graph_observation_space(
+    node_feature_dim: int = 6, max_elements: int = 80
+) -> gym.spaces.Dict:
     """
     Create observation space for graph data, matching SPG environment format.
 
@@ -135,16 +138,18 @@ def create_graph_observation_space(node_feature_dim: int = 6, max_elements: int 
     """
     from ray.rllib.utils.spaces.repeated import Repeated
 
-    return gym.spaces.Dict({
-        'x': Repeated(
-            gym.spaces.Box(-1, 1, shape=(node_feature_dim,), dtype=np.float32),
-            max_elements,
-        ),
-        'edge_index': Repeated(
-            gym.spaces.Box(0, max_elements, shape=(2,), dtype=np.int64),
-            max_elements**2,
-        ),
-    })
+    return gym.spaces.Dict(
+        {
+            "x": Repeated(
+                gym.spaces.Box(-1, 1, shape=(node_feature_dim,), dtype=np.float32),
+                max_elements,
+            ),
+            "edge_index": Repeated(
+                gym.spaces.Box(0, max_elements, shape=(2,), dtype=np.int64),
+                max_elements**2,
+            ),
+        }
+    )
 
 
 def create_empty_graph(node_feature_dim: int = 6) -> Data:
@@ -160,5 +165,5 @@ def create_empty_graph(node_feature_dim: int = 6) -> Data:
     return Data(
         x=torch.zeros((1, node_feature_dim)),
         edge_index=torch.zeros((2, 0), dtype=torch.long),
-        num_nodes=1
+        num_nodes=1,
     )

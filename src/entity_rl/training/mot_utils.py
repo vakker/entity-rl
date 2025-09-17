@@ -27,7 +27,7 @@ class RewardLabelAdapter:
             base_dataset: Base dataset to wrap
         """
         self.base_dataset = base_dataset
-        self.label_map = {0: 0.0, 1: 1.0, -1: 2.0}
+        self.label_map = {-1: 0.0, 1: 1.0}
 
     def __len__(self):
         return len(self.base_dataset)

@@ -24,7 +24,7 @@ class MOTGraphDataset(MOTBaseDataset):
     def __init__(
         self,
         mot_data_dirs,
-        agent_radius: int = 15,
+        agent_radius: float = 0.02,
         num_samples_per_epoch: int = 1000,
         image_size: Tuple[int, int] = (100, 100),
         max_entities: int = 20,
@@ -72,21 +72,23 @@ class MOTGraphDataset(MOTBaseDataset):
 
         # Get original dimensions and scale bboxes
         orig_w, orig_h = self.data_loader.get_image_dimensions(data_dir, frame_id)
-        scaled_bboxes = scale_bboxes(original_bboxes, (orig_w, orig_h), self.image_size)
+        scaled_bboxes = scale_bboxes(original_bboxes, (orig_w, orig_h))
 
-        # Create node features
-        node_features = create_node_features(
-            scaled_bboxes, self.image_size, (orig_w, orig_h)
+        # Generate synthetic agent position first
+        agent_x, agent_y = self.generate_agent_position()
+
+        # Create node features relative to agent position (like SPG environment)
+        node_features = self._create_relative_node_features(
+            scaled_bboxes, agent_x, agent_y
         )
 
         # Create edges
         edge_index = create_edges(
-            node_features, self.connect_threshold, self.image_size
+            node_features,
+            self.connect_threshold,
         )
 
-        agent_x, agent_y = self.generate_agent_position()
-
-        # Generate synthetic agent position and check collision
+        # Compute reward based on agent collision with bounding boxes
         reward = self._compute_reward(scaled_bboxes, agent_x, agent_y)
 
         # Create PyTorch Geometric Data object
@@ -94,13 +96,64 @@ class MOTGraphDataset(MOTBaseDataset):
 
         return graph_data, reward
 
+    def _create_relative_node_features(
+        self, scaled_bboxes, agent_x: int, agent_y: int
+    ) -> torch.Tensor:
+        """
+        Create node features relative to agent position (like SPG environment).
+
+        The SPG environment creates features as:
+        - Agent node: [0, cos(angle), sin(angle), ...entity_type]
+        - Detection nodes: [distance, cos(angle), sin(angle), ...entity_type]
+
+        For MOT, we'll create:
+        - Agent node: [0, 1, 0, 1] (distance=0, cos=1, sin=0, entity_type=1 for agent)
+        - Obstacle nodes: [distance, cos(rel_angle), sin(rel_angle), 0] (entity_type=0 for obstacles)
+        """
+        features = []
+
+        # Add agent node first (like SPG does)
+        # Agent is at distance 0 from itself, facing "right" (angle=0)
+        # agent_feature = [0.0, 1.0, 0.0, 1.0]  # [distance, cos, sin, is_agent]
+        agent_feature = [0.0, 1.0]  # [distance, cos, sin, is_agent]
+        features.append(agent_feature)
+
+        # Add obstacle nodes relative to agent position
+        for x, y, w, h, _ in scaled_bboxes:
+            # Calculate obstacle center
+            obs_center_x = x + w / 2
+            obs_center_y = y + h / 2
+
+            # Calculate relative position from agent to obstacle center
+            rel_x = obs_center_x - agent_x
+            rel_y = obs_center_y - agent_y
+
+            # Calculate distance (normalized to image diagonal)
+            distance = (rel_x**2 + rel_y**2) ** 0.5
+
+            # Calculate angle from agent to obstacle
+            # if distance > 1e-6:
+            #     cos_angle = rel_x / distance
+            #     sin_angle = rel_y / distance
+            # else:
+            #     cos_angle = 1.0
+            #     sin_angle = 0.0
+
+            # Obstacle feature: [distance, cos(angle), sin(angle), is_agent=0]
+            # obstacle_feature = [norm_distance, cos_angle, sin_angle, 0.0]
+            obstacle_feature = [distance, 0.0]
+            features.append(obstacle_feature)
+
+        return torch.tensor(features, dtype=torch.float32)
+
     def _create_graph_data(
         self, node_features: torch.Tensor, edge_index: torch.Tensor
     ) -> Data:
         """Create PyTorch Geometric Data object."""
-        if len(node_features) == 0:
-            # Handle empty graphs with dummy node
-            return create_empty_graph(node_feature_dim=6)
+        # node_features should always contain at least the agent node
+        assert (
+            len(node_features) > 0
+        ), "node_features should contain at least the agent node"
 
         return Data(
             x=node_features,

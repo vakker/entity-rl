@@ -111,19 +111,15 @@ class MOTBaseDataset(Dataset, ABC):
 
         return data_dir, frame_id, bboxes
 
-    def generate_agent_position(self) -> Tuple[int, int]:
+    def generate_agent_position(self) -> Tuple[float, float]:
         """
         Generate a random agent position within the image bounds.
 
         Returns:
             Tuple of (agent_x, agent_y)
         """
-        agent_x = random.randint(
-            self.agent_radius, self.image_size[0] - self.agent_radius
-        )
-        agent_y = random.randint(
-            self.agent_radius, self.image_size[1] - self.agent_radius
-        )
+        agent_x = random.random()
+        agent_y = random.random()
 
         return agent_x, agent_y
 

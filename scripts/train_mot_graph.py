@@ -114,7 +114,7 @@ def main(args):
     assert len(train_loader)
 
     # Set up model with graph observation space
-    obs_space = create_graph_observation_space(node_feature_dim=6)
+    obs_space = create_graph_observation_space(node_feature_dim=2)
     action_space = gym.spaces.MultiDiscrete([3, 3])
 
     # Load and modify config for GNN training
@@ -130,7 +130,7 @@ def main(args):
                 "entity": {"name": "EntityPassThrough"},
                 "scene": {
                     "name": "GNNEncoder",
-                    "config": {"conv": {"activation": "ELU", "dims": [[6, 8], [8, 1]]}},
+                    "config": {"conv": {"activation": "ELU", "dims": [[4, 8], [8, 1]]}},
                 },
             }
         }
@@ -159,7 +159,7 @@ def main(args):
     global_step = 0
     best_val_loss = float("inf")
 
-    for epoch in trange(args.epochs, desc="Training epochs"):
+    for epoch in trange(args.epochs, desc="Training epochs", disable=args.no_bar):
         # Training
         model.train()
         tng_loss = 0
@@ -169,21 +169,22 @@ def main(args):
             train_loader,
             desc=f"Epoch {epoch+1} TNG",
             leave=False,
+            disable=args.no_bar,
         ):
             # Move to device
             # obs_batch = Batch(**obs_batch).to(device)
+            # print(obs_batch["x"])
             obs_batch = {k: v.to(device) for k, v in obs_batch.items()}
             # Count each individual reward
-            # reward_stats = torch.nn.functional.one_hot(reward_batch.long()).sum(
-            #     dim=0
-            # ) / len(reward_batch)
-            # tqdm.write(f"Reward stats: {reward_stats}")
+            # __import__('ipdb').set_trace()
+            unique_values, counts = torch.unique(reward_batch, return_counts=True)
+            # tqdm.write(f"Reward stats: {unique_values}, {counts/len(reward_batch)}")
             reward_batch = reward_batch.to(device)
 
             # Forward pass
             _ = model({"obs": obs_batch})
             reward_pred = model.value_function()
-            print(reward_pred)
+            # print(reward_batch, reward_pred)
 
             # Backward pass
             loss = loss_fn(reward_pred, reward_batch)
@@ -205,6 +206,7 @@ def main(args):
 
         avg_tng_loss = tng_loss / num_batches
         tqdm.write(f"Epoch {epoch+1} - TNG Loss: {avg_tng_loss:.4f}")
+        continue
 
         # Validation
         val_loss = 0
@@ -265,6 +267,10 @@ if __name__ == "__main__":
         action="store_true",
         help="Use detections instead of ground truth",
     )
+    parser.add_argument(
+        "--no-bar",
+        action="store_true"
+    )
     parser.add_argument("--max-samples", type=int, help="Max samples to load")
 
     # Model arguments
@@ -284,7 +290,7 @@ if __name__ == "__main__":
     parser.add_argument("--log-interval", type=int, default=50, help="Logging interval")
 
     # Dataset arguments
-    parser.add_argument("--agent-radius", type=int, default=10, help="Agent radius")
+    parser.add_argument("--agent-radius", type=int, default=0.02, help="Agent radius")
     parser.add_argument(
         "--max-entities", type=int, default=100, help="Max entities per sample"
     )

@@ -1,6 +1,6 @@
 import csv
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -20,7 +20,9 @@ class MOTDataLoader:
         self.mot_data_dirs = mot_data_dirs
         self.use_gt = use_gt
 
-    def load_mot_data(self, max_rows: Optional[int] = None) -> Dict[str, Dict[int, List[Tuple[int, int, int, int, int]]]]:
+    def load_mot_data(
+        self, max_rows: Optional[int] = None
+    ) -> Dict[str, Dict[int, List[Tuple[int, int, int, int, int]]]]:
         """
         Load MOT annotation data from all specified directories.
 
@@ -60,7 +62,9 @@ class MOTDataLoader:
 
         return mot_data
 
-    def _parse_mot_annotations(self, ann_file: Path, max_rows: None) -> Dict[int, List[Tuple[int, int, int, int, int]]]:
+    def _parse_mot_annotations(
+        self, ann_file: Path, max_rows: None
+    ) -> Dict[int, List[Tuple[int, int, int, int, int]]]:
         """
         Parse MOT annotation file.
 
@@ -94,7 +98,6 @@ class MOTDataLoader:
                         frame_data[frame_id] = []
 
                     frame_data[frame_id].append((x, y, w, h, track_id))
-
 
         except Exception as e:
             print(f"Error reading {ann_file}: {e}")
@@ -147,15 +150,13 @@ class MOTDataLoader:
 def scale_bboxes(
     bboxes: List[Tuple[int, int, int, int, int]],
     original_size: Tuple[int, int],
-    target_size: Tuple[int, int],
-) -> List[Tuple[int, int, int, int, int]]:
+) -> List[Tuple[float, float, float, float, int]]:
     """
     Scale bounding boxes to match target image size.
 
     Args:
         bboxes: List of (x, y, w, h, track_id) tuples
         original_size: Original image size (width, height)
-        target_size: Target image size (width, height)
 
     Returns:
         List of scaled (x, y, w, h, track_id) tuples
@@ -164,27 +165,27 @@ def scale_bboxes(
         return []
 
     orig_w, orig_h = original_size
-    target_w, target_h = target_size
+    target_w, target_h = 1.0, 1.0
 
     scale_x = target_w / orig_w
     scale_y = target_h / orig_h
 
     scaled_bboxes = []
     for x, y, w, h, track_id in bboxes:
-        scaled_x = int(x * scale_x)
-        scaled_y = int(y * scale_y)
-        scaled_w = int(w * scale_x)
-        scaled_h = int(h * scale_y)
+        scaled_x = x * scale_x
+        scaled_y = y * scale_y
+        scaled_w = w * scale_x
+        scaled_h = h * scale_y
         scaled_bboxes.append((scaled_x, scaled_y, scaled_w, scaled_h, track_id))
 
     return scaled_bboxes
 
 
 def check_rectangle_overlap(
-    agent_x: int,
-    agent_y: int,
-    agent_radius: int,
-    bboxes: List[Tuple[int, int, int, int, int]],
+    agent_x: float,
+    agent_y: float,
+    agent_radius: float,
+    bboxes: List[Tuple[float, float, float, float, int]],
 ) -> bool:
     """
     Check if a rectangular agent overlaps with any bounding box.
@@ -243,3 +244,4 @@ def load_and_resize_image(
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
     return img
+
