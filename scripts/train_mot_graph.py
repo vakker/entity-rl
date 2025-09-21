@@ -1,17 +1,8 @@
-#!/usr/bin/env python3
-"""
-Simplified training script for GNN-only ENROS using MOT ground truth data.
-
-This script bypasses entity extraction and focuses on training the GNN component
-using ground truth bounding boxes converted to graph representations.
-"""
-
 import argparse
 
 import gymnasium as gym
 import torch
 from torch.utils.data import DataLoader
-from torch_geometric.data import Batch, Data
 from tqdm import tqdm, trange
 
 from entity_rl import utils
@@ -25,9 +16,6 @@ from entity_rl.training import (
     RewardLabelAdapter,
     create_loss_function,
     create_optimizer,
-    evaluate_model,
-    log_gradients,
-    save_model_checkpoint,
     setup_tensorboard,
 )
 
@@ -158,24 +146,8 @@ def main(args):
             disable=args.no_bar,
         ):
             # Move to device
-            # obs_batch = Batch(**obs_batch).to(device)
-            # print(obs_batch['x'])
-            # Concat x to reward_batch
-            # __import__('ipdb').set_trace()
-            # print(torch.cat([obs_batch["x"], reward_batch.unsqueeze(1)], dim=1))
-            # torch.all((obs_batch["x"][0::2]<=obs_batch["x"][1::2]) == reward_batch.bool())
-            # if not torch.all(
-            #     (obs_batch["x"][0::2, 0] >= obs_batch["x"][1::2, 0])
-            #     == reward_batch.bool()
-            # ):
-            #     __import__("ipdb").set_trace()
-
-            # if not torch.all((obs_batch["x"].squeeze()<=0.5) == reward_batch.bool()):
-            #     __import__('ipdb').set_trace()
-
             obs_batch = {k: v.to(device) for k, v in obs_batch.items()}
             # Count each individual reward
-            # __import__('ipdb').set_trace()
             unique_values, counts = torch.unique(reward_batch, return_counts=True)
             tqdm.write(
                 f"Reward targ stats: {unique_values}, {counts/len(reward_batch)}"
@@ -185,17 +157,13 @@ def main(args):
             # Forward pass
             _ = model({"obs": obs_batch})
             reward_pred = model.value_function()
-            # __import__('ipdb').set_trace()
+
+            # Get matches
             preds = torch.zeros_like(reward_batch)
             preds[reward_pred >= 0.5] = 1.0
             preds[reward_pred < 0.5] = 0.0
             match = (preds == reward_batch).float().mean().item()
             matches += match
-
-            # unique_values, counts = torch.unique(reward_pred, return_counts=True)
-            # tqdm.write(f"Reward pred stats: {unique_values}, {counts/len(reward_pred)}")
-            # print("reward_batch", reward_batch)
-            # print("reward_pred", reward_pred)
 
             # Backward pass
             loss = loss_fn(reward_pred, reward_batch)
@@ -254,19 +222,6 @@ def main(args):
         avg_val_acc = matches / num_batches
         tqdm.write(f"Epoch {epoch+1} - VAL Loss: {avg_val_loss:.4f}")
         tqdm.write(f"Epoch {epoch+1} - VAL Acc: {avg_val_acc:.4f}")
-
-        # val_loss, val_acc = evaluate_model(model, val_loader, loss_fn, device)
-        # writer.add_scalar("val_loss", val_loss, global_step)
-        # writer.add_scalar("val_accuracy", val_acc, global_step)
-        #
-        # print(f"Epoch {epoch+1} - Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}")
-        #
-        # # Save best model
-        # if val_loss < best_val_loss:
-        #     best_val_loss = val_loss
-        #     save_model_checkpoint(
-        #         model, optimizer, epoch, val_loss, val_acc, args.output_dir
-        #     )
 
     writer.close()
     print("Training completed!")

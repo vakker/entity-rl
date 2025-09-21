@@ -53,62 +53,6 @@ def setup_tensorboard(output_dir: str) -> SummaryWriter:
     return SummaryWriter(output_dir)
 
 
-def evaluate_model(
-    model: ENROSPolicy, data_loader: DataLoader, loss_fn, device: torch.device
-) -> tuple[float, float]:
-    """
-    Evaluate model on given data loader.
-
-    Args:
-        model: ENROS policy model
-        data_loader: Data loader for evaluation
-        loss_fn: Loss function
-        device: Device to run evaluation on
-
-    Returns:
-        Tuple of (average_loss, accuracy)
-    """
-    total_loss = 0
-    correct_predictions = 0
-    total_predictions = 0
-    num_batches = 0
-
-    model.eval()
-    with torch.no_grad():
-        for batch_data in data_loader:
-            # Handle different batch formats (dict vs tuple)
-            if isinstance(batch_data, tuple) and len(batch_data) == 2:
-                obs_batch, reward_batch = batch_data
-                if isinstance(obs_batch, dict):
-                    obs_batch = move_dict_to_device(obs_batch, device)
-                else:
-                    obs_batch = obs_batch.to(device)
-            else:
-                raise ValueError(f"Unexpected batch format: {type(batch_data)}")
-
-            reward_batch = reward_batch.to(device)
-
-            # Forward pass
-            _ = model({"obs": obs_batch})
-            reward_pred = model.value_function()
-
-            # Loss
-            loss = loss_fn(reward_pred, reward_batch)
-            total_loss += loss.item()
-            num_batches += 1
-
-            # Accuracy
-            # pred_classes = torch.argmax(reward_pred, dim=1)
-            # correct_predictions += (pred_classes == reward_batch).sum().item()
-            total_predictions += reward_batch.size(0)
-
-    avg_loss = total_loss / num_batches if num_batches > 0 else 0
-    # accuracy = correct_predictions / total_predictions if total_predictions > 0 else 0
-    accuracy = 0
-
-    return avg_loss, accuracy
-
-
 def move_dict_to_device(data_dict: Dict, device: torch.device) -> Dict:
     """Move dictionary of tensors to device."""
     return {k: v.to(device) for k, v in data_dict.items()}
