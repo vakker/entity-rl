@@ -1,15 +1,140 @@
 import argparse
 
+import matplotlib.patches as patches
 import matplotlib.pyplot as plt
+import numpy as np
+import torch
 
 from entity_rl.datasets import MOTGraphDataset, MOTVisDataset
+
+
+class MOTVisDatasetWithDebugInfo(MOTVisDataset):
+    """Extended MOTVisDataset that returns debug information."""
+
+    def _generate_sample_with_debug(self):
+        """Generate sample and return debug information."""
+        # Select random frame and bboxes
+        data_dir, frame_id, original_bboxes = self.select_random_frame()
+
+        # Load and resize image
+        from entity_rl.datasets.mot_data import load_and_resize_image, scale_bboxes
+
+        img = load_and_resize_image(data_dir, frame_id, self.image_size)
+
+        if img is None:
+            raise RuntimeError("Failed to load or resize image")
+
+        # Get original dimensions and scale bboxes
+        orig_w, orig_h = self.data_loader.get_image_dimensions(data_dir, frame_id)
+        scaled_bboxes = scale_bboxes(original_bboxes, (orig_w, orig_h))
+
+        # Generate random agent position
+        agent_x, agent_y = self.generate_agent_position()
+
+        # Draw agent blob on the image
+        agent_image = self._draw_agent(img.copy(), agent_x, agent_y)
+
+        # Determine reward based on overlap
+        reward = self._compute_reward(scaled_bboxes, agent_x, agent_y)
+
+        debug_info = {
+            "data_dir": data_dir,
+            "frame_id": frame_id,
+            "original_bboxes": original_bboxes,
+            "scaled_bboxes": scaled_bboxes,
+            "agent_x": agent_x,
+            "agent_y": agent_y,
+            "orig_dims": (orig_w, orig_h),
+        }
+
+        return agent_image, reward, debug_info
+
+
+def draw_bounding_boxes_on_image(
+    img,
+    scaled_bboxes,
+    agent_x,
+    agent_y,
+    agent_radius,
+    image_size,
+    reward,
+):
+    """
+    Draw bounding boxes and agent on matplotlib image.
+
+    Args:
+        img: Image tensor as numpy array
+        scaled_bboxes: List of scaled bounding boxes (x, y, w, h, track_id)
+        agent_x, agent_y: Agent center position (normalized 0-1)
+        agent_radius: Agent radius (normalized 0-1)
+        image_size: Target image size (width, height)
+
+    Returns:
+        matplotlib figure with bounding boxes drawn
+    """
+    fig, ax = plt.subplots(figsize=(8, 8))
+    ax.imshow(img)
+
+    # Draw detection/GT bounding boxes in green
+    for x, y, w, h, track_id in scaled_bboxes:
+        # Convert normalized coordinates to pixel coordinates
+        pixel_x = x * img.shape[1]
+        pixel_y = y * img.shape[0]
+        pixel_w = w * img.shape[1]
+        pixel_h = h * img.shape[0]
+
+        rect = patches.Rectangle(
+            (pixel_x, pixel_y),
+            pixel_w,
+            pixel_h,
+            linewidth=2,
+            edgecolor="green",
+            facecolor="none",
+            label=f"Detection {track_id}" if track_id >= 0 else "Detection",
+        )
+        ax.add_patch(rect)
+
+        # Add track ID label
+        ax.text(
+            pixel_x,
+            pixel_y - 5,
+            f"ID:{track_id}",
+            color="green",
+            fontsize=8,
+            fontweight="bold",
+        )
+
+    # Draw agent bounding box in red (it's already drawn on the image, but add outline)
+    agent_pixel_x = agent_x * img.shape[1]
+    agent_pixel_y = agent_y * img.shape[0]
+    agent_pixel_radius = agent_radius * min(img.shape[1], img.shape[0])
+
+    agent_rect = patches.Rectangle(
+        (agent_pixel_x - agent_pixel_radius, agent_pixel_y - agent_pixel_radius),
+        2 * agent_pixel_radius,
+        2 * agent_pixel_radius,
+        linewidth=2,
+        edgecolor="red",
+        facecolor="none",
+        label="Agent",
+    )
+    ax.add_patch(agent_rect)
+
+    ax.set_title(f"MOT Sample with {len(scaled_bboxes)} detections, Reward: {reward}")
+    ax.axis("off")
+
+    # Add legend if there are bboxes
+    # if scaled_bboxes:
+    #     ax.legend(loc='upper right')
+
+    return fig
 
 
 def test_vis_dataset(args):
     """Test the MOT vis dataset."""
     print("Testing MOT vis Dataset...")
 
-    dataset = MOTVisDataset(
+    dataset = MOTVisDatasetWithDebugInfo(
         mot_data_dirs=args.mot_dirs,
         agent_radius=args.agent_radius,
         num_samples_per_epoch=args.num_samples,
@@ -25,10 +150,33 @@ def test_vis_dataset(args):
     reward_counts = {-1: 0, 1: 0}
 
     for i in range(args.num_samples):
-        img, reward = dataset[i]
-        reward_counts[reward] += 1
+        # Get the sample with debug info for visualization
+        if args.save_samples:
+            # Generate sample with debug information
+            img_array, reward, debug_info = dataset._generate_sample_with_debug()
+            img = torch.from_numpy(img_array.astype(np.uint8))
 
-        if i < 3 and args.save_samples:
+            # Create visualization with bounding boxes
+            fig = draw_bounding_boxes_on_image(
+                img.numpy(),
+                debug_info["scaled_bboxes"],
+                debug_info["agent_x"],
+                debug_info["agent_y"],
+                dataset.agent_radius / min(dataset.image_size),
+                dataset.image_size,
+                reward,
+            )
+
+            # Save the figure with bounding boxes
+            plt.savefig(
+                f"vis_sample_{i}_reward_{reward}_with_boxes.png",
+                dpi=150,
+                bbox_inches="tight",
+            )
+            plt.close(fig)
+            print(f"Saved vis_sample_{i}_reward_{reward}_with_boxes.png")
+
+            # Also save the original simple version
             plt.figure(figsize=(6, 6))
             plt.imshow(img)
             plt.title(f"vis Sample {i}, Reward: {reward}")
@@ -36,6 +184,11 @@ def test_vis_dataset(args):
             plt.savefig(f"vis_sample_{i}_reward_{reward}.png")
             plt.close()
             print(f"Saved vis_sample_{i}_reward_{reward}.png")
+        else:
+            # Regular sample generation for counting
+            img, reward = dataset[i]
+
+        reward_counts[reward] += 1
 
     print(f"Reward distribution: {reward_counts}")
     collision_rate = reward_counts[-1] / args.num_samples
@@ -71,11 +224,10 @@ def test_graph_dataset(args):
         node_counts.append(graph_data.num_nodes)
         edge_counts.append(graph_data.edge_index.shape[1])
 
-        if i < 3:
-            print(
-                f"Sample {i}: {graph_data.num_nodes} nodes, {graph_data.edge_index.shape[1]} edges, reward: {reward}"
-            )
-            print(f"  Node features shape: {graph_data.x.shape}")
+        print(
+            f"Sample {i}: {graph_data.num_nodes} nodes, {graph_data.edge_index.shape[1]} edges, reward: {reward}"
+        )
+        print(f"  Node features shape: {graph_data.x.shape}")
 
     print(f"Reward distribution: {reward_counts}")
     collision_rate = reward_counts[-1] / args.num_samples
@@ -125,7 +277,10 @@ def main():
 
     # Dataset arguments
     parser.add_argument(
-        "--agent-radius", type=float, default=0.02, help="Radius of agent blob in pixels"
+        "--agent-radius",
+        type=float,
+        default=0.02,
+        help="Radius of agent blob in pixels",
     )
     parser.add_argument(
         "--image-size",
@@ -169,4 +324,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
