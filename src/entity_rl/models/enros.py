@@ -37,12 +37,16 @@ class Encoder(BaseModule):
 
     @property
     def out_channels(self):
-        return self._stages[-1].out_channels
+        # TODO: the +4 is for the agent position
+        # It's a hack, should be done in a better way
+        return self._stages[-1].out_channels + 4
 
-    def forward(self, inputs):
+    def forward(self, inputs, agent_pos=None):
         for stage in self._stages:
             inputs = stage(inputs)
 
+        if agent_pos is not None:
+            inputs = torch.cat([inputs, agent_pos], dim=1)
         return inputs
 
     @property
@@ -147,7 +151,8 @@ class ENROSPolicy(TorchModelV2, BaseModule):
     @override(TorchModelV2)
     def forward(self, input_dict, state, seq_lens):
         with torch.autocast(device_type="cuda", enabled=self.use_amp):
-            self._features = self._encoder(input_dict["obs"])
+            agent_pos = input_dict.get("agent_pos", None)
+            self._features = self._encoder(input_dict["obs"], agent_pos=agent_pos)
             logits = self._policy(self._features)
 
             # NOTE: this is a trick to avoid issues with the action distribution

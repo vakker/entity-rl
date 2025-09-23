@@ -6,17 +6,17 @@ This module provides common training functionality shared across MOT training sc
 
 import os
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import Dataset
 from torch.utils.tensorboard import SummaryWriter
 
 from entity_rl.models.enros import ENROSPolicy
 
 
-class RewardLabelAdapter:
+class RewardLabelAdapter(Dataset):
     """Adapter class to convert rewards to class labels for training."""
 
     def __init__(self, base_dataset):
@@ -33,10 +33,19 @@ class RewardLabelAdapter:
         return len(self.base_dataset)
 
     def __getitem__(self, index):
-        sample, reward = self.base_dataset[index]
-        # Convert reward to class label
-        reward_class = self.label_map[reward]
-        return sample, reward_class
+        sample_data = self.base_dataset[index]
+
+        # Handle both old format (sample, reward) and new format (sample, reward, agent_x, agent_y)
+        if len(sample_data) == 2:
+            sample, reward = sample_data
+            # Convert reward to class label
+            reward_class = self.label_map[reward]
+            return sample, reward_class
+        else:
+            sample, reward, agent_pos = sample_data
+            # Convert reward to class label
+            reward_class = self.label_map[reward]
+            return sample, reward_class, agent_pos
 
 
 def setup_tensorboard(output_dir: str) -> SummaryWriter:

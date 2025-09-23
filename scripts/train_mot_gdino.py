@@ -1,12 +1,9 @@
 import argparse
-import os
-from os import path as osp
 
 import gymnasium as gym
 import numpy as np
 import torch
 from mmdet.structures.bbox import bbox_cxcywh_to_xyxy
-from skimage import io as skio
 from torch.utils.data import DataLoader
 from torchvision.utils import draw_bounding_boxes
 from tqdm import tqdm, trange
@@ -111,7 +108,7 @@ def main(args):
     assert len(train_loader)
 
     # Get observation space from dataset
-    sample_obs, _ = train_wrapped[0]
+    sample_obs = train_wrapped[0][0]
     obs_space = gym.spaces.Box(
         low=0,
         high=255,
@@ -148,7 +145,6 @@ def main(args):
     writer = setup_tensorboard(args.output_dir)
 
     global_step = 0
-    best_val_loss = float("inf")
 
     for epoch in trange(args.epochs, desc="Training epochs", disable=args.no_bar):
         # Training loop
@@ -157,11 +153,18 @@ def main(args):
         num_batches = 0
         matches = 0
 
-        for obs_batch, reward_batch in tqdm(
+        for batch_data in tqdm(
             train_loader,
             desc=f"Epoch {epoch+1}",
             disable=args.no_bar,
         ):
+            # Unpack batch data - expect 4 elements (obs, reward, agent_x, agent_y)
+            assert (
+                len(batch_data) == 3
+            ), f"Expected 3 elements in batch_data, got {len(batch_data)}"
+            obs_batch, reward_batch, agent_pos = batch_data
+            agent_pos = agent_pos.to(device)
+
             # Move to device
             obs_batch = obs_batch.to(device)
             # Count each individual reward
@@ -174,9 +177,17 @@ def main(args):
             reward_batch = reward_batch.float().to(device)
 
             # Forward pass
-            _ = model({"obs": obs_batch})
+            model_input = {"obs": obs_batch, "agent_pos": agent_pos}
+            _ = model(model_input)
             reward_pred = model.value_function()
-            print(reward_pred)
+            # print(reward_pred)
+
+            # Get matches
+            preds = torch.zeros_like(reward_batch)
+            preds[reward_pred >= 0.5] = 1.0
+            preds[reward_pred < 0.5] = 0.0
+            match = (preds == reward_batch).float().mean().item()
+            matches += match
 
             # Backward pass
             loss = loss_fn(reward_pred, reward_batch)
@@ -219,15 +230,24 @@ def main(args):
         num_batches = 0
         matches = 0
         with torch.no_grad():
-            for obs_batch, reward_batch in tqdm(
+            for batch_data in tqdm(
                 val_loader,
                 desc=f"Epoch {epoch+1} VAL",
                 leave=False,
                 disable=args.no_bar,
             ):
+                # Unpack batch data - expect 4 elements (obs, reward, agent_x, agent_y)
+                assert (
+                    len(batch_data) == 3
+                ), f"Expected 3 elements in batch_data, got {len(batch_data)}"
+                obs_batch, reward_batch, agent_pos = batch_data
+                agent_pos = agent_pos.to(device)
+
                 obs_batch = obs_batch.to(device)
                 reward_batch = reward_batch.to(device)
-                _ = model({"obs": obs_batch})
+
+                model_input = {"obs": obs_batch, "agent_pos": agent_pos}
+                _ = model(model_input)
                 reward_pred = model.value_function()
 
                 # Calculate accuracy

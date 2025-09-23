@@ -4,7 +4,7 @@ import numpy as np
 import torch
 
 from .mot_base import MOTBaseDataset
-from .mot_data import check_rectangle_overlap, load_and_resize_image, scale_bboxes
+from .mot_data import load_and_resize_image, scale_bboxes
 
 
 class MOTVisDataset(MOTBaseDataset):
@@ -16,14 +16,15 @@ class MOTVisDataset(MOTBaseDataset):
     - A reward signal based on whether the agent overlaps with tracked objects
     """
 
-    def _generate_sample(self) -> Tuple[torch.Tensor, int]:
+    def _generate_sample(self) -> Tuple[torch.Tensor, int, torch.Tensor]:
         """
         Generate a single synthetic sample.
 
         Returns:
-            Tuple of (image_tensor, reward) where:
+            Tuple of (image_tensor, reward, agent_pos) where:
             - image_tensor: torch.Tensor of shape (H, W, 3), dtype uint8
             - reward: int (-1 for collision, +1 for safe)
+            - agent_pos: float, normalized agent position (0-1)
         """
         # Select random frame and bboxes
         data_dir, frame_id, original_bboxes = self.select_random_frame()
@@ -47,7 +48,14 @@ class MOTVisDataset(MOTBaseDataset):
         # Determine reward based on overlap
         reward = self._compute_reward(scaled_bboxes, agent_x, agent_y)
 
-        return torch.from_numpy(agent_image.astype(np.uint8)), reward
+        return (
+            torch.from_numpy(agent_image.astype(np.uint8)),
+            reward,
+            torch.tensor(
+                [agent_x, agent_y, self.agent_radius, self.agent_radius],
+                dtype=torch.float32,
+            ),
+        )
 
     def _draw_agent(
         self,
