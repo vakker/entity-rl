@@ -107,7 +107,6 @@ def main(args):
 
     # Load and modify config for GNN training
     conf = utils.load_dict(args.cfg)["base"]
-    model_config = conf["model"]["custom_model_config"]
 
     model = ENROSPolicy(
         obs_space,
@@ -173,7 +172,7 @@ def main(args):
                 torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
 
             optimizer.step()
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True)
 
             # Logging
             tng_loss += loss.item()
@@ -193,6 +192,7 @@ def main(args):
         val_loss = 0
         num_batches = 0
         matches = 0
+        # with torch.no_grad():
         for obs_batch, reward_batch in tqdm(
             val_loader,
             desc=f"Epoch {epoch+1} VAL",
