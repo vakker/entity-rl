@@ -8,14 +8,18 @@ import torch
 from mmdet.structures.bbox import bbox_cxcywh_to_xyxy
 from skimage import io as skio
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
 from torchvision.utils import draw_bounding_boxes
 from tqdm import tqdm, trange
 
 from entity_rl import utils
 from entity_rl.datasets import MOTVisDataset
 from entity_rl.models.enros import ENROSPolicy
-from entity_rl.training import RewardLabelAdapter
+from entity_rl.training import (
+    RewardLabelAdapter,
+    create_loss_function,
+    create_optimizer,
+    setup_tensorboard,
+)
 
 
 def add_bbox(frame, bbox_pred):
@@ -55,12 +59,11 @@ def main(args):
     print(f"Using MOT directories: {args.mot_dirs}")
     print(f"Output directory: {args.output_dir}")
 
-    # Split MOT directories for train/val
     tng_dirs = args.mot_dirs[: len(args.mot_dirs) // 2]
     val_dirs = args.mot_dirs[len(args.mot_dirs) // 2 :]
 
-    assert len(tng_dirs) > 0, "Need at least one training directory"
-    assert len(val_dirs) > 0, "Need at least one validation directory"
+    assert len(tng_dirs) > 0
+    assert len(val_dirs) > 0
 
     # Create MOT datasets
     train_dataset = MOTVisDataset(
@@ -69,6 +72,7 @@ def main(args):
         num_samples_per_epoch=args.num_samples,
         image_size=tuple(args.image_size),
         use_gt=not args.use_detections,
+        max_samples=args.max_samples,
     )
 
     val_dataset = MOTVisDataset(
@@ -77,13 +81,34 @@ def main(args):
         num_samples_per_epoch=args.num_samples,
         image_size=tuple(args.image_size),
         use_gt=not args.use_detections,
+        max_samples=args.max_samples,
     )
+
+    print(f"Train samples: {len(train_dataset)}, Val samples: {len(val_dataset)}")
 
     # Wrap with reward label adapter
     train_wrapped = RewardLabelAdapter(train_dataset)
     val_wrapped = RewardLabelAdapter(val_dataset)
 
-    print(f"Train samples: {len(train_wrapped)}, Val samples: {len(val_wrapped)}")
+    batch_size = min(args.batch_size, len(train_wrapped))
+
+    # Create data loaders
+    train_loader = DataLoader(
+        train_wrapped,
+        batch_size=batch_size,
+        shuffle=True,
+        drop_last=True,
+        num_workers=args.num_workers,
+    )
+
+    val_loader = DataLoader(
+        val_wrapped,
+        batch_size=batch_size,
+        shuffle=False,
+        drop_last=True,
+        num_workers=args.num_workers,
+    )
+    assert len(train_loader)
 
     # Get observation space from dataset
     sample_obs, _ = train_wrapped[0]
@@ -105,198 +130,155 @@ def main(args):
         model_config=conf["model"],
         name="enros",
     )
-    model.cuda()
 
-    use_amp = model.use_amp
-    opt = torch.optim.Adam(model.parameters(), lr=args.lr)
-    scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
-    loss_fn = torch.nn.CrossEntropyLoss().cuda()
+    print(f"Model created: {sum(p.numel() for p in model.parameters())} parameters")
 
-    batch_size = min(args.batch_size, len(train_wrapped))
+    # Set up training
+    device = torch.device(args.device)
+    print(f"Using device: {device}")
 
-    # Create data loaders
-    data_loader_tng = DataLoader(
-        train_wrapped,
-        batch_size=batch_size,
-        shuffle=True,
-        drop_last=True,
-        num_workers=args.num_workers,
-    )
-    data_loader_val = DataLoader(
-        val_wrapped,
-        batch_size=batch_size,
-        shuffle=False,
-        drop_last=True,
-        num_workers=args.num_workers,
-    )
+    model.to(device)
+    # use_amp = model.use_amp
+    # optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    # scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
+    # loss_fn = torch.nn.CrossEntropyLoss().cuda()
 
-    # Create output directory and tensorboard writer
-    os.makedirs(args.output_dir, exist_ok=True)
-    writer = SummaryWriter(args.output_dir)
+    optimizer = create_optimizer(model, args.lr)
+    loss_fn = create_loss_function(device)
+    writer = setup_tensorboard(args.output_dir)
 
     global_step = 0
+    best_val_loss = float("inf")
 
-    # Initial validation run
-    print("Running initial validation...")
-    model.eval()
-    with torch.no_grad():
-        val_loss = 0
+    for epoch in trange(args.epochs, desc="Training epochs", disable=args.no_bar):
+        # Training loop
+        model.train()
+        tng_loss = 0
         num_batches = 0
         matches = 0
-        for obs, rew in tqdm(data_loader_val, desc="Initial validation"):
-            obs_orig = obs
-            obs = obs.cuda()
-            rew = rew.cuda()
-            _ = model({"obs": obs})
-            rew_pred = model.value_function()
 
-            # Calculate accuracy
-            preds = torch.zeros_like(rew)
-            preds[rew_pred >= 0.5] = 1.0
-            preds[rew_pred < 0.5] = 0.0
-            match = (preds == rew).float().mean().item()
-            matches += match
+        for obs_batch, reward_batch in tqdm(
+            train_loader,
+            desc=f"Epoch {epoch+1}",
+            disable=args.no_bar,
+        ):
+            # Move to device
+            obs_batch = obs_batch.to(device)
+            # Count each individual reward
+            unique_values, counts = torch.unique(reward_batch, return_counts=True)
+            # tqdm.write(
+            #     f"Reward targ stats: {unique_values}, {counts/len(reward_batch)}"
+            # )
+            # continue
+            # It's double, but it should be float
+            reward_batch = reward_batch.float().to(device)
 
-            loss = loss_fn(rew_pred, rew)
-            val_loss += loss.item()
-            num_batches += 1
+            # Forward pass
+            _ = model({"obs": obs_batch})
+            reward_pred = model.value_function()
+            print(reward_pred)
 
-        avg_val_loss = val_loss / num_batches
-        avg_val_acc = matches / num_batches
-        writer.add_scalar("val_loss", avg_val_loss, global_step)
-        writer.add_scalar("val_accuracy", avg_val_acc, global_step)
-        print(f"Initial validation - Loss: {avg_val_loss:.4f}, Acc: {avg_val_acc:.4f}")
-
-        # Save bbox visualizations if requested
-        if args.bbox:
-            bbox_preds = model._encoder._stages[0].gdino_outputs["bboxes"]
-            images = process_outputs(obs_orig[:5], bbox_preds[:5])
-
-            frames_dir = osp.join(args.output_dir, "bboxes")
-            os.makedirs(frames_dir, exist_ok=True)
-            for j, img in enumerate(images):
-                img_path = osp.join(frames_dir, f"f-{global_step:03d}-{j:06d}.png")
-                skio.imsave(img_path, img[:, :, :3], check_contrast=False)
-
-            writer.add_images(
-                "bboxes",
-                torch.stack([torch.from_numpy(img) for img in images]).permute(
-                    0, 3, 1, 2
-                )[:, :3],
-                global_step=global_step,
-            )
-
-        # Save original observations
-        frames_dir = osp.join(args.output_dir, "obs_orig")
-        os.makedirs(frames_dir, exist_ok=True)
-        for j, img in enumerate(obs_orig[:5]):
-            img_path = osp.join(frames_dir, f"f-{global_step:03d}-{j:06d}.png")
-            skio.imsave(
-                img_path,
-                img[:, :, :3].numpy(),
-                check_contrast=False,
-            )
-
-    # Training loop
-    model.train()
-    print("Starting training...")
-
-    for epoch in trange(args.epochs, desc="Training epochs"):
-        for obs, rew in tqdm(data_loader_tng, desc=f"Epoch {epoch+1}"):
-            obs = obs.cuda()
-            rew = rew.cuda()
-
-            _ = model({"obs": obs})
-            rew_pred = model.value_function()
-            loss = loss_fn(rew_pred, rew)
-
-            scaler.scale(loss).backward()
+            # Backward pass
+            loss = loss_fn(reward_pred, reward_batch)
+            loss.backward()
 
             if args.grad_clip > 0:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
 
-            scaler.step(opt)
-            scaler.update()
+            optimizer.step()
+            optimizer.zero_grad(set_to_none=True)
 
             # Log training loss
+            tng_loss += loss.item()
+            num_batches += 1
             global_step += 1
-            writer.add_scalar("tng_loss", loss.item(), global_step)
+
+            # if global_step % args.log_interval == 0:
+            #     writer.add_scalar("train_loss", loss.item(), global_step)
 
             # Log text embedding gradients if bbox visualization is enabled
-            if args.bbox:
-                text_embed = model._encoder._stages[0]._model.text_embed.weight
-                if text_embed.grad is not None:
-                    writer.add_histogram(
-                        "text_embed_grad",
-                        text_embed.grad.data.cpu().numpy(),
-                        global_step,
-                    )
+            # if args.bbox:
+            #     text_embed = model._encoder._stages[0]._model.text_embed.weight
+            #     if text_embed.grad is not None:
+            #         writer.add_histogram(
+            #             "text_embed_grad",
+            #             text_embed.grad.data.cpu().numpy(),
+            #             global_step,
+            #         )
+            #
 
-            opt.zero_grad(set_to_none=True)
+        avg_tng_loss = tng_loss / num_batches
+        avg_tng_acc = matches / num_batches
+        tqdm.write(f"Epoch {epoch+1} - TNG Loss: {avg_tng_loss:.4f}")
+        tqdm.write(f"Epoch {epoch+1} - TNG Acc: {avg_tng_acc:.4f}")
+        continue
 
         # Validation after each epoch
         model.eval()
+        val_loss = 0
+        num_batches = 0
+        matches = 0
         with torch.no_grad():
-            val_loss = 0
-            num_batches = 0
-            matches = 0
-            for obs, rew in tqdm(
-                data_loader_val, desc=f"Epoch {epoch+1} VAL", leave=False
+            for obs_batch, reward_batch in tqdm(
+                val_loader,
+                desc=f"Epoch {epoch+1} VAL",
+                leave=False,
+                disable=args.no_bar,
             ):
-                obs_orig = obs
-                obs = obs.cuda()
-                rew = rew.cuda()
-                _ = model({"obs": obs})
-                rew_pred = model.value_function()
+                obs_batch = obs_batch.to(device)
+                reward_batch = reward_batch.to(device)
+                _ = model({"obs": obs_batch})
+                reward_pred = model.value_function()
 
                 # Calculate accuracy
-                preds = torch.zeros_like(rew)
-                preds[rew_pred >= 0.5] = 1.0
-                preds[rew_pred < 0.5] = 0.0
-                match = (preds == rew).float().mean().item()
+                preds = torch.zeros_like(reward_batch)
+                preds[reward_pred >= 0.5] = 1.0
+                preds[reward_pred < 0.5] = 0.0
+                match = (preds == reward_batch).float().mean().item()
                 matches += match
 
-                loss = loss_fn(rew_pred, rew)
+                loss = loss_fn(reward_pred, reward_batch)
                 val_loss += loss.item()
                 num_batches += 1
 
             avg_val_loss = val_loss / num_batches
             avg_val_acc = matches / num_batches
-            writer.add_scalar("val_loss", avg_val_loss, global_step)
-            writer.add_scalar("val_accuracy", avg_val_acc, global_step)
-            print(
-                f"Epoch {epoch+1} - Val Loss: {avg_val_loss:.4f}, Val Acc: {avg_val_acc:.4f}"
-            )
+            # writer.add_scalar("val_loss", avg_val_loss, global_step)
+            # writer.add_scalar("val_accuracy", avg_val_acc, global_step)
+
+            avg_val_loss = val_loss / num_batches
+            avg_val_acc = matches / num_batches
+            tqdm.write(f"Epoch {epoch+1} - VAL Loss: {avg_val_loss:.4f}")
+            tqdm.write(f"Epoch {epoch+1} - VAL Acc: {avg_val_acc:.4f}")
 
             # Save bbox visualizations
-            if args.bbox:
-                bbox_preds = model._encoder._stages[0].gdino_outputs["bboxes"]
-                images = process_outputs(obs_orig[:5], bbox_preds[:5])
-
-                frames_dir = osp.join(args.output_dir, "bboxes")
-                for j, img in enumerate(images):
-                    img_path = osp.join(frames_dir, f"f-{global_step:03d}-{j:06d}.png")
-                    skio.imsave(img_path, img[:, :, :3], check_contrast=False)
-
-                writer.add_images(
-                    "bboxes",
-                    torch.stack([torch.from_numpy(img) for img in images]).permute(
-                        0, 3, 1, 2
-                    )[:, :3],
-                    global_step=global_step,
-                )
-
-            # Save original observations
-            frames_dir = osp.join(args.output_dir, "obs_orig")
-            for j, img in enumerate(obs_orig[:5]):
-                img_path = osp.join(frames_dir, f"f-{global_step:03d}-{j:06d}.png")
-                skio.imsave(
-                    img_path,
-                    img[:, :, :3].numpy(),
-                    check_contrast=False,
-                )
-
-        model.train()
+            # if args.bbox:
+            #     obs_orig = obs_batch
+            #     bbox_preds = model._encoder._stages[0].gdino_outputs["bboxes"]
+            #     images = process_outputs(obs_orig[:5], bbox_preds[:5])
+            #
+            #     frames_dir = osp.join(args.output_dir, "bboxes")
+            #     for j, img in enumerate(images):
+            #         img_path = osp.join(frames_dir, f"f-{global_step:03d}-{j:06d}.png")
+            #         skio.imsave(img_path, img[:, :, :3], check_contrast=False)
+            #
+            #     writer.add_images(
+            #         "bboxes",
+            #         torch.stack([torch.from_numpy(img) for img in images]).permute(
+            #             0, 3, 1, 2
+            #         )[:, :3],
+            #         global_step=global_step,
+            #     )
+            #
+            # # Save original observations
+            # frames_dir = osp.join(args.output_dir, "obs_orig")
+            # for j, img in enumerate(obs_orig[:5]):
+            #     img_path = osp.join(frames_dir, f"f-{global_step:03d}-{j:06d}.png")
+            #     skio.imsave(
+            #         img_path,
+            #         img[:, :, :3].numpy(),
+            #         check_contrast=False,
+            #     )
 
     writer.close()
     print("Training completed!")
@@ -316,11 +298,14 @@ if __name__ == "__main__":
         action="store_true",
         help="Use detections instead of ground truth",
     )
+    parser.add_argument("--no-bar", action="store_true")
+    parser.add_argument("--max-samples", type=int, help="Max samples to load")
 
     # Model arguments
     parser.add_argument("--cfg", required=True, help="Config file path")
 
     # Training arguments
+    parser.add_argument("--device", default="cuda:0", help="Device to train on")
     parser.add_argument("--output-dir", required=True, help="Output directory")
     parser.add_argument("--epochs", type=int, default=10, help="Number of epochs")
     parser.add_argument("--lr", type=float, required=True, help="Learning rate")
@@ -331,11 +316,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--grad-clip", type=float, default=1.0, help="Gradient clipping"
     )
+    parser.add_argument("--log-interval", type=int, default=50, help="Logging interval")
 
     # Dataset arguments
-    parser.add_argument("--agent-radius", type=float, default=15, help="Agent radius")
+    parser.add_argument("--agent-radius", type=float, default=0.02, help="Agent radius")
     parser.add_argument(
-        "--image-size", nargs=2, type=int, default=[100, 100], help="Image size"
+        "--image-size", nargs=2, type=int, default=[500, 500], help="Image size"
     )
     parser.add_argument(
         "--num-workers", type=int, default=2, help="Number of workers for data loading"
