@@ -454,14 +454,18 @@ class GDino(DINO):
 
         # NOTE: the actual number of proposals can be lower than the
         # number of queries for small images, so we need to select
-        query = []
-        for i in range(bs):
-            query.append(self.query_embedding.weight[topk_indices[i]])
+        #
+        # NOTE: WHY???
+        #
+        # query = []
+        # for i in range(bs):
+        #     __import__('ipdb').set_trace()
+        #     query.append(self.query_embedding.weight[topk_indices[i]])
+        #
+        # query = torch.stack(query, dim=0)
 
-        query = torch.stack(query, dim=0)
-
-        # query = self.query_embedding.weight[:, None, :]
-        # query = query.repeat(1, bs, 1).transpose(0, 1)
+        query = self.query_embedding.weight[:, None, :]
+        query = query.repeat(1, bs, 1).transpose(0, 1)
 
         # We don't need the DN queries for ENROS
         # TODO: clean this up
