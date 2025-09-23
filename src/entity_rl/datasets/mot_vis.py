@@ -1,13 +1,7 @@
-"""
-MOT-based synthetic dataset for ENROS training.
-
-This dataset creates synthetic agent-environment interactions using MOT data,
-placing agent blobs on real tracking scenes.
-"""
+from typing import Tuple
 
 import numpy as np
 import torch
-from typing import Tuple
 
 from .mot_base import MOTBaseDataset
 from .mot_data import check_rectangle_overlap, load_and_resize_image, scale_bboxes
@@ -42,7 +36,7 @@ class MOTVisDataset(MOTBaseDataset):
         else:
             # Get original dimensions and scale bboxes
             orig_w, orig_h = self.data_loader.get_image_dimensions(data_dir, frame_id)
-            scaled_bboxes = scale_bboxes(original_bboxes, (orig_w, orig_h), self.image_size)
+            scaled_bboxes = scale_bboxes(original_bboxes, (orig_w, orig_h))
 
         # Generate random agent position
         agent_x, agent_y = self.generate_agent_position()
@@ -55,7 +49,12 @@ class MOTVisDataset(MOTBaseDataset):
 
         return torch.from_numpy(agent_image.astype(np.uint8)), reward
 
-    def _draw_agent(self, img: np.ndarray, agent_x: int, agent_y: int) -> np.ndarray:
+    def _draw_agent(
+        self,
+        img: np.ndarray,
+        agent_x: float,
+        agent_y: float,
+    ) -> np.ndarray:
         """
         Draw agent as a red rectangle on the image.
 
@@ -71,6 +70,11 @@ class MOTVisDataset(MOTBaseDataset):
         agent_right = min(self.image_size[0], agent_x + self.agent_radius)
         agent_top = max(0, agent_y - self.agent_radius)
         agent_bottom = min(self.image_size[1], agent_y + self.agent_radius)
+
+        agent_left = int(agent_left * img.shape[1])
+        agent_right = int(agent_right * img.shape[1])
+        agent_top = int(agent_top * img.shape[0])
+        agent_bottom = int(agent_bottom * img.shape[0])
 
         # Draw agent as red rectangle
         img[agent_top:agent_bottom, agent_left:agent_right] = [255, 0, 0]
