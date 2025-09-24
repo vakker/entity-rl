@@ -27,6 +27,12 @@ class BaseModule(nn.Module, ABC):
     def num_params(self):
         return get_num_params(self)
 
+    def show_trainable_params(self):
+        """Print all trainable parameters by name and shape."""
+        for name, param in self.named_parameters():
+            if param.requires_grad:
+                print(f"{name}: {param.shape} ({param.numel()} params)")
+
 
 class BasePolicy(TorchModelV2, BaseModule, ABC):
     # pylint: disable=abstract-method,unused-argument
