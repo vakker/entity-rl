@@ -128,7 +128,8 @@ def main(args):
         name="enros",
     )
 
-    print(f"Model created: {sum(p.numel() for p in model.parameters())} parameters")
+    print("Model created, params:")
+    print(json.dumps(model.num_params, indent=2))
 
     # Set up training
     device = torch.device(args.device)
