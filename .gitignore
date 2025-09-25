@@ -1,3 +1,6 @@
+debug
+*_output
+samples
 logs
 data
 data-sync
