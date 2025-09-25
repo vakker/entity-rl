@@ -11,6 +11,7 @@ from torch_geometric.data import Batch, Data
 
 from .base import BaseModule
 from .gdino import GDino
+from .rpn import RPNENROS
 
 module = sys.modules[__name__]
 
@@ -95,7 +96,6 @@ class EntityPassThrough(EntityEncoder):
                     edge_index = self._edge_index_map[n_nodes]
 
                 else:
-
                     # For refecence:
                     # start_time = time.time()
                     # edge_index = [
@@ -278,6 +278,206 @@ class GDINOEncoder(EntityEncoder):
             # To make sure that it's fully connected
             assert self.edge_index.shape[1] == sample.shape[0] ** 2
             g_batch.append(Data(x=sample, edge_index=self.edge_index))
+
+        batch = Batch.from_data_list(g_batch)
+        return batch
+
+
+class RPNEncoder(EntityEncoder):
+    """Entity encoder using RPN for object proposal generation."""
+
+    def __init__(self, model_config, obs_space):
+        assert isinstance(obs_space, spaces.Box)
+        super().__init__(model_config, obs_space)
+
+        self._model_config = model_config
+        current_dir = osp.dirname(osp.abspath(__file__))
+        rpn_cfg_file = osp.join(current_dir, model_config["rpn_cfg"])
+        assert osp.exists(rpn_cfg_file)
+
+        rpn_config_full = Config.fromfile(rpn_cfg_file)
+        if hasattr(rpn_config_full, 'chkp') and rpn_config_full.chkp:
+            rpn_chkp_file = osp.join(current_dir, rpn_config_full.chkp)
+        else:
+            rpn_chkp_file = None
+
+        rpn_config = rpn_config_full.model
+
+        # Override config parameters
+        if "max_per_image" in model_config:
+            rpn_config["test_cfg"]["rpn"]["max_per_img"] = model_config["max_per_image"]
+        if "feature_dim" in model_config:
+            rpn_config["feature_dim"] = model_config["feature_dim"]
+        if "unfreeze_backbone" in model_config:
+            rpn_config["unfreeze_backbone"] = model_config["unfreeze_backbone"]
+
+        rpn_config["type"] = "RPNENROS"
+        self._model = RPNENROS(**copy.deepcopy(rpn_config))
+
+        # Load checkpoint if available
+        if rpn_chkp_file and osp.exists(rpn_chkp_file):
+            chkp = _load_checkpoint(rpn_chkp_file)["state_dict"]
+            self.rpn_outputs = None
+
+            # Remove incompatible keys for RPN
+            to_remove = ["roi_head.", "mask_head."]  # Remove ROI head parts for pure RPN
+            for k in list(chkp.keys()):
+                for prefix in to_remove:
+                    if k.startswith(prefix):
+                        del chkp[k]
+
+            _load_checkpoint_to_model(self._model, chkp)
+
+        # Set image normalization parameters
+        mean = torch.tensor([123.675, 116.28, 103.53], dtype=torch.float32)
+        std = torch.tensor([58.395, 57.12, 57.375], dtype=torch.float32)
+        self.register_buffer("mean", mean.reshape([1, 3, 1, 1]))
+        self.register_buffer("std", std.reshape([1, 3, 1, 1]))
+
+        # Add edges between all detected objects if specified
+        if model_config.get("add_edges", False):
+            stack_depth = obs_space.shape[2] // 3
+            max_objects = model_config.get("max_per_image", 50)
+            n_nodes = max_objects * stack_depth
+            edge_index = [[i, j] for i in range(n_nodes) for j in range(n_nodes)]
+            self.register_buffer(
+                "edge_index",
+                torch.tensor(edge_index, dtype=torch.long).t().contiguous(),
+            )
+        else:
+            self.edge_index = None
+
+        self.rpn_outputs = None
+
+    @property
+    def out_channels(self):
+        # [roi_features, bbox (4), objectness_score (1), frame_id (1)]
+        feature_dim = self._model_config.get("feature_dim", 128)
+        x_shape = feature_dim + 4 + 1 + 1
+        return {
+            "node_features": [x_shape],
+            "edge_features": None,
+            "global_features": None,
+        }
+
+    def normalize(self, inputs):
+        """Normalize inputs to match ImageNet preprocessing."""
+        stack_depth = inputs.shape[1] // 3
+        inputs = inputs.to(torch.float32)
+        assert stack_depth == 1
+
+        mean = self.mean  # .expand(1, stack_depth, -1, -1).reshape(1, -1, 1, 1)
+        std = self.std  # .expand(1, stack_depth, -1, -1).reshape(1, -1, 1, 1)
+
+        return (inputs - mean) / std
+
+    def forward(self, inputs):
+        """
+        Args:
+            inputs: (batch_size, height, width, channels*stack_depth)
+
+        Returns:
+            torch_geometric.data.Batch: Graph batch with detected objects as nodes
+        """
+        inputs = inputs.permute(0, 3, 1, 2)  # (B, C*stack, H, W)
+        assert inputs.shape[1] % 3 == 0
+
+        inputs = self.normalize(inputs)
+        stack_depth = inputs.shape[1] // 3
+        batch_size = inputs.shape[0]
+
+        all_node_features = []
+        all_proposals = []
+
+        # Process each frame in the stack
+        for stack_idx in range(stack_depth):
+            frame = inputs[:, 3 * stack_idx : 3 * (stack_idx + 1)]  # (B, 3, H, W)
+
+            # Extract features using RPN
+            with torch.cuda.amp.autocast(enabled=False):
+                outputs = self._model.forward(frame, mode="tensor")
+
+            roi_features = outputs["roi_features"]  # (B, max_proposals, feature_dim)
+            bboxes = outputs["bboxes"]  # (B, max_proposals, 4)
+            scores = outputs["scores"]  # (B, max_proposals, 1)
+            proposals = outputs["proposals"]
+
+            # Normalize bounding boxes to [0, 1]
+            h, w = frame.shape[2:]
+            norm_bboxes = bboxes.clone()
+            norm_bboxes[:, :, [0, 2]] /= w
+            norm_bboxes[:, :, [1, 3]] /= h
+
+            # Add frame indices
+            frame_ids = torch.full(
+                (batch_size, roi_features.shape[1], 1),
+                stack_idx,
+                device=inputs.device,
+                dtype=torch.float32,
+            )
+
+            # Combine all features: [roi_features, norm_bboxes, scores, frame_ids]
+            node_features = torch.cat(
+                [
+                    roi_features,  # (B, N, feature_dim)
+                    norm_bboxes,  # (B, N, 4)
+                    scores,  # (B, N, 1)
+                    frame_ids,  # (B, N, 1)
+                ],
+                dim=2,
+            )  # (B, N, feature_dim + 6)
+
+            all_node_features.append(node_features)
+            all_proposals.extend(proposals)
+
+        # Store for visualization/debugging
+        self.rpn_outputs = {
+            "proposals": all_proposals,
+            "features": [f.detach().cpu() for f in all_node_features],
+        }
+
+        # Create graph batch
+        g_batch = []
+        for batch_idx in range(batch_size):
+            # Collect all nodes for this batch item across all frames
+            batch_nodes = []
+            for stack_features in all_node_features:
+                batch_nodes.append(stack_features[batch_idx])  # (N, features)
+
+            if batch_nodes:
+                all_nodes = torch.cat(batch_nodes, dim=0)  # (total_objects, features)
+            else:
+                # Fallback: single dummy node
+                all_nodes = torch.zeros(
+                    1, self.out_channels["node_features"][0], device=inputs.device
+                )
+
+            # Remove zero-padded proposals (where all features are zero)
+            non_zero_mask = all_nodes.abs().sum(dim=1) > 1e-6
+            if non_zero_mask.any():
+                all_nodes = all_nodes[non_zero_mask]
+            else:
+                # Keep at least one node
+                all_nodes = all_nodes[:1]
+
+            # Create edges
+            n_nodes = all_nodes.shape[0]
+            if self.edge_index is not None and self.edge_index.shape[1] >= n_nodes**2:
+                # Use precomputed fully connected edges
+                edge_index = (
+                    self.edge_index[:, : n_nodes**2]
+                    .view(2, n_nodes, n_nodes)[:, :n_nodes, :n_nodes]
+                    .view(2, -1)
+                )
+            else:
+                # Create fully connected graph
+                sources = torch.arange(n_nodes, device=inputs.device).repeat(n_nodes)
+                targets = torch.arange(n_nodes, device=inputs.device).repeat_interleave(
+                    n_nodes
+                )
+                edge_index = torch.stack([sources, targets], dim=0)
+
+            g_batch.append(Data(x=all_nodes, edge_index=edge_index))
 
         batch = Batch.from_data_list(g_batch)
         return batch

@@ -131,6 +131,7 @@ def main(args):
 
     print("Model created, params:")
     print(json.dumps(model.num_params, indent=2))
+    print(model.show_trainable_params())
 
     # Set up training
     device = torch.device(args.device)
@@ -274,33 +275,76 @@ def main(args):
             tqdm.write(f"Epoch {epoch+1} - VAL Acc: {avg_val_acc:.4f}")
 
             # Save bbox visualizations
-            # if args.bbox:
-            #     obs_orig = obs_batch
-            #     bbox_preds = model._encoder._stages[0].gdino_outputs["bboxes"]
-            #     images = process_outputs(obs_orig[:5], bbox_preds[:5])
-            #
-            #     frames_dir = osp.join(args.output_dir, "bboxes")
-            #     for j, img in enumerate(images):
-            #         img_path = osp.join(frames_dir, f"f-{global_step:03d}-{j:06d}.png")
-            #         skio.imsave(img_path, img[:, :, :3], check_contrast=False)
-            #
-            #     writer.add_images(
-            #         "bboxes",
-            #         torch.stack([torch.from_numpy(img) for img in images]).permute(
-            #             0, 3, 1, 2
-            #         )[:, :3],
-            #         global_step=global_step,
-            #     )
-            #
-            # # Save original observations
-            # frames_dir = osp.join(args.output_dir, "obs_orig")
-            # for j, img in enumerate(obs_orig[:5]):
-            #     img_path = osp.join(frames_dir, f"f-{global_step:03d}-{j:06d}.png")
-            #     skio.imsave(
-            #         img_path,
-            #         img[:, :, :3].numpy(),
-            #         check_contrast=False,
-            #     )
+            if args.bbox:
+                obs_orig = obs_batch
+                entity_encoder = model._encoder._stages[0]
+
+                # Get bbox predictions based on encoder type
+                if hasattr(entity_encoder, 'gdino_outputs') and entity_encoder.gdino_outputs:
+                    # GroundingDINO encoder
+                    bbox_preds = entity_encoder.gdino_outputs["bboxes"]
+                elif hasattr(entity_encoder, 'rpn_outputs') and entity_encoder.rpn_outputs:
+                    # RPN encoder - extract bboxes from stored proposals
+                    bbox_preds = []
+                    proposals = entity_encoder.rpn_outputs['proposals']
+                    batch_size = obs_orig.shape[0]
+                    stack_depth = obs_orig.shape[3] // 3
+
+                    # Reshape proposals to match expected format
+                    for batch_idx in range(batch_size):
+                        batch_bboxes = []
+                        for stack_idx in range(stack_depth):
+                            proposal_idx = batch_idx * stack_depth + stack_idx
+                            if proposal_idx < len(proposals) and len(proposals[proposal_idx].bboxes) > 0:
+                                # Get top 10 proposals for visualization
+                                bboxes = proposals[proposal_idx].bboxes[:10]
+                                # Convert from xyxy to cxcywh format for visualization
+                                h, w = obs_orig.shape[1], obs_orig.shape[2]
+                                cxcywh = torch.zeros_like(bboxes)
+                                cxcywh[:, 0] = (bboxes[:, 0] + bboxes[:, 2]) / (2 * w)  # cx
+                                cxcywh[:, 1] = (bboxes[:, 1] + bboxes[:, 3]) / (2 * h)  # cy
+                                cxcywh[:, 2] = (bboxes[:, 2] - bboxes[:, 0]) / w        # w
+                                cxcywh[:, 3] = (bboxes[:, 3] - bboxes[:, 1]) / h        # h
+                                batch_bboxes.append(cxcywh)
+                            else:
+                                # No proposals - empty tensor
+                                batch_bboxes.append(torch.empty(0, 4, device=obs_orig.device))
+                        bbox_preds.append(batch_bboxes)
+                else:
+                    print("Warning: No bbox outputs available for visualization")
+                    bbox_preds = None
+
+                if bbox_preds is not None:
+                    images = process_outputs(obs_orig[:5], bbox_preds[:5])
+
+                    import os
+                    frames_dir = os.path.join(args.output_dir, "bboxes")
+                    os.makedirs(frames_dir, exist_ok=True)
+                    for j, img in enumerate(images):
+                        img_path = os.path.join(frames_dir, f"f-{global_step:03d}-{j:06d}.png")
+                        from skimage import io as skio
+                        skio.imsave(img_path, img[:, :, :3], check_contrast=False)
+
+                    writer.add_images(
+                        "bboxes",
+                        torch.stack([torch.from_numpy(img) for img in images]).permute(
+                            0, 3, 1, 2
+                        )[:, :3],
+                        global_step=global_step,
+                    )
+
+            # Save original observations for comparison
+            if args.bbox:
+                frames_dir = os.path.join(args.output_dir, "obs_orig")
+                os.makedirs(frames_dir, exist_ok=True)
+                for j, img in enumerate(obs_orig[:5]):
+                    img_path = os.path.join(frames_dir, f"f-{global_step:03d}-{j:06d}.png")
+                    from skimage import io as skio
+                    skio.imsave(
+                        img_path,
+                        img[:, :, :3].cpu().numpy(),
+                        check_contrast=False,
+                    )
 
     writer.close()
     print("Training completed!")
@@ -308,7 +352,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Train ENROS with GDino on MOT synthetic data"
+        description="Train ENROS with entity encoders (GDino/RPN) on MOT synthetic data"
     )
 
     # Data arguments

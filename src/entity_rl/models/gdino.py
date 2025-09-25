@@ -26,6 +26,8 @@ from mmdet.utils import ConfigType
 from mmengine.registry import DefaultScope
 from torch import Tensor
 
+from .base import freeze, unfreeze
+
 # This is needed for MM to handle the registry properly
 _ = DefaultScope.get_instance("EXPERIMENT", scope_name="mmdet")
 
@@ -61,6 +63,7 @@ class GDino(DINO):
     @staticmethod
     def freeze(model: nn.Module):
         """Freeze the model."""
+        raise NotImplementedError
         model.eval()
         for param in model.parameters():
             param.requires_grad = False
@@ -68,6 +71,7 @@ class GDino(DINO):
     @staticmethod
     def unfreeze(model: nn.Module):
         """Freeze the model."""
+        raise NotImplementedError
         model.train()
         for param in model.parameters():
             param.requires_grad = True
@@ -106,10 +110,10 @@ class GDino(DINO):
 
         # Freeze everything, then only unfreeze the text_embed params
         # This way there's nothing missed (in theory)
-        self.freeze(self)
-        self.unfreeze(self.text_embed)
+        freeze(self)
+        unfreeze(self.text_embed)
         if self.unfreeze_backbone:
-            self.unfreeze(self.backbone)
+            unfreeze(self.backbone)
 
     def init_weights(self) -> None:
         """Initialize weights for Transformer and other components."""

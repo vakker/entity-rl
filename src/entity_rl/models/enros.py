@@ -8,6 +8,7 @@ from . import combined, entity, scene
 from .base import BaseModule, get_num_params
 
 
+
 class Encoder(BaseModule):
     def __init__(self, model_config, obs_space):
         super().__init__()

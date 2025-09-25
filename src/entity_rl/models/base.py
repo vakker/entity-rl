@@ -18,6 +18,20 @@ def get_num_params(module):
     return num_params
 
 
+def freeze(model: nn.Module):
+    """Freeze the model."""
+    model.eval()
+    for param in model.parameters():
+        param.requires_grad = False
+
+
+def unfreeze(model: nn.Module):
+    """Freeze the model."""
+    model.train()
+    for param in model.parameters():
+        param.requires_grad = True
+
+
 class BaseModule(nn.Module, ABC):
     @property
     def device(self):
