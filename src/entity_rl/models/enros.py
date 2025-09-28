@@ -8,10 +8,11 @@ from . import combined, entity, scene
 from .base import BaseModule, get_num_params
 
 
-
 class Encoder(BaseModule):
     def __init__(self, model_config, obs_space):
         super().__init__()
+
+        self.include_agent_pos = model_config.get("include_agent_pos", False)
 
         # The encoder needs to resolve the structure.
         # It can be either entity + scene or a combined encoder.
@@ -38,16 +39,20 @@ class Encoder(BaseModule):
 
     @property
     def out_channels(self):
-        # TODO: the +4 is for the agent position
-        # It's a hack, should be done in a better way
-        return self._stages[-1].out_channels + 4
+        base_channels = self._stages[-1].out_channels
+        # Add 4 channels for agent position only if include_agent_pos is True
+        return base_channels + (4 if self.include_agent_pos else 0)
 
     def forward(self, inputs, agent_pos=None):
         for stage in self._stages:
             inputs = stage(inputs)
 
-        if agent_pos is not None:
+        if self.include_agent_pos:
+            if agent_pos is None:
+                raise ValueError("agent_pos is required when include_agent_pos=True")
             inputs = torch.cat([inputs, agent_pos], dim=1)
+        # If include_agent_pos=False, ignore agent_pos and don't concatenate
+
         return inputs
 
     @property
