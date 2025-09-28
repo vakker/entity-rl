@@ -24,7 +24,10 @@ class GNNDatasetAdapter(RewardLabelAdapter):
     """Adapter for GNN dataset to provide correct observation format."""
 
     def __getitem__(self, index):
-        graph_data, reward = self.base_dataset[index]
+        result = self.base_dataset[index]
+
+        assert len(result) == 3
+        graph_data, reward, agent_pos = result
 
         # Convert reward to class label
         reward_class = self.label_map[reward]
@@ -36,7 +39,7 @@ class GNNDatasetAdapter(RewardLabelAdapter):
             "batch": torch.zeros(graph_data.num_nodes, dtype=torch.long),
         }
 
-        return obs_dict, reward_class
+        return obs_dict, reward_class, agent_pos
 
 
 def main(args):
@@ -119,7 +122,7 @@ def main(args):
     print(f"Model created: {sum(p.numel() for p in model.parameters())} parameters")
 
     # Set up training
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device(args.device)
     print(f"Using device: {device}")
 
     model.to(device)
@@ -138,23 +141,30 @@ def main(args):
         num_batches = 0
         matches = 0
 
-        for obs_batch, reward_batch in tqdm(
+        for batch_data in tqdm(
             train_loader,
             desc=f"Epoch {epoch+1} TNG",
             leave=False,
             disable=args.no_bar,
         ):
+            assert (
+                len(batch_data) == 3
+            ), f"Expected 3 elements in batch_data, got {len(batch_data)}"
+            obs_batch, reward_batch, agent_pos = batch_data
+            agent_pos = agent_pos.to(device)
+
             # Move to device
             obs_batch = {k: v.to(device) for k, v in obs_batch.items()}
             # Count each individual reward
-            unique_values, counts = torch.unique(reward_batch, return_counts=True)
-            tqdm.write(
-                f"Reward targ stats: {unique_values}, {counts/len(reward_batch)}"
-            )
+            # unique_values, counts = torch.unique(reward_batch, return_counts=True)
+            # tqdm.write(
+            #     f"Reward targ stats: {unique_values}, {counts/len(reward_batch)}"
+            # )
             reward_batch = reward_batch.to(device)
 
             # Forward pass
-            _ = model({"obs": obs_batch})
+            model_input = {"obs": obs_batch, "agent_pos": agent_pos}
+            _ = model(model_input)
             reward_pred = model.value_function()
 
             # Get matches
@@ -193,18 +203,23 @@ def main(args):
         num_batches = 0
         matches = 0
         # with torch.no_grad():
-        for obs_batch, reward_batch in tqdm(
+        for batch_data in tqdm(
             val_loader,
             desc=f"Epoch {epoch+1} VAL",
             leave=False,
             disable=args.no_bar,
         ):
-            # Move to device
+            assert (
+                len(batch_data) == 3
+            ), f"Expected 3 elements in batch_data, got {len(batch_data)}"
+            obs_batch, reward_batch, agent_pos = batch_data
+            agent_pos = agent_pos.to(device)
+
             obs_batch = {k: v.to(device) for k, v in obs_batch.items()}
             reward_batch = reward_batch.to(device)
 
-            # Forward pass
-            _ = model({"obs": obs_batch})
+            model_input = {"obs": obs_batch, "agent_pos": agent_pos}
+            _ = model(model_input)
             reward_pred = model.value_function()
             preds = torch.zeros_like(reward_batch)
             preds[reward_pred >= 0.5] = 1.0
@@ -248,6 +263,7 @@ if __name__ == "__main__":
     parser.add_argument("--cfg", required=True, help="Config file path")
 
     # Training arguments
+    parser.add_argument("--device", default="cuda:0", help="Device to train on")
     parser.add_argument("--output-dir", required=True, help="Output directory")
     parser.add_argument("--epochs", type=int, default=20, help="Number of epochs")
     parser.add_argument("--lr", type=float, required=True, help="Learning rate")

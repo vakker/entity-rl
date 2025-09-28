@@ -31,6 +31,7 @@ class MOTGraphDataset(MOTBaseDataset):
         connect_threshold: float = 50.0,
         use_gt: bool = True,
         max_samples: Optional[int] = None,
+        include_agent_node: bool = True,
     ):
         """
         Initialize the MOT GNN dataset.
@@ -43,9 +44,12 @@ class MOTGraphDataset(MOTBaseDataset):
             max_entities: Maximum number of entities to include per sample
             connect_threshold: Distance threshold for connecting entities in the graph
             use_gt: Whether to use ground truth (gt.txt) or detections (det.txt)
+            max_samples: Maximum number of samples to load from data
+            include_agent_node: Whether to include agent as a node in the graph
         """
         self.max_entities = max_entities
         self.connect_threshold = connect_threshold
+        self.include_agent_node = include_agent_node
 
         super().__init__(
             mot_data_dirs,
@@ -56,12 +60,12 @@ class MOTGraphDataset(MOTBaseDataset):
             max_samples,
         )
 
-    def _generate_sample(self) -> Tuple[Data, int]:
+    def _generate_sample(self) -> Tuple[Data, int, torch.Tensor]:
         """
         Generate a single graph sample.
 
         Returns:
-            Tuple of (graph_data, reward)
+            Tuple of (graph_data, reward, agent_pos)
         """
         # Select random frame and bboxes
         data_dir, frame_id, original_bboxes = self.select_random_frame()
@@ -83,6 +87,7 @@ class MOTGraphDataset(MOTBaseDataset):
             agent_x,
             agent_y,
             self.agent_radius,
+            self.include_agent_node,
         )
 
         # Create edges
@@ -97,8 +102,14 @@ class MOTGraphDataset(MOTBaseDataset):
         # Create PyTorch Geometric Data object
         graph_data = self._create_graph_data(node_features, edge_index)
 
+        # Create agent_pos tensor matching MOTVisDataset format
+        agent_pos = torch.tensor(
+            [agent_x, agent_y, self.agent_radius, self.agent_radius],
+            dtype=torch.float32,
+        )
+
         # print(graph_data.x, reward)
-        return graph_data, reward
+        return graph_data, reward, agent_pos
 
     def _create_relative_node_features(
         self,
@@ -106,6 +117,7 @@ class MOTGraphDataset(MOTBaseDataset):
         agent_x: float,
         agent_y: float,
         agent_radius: float,
+        include_agent_node: bool,
     ) -> torch.Tensor:
         """
         Create node features relative to agent position (like SPG environment).
@@ -117,16 +129,20 @@ class MOTGraphDataset(MOTBaseDataset):
         For MOT, we'll create:
         - Agent node: [0, 1, 0, 1] (distance=0, cos=1, sin=0, entity_type=1 for agent)
         - Obstacle nodes: [distance, cos(rel_angle), sin(rel_angle), 0] (entity_type=0 for obstacles)
+
+        Args:
+            include_agent_node: Whether to include the agent node in the graph
         """
         # return torch.tensor([[agent_x]], dtype=torch.float32)
         features = []
 
-        # Add agent node first (like SPG does)
-        # Agent is at distance 0 from itself, facing "right" (angle=0)
-        # agent_feature = [0.0, 1.0, 0.0, 1.0]  # [distance, cos, sin, is_agent]
-        agent_feature = [0.0, 0.0, agent_radius, agent_radius, 1.0]
-        # agent_feature = [agent_x, 0.0]
-        features.append(agent_feature)
+        # Add agent node first (like SPG does) - only if requested
+        if include_agent_node:
+            # Agent is at distance 0 from itself, facing "right" (angle=0)
+            # agent_feature = [0.0, 1.0, 0.0, 1.0]  # [distance, cos, sin, is_agent]
+            agent_feature = [0.0, 0.0, agent_radius, agent_radius, 1.0]
+            # agent_feature = [agent_x, 0.0]
+            features.append(agent_feature)
 
         # Add obstacle nodes relative to agent position
         for x, y, w, h, _ in scaled_bboxes:
@@ -164,10 +180,9 @@ class MOTGraphDataset(MOTBaseDataset):
         self, node_features: torch.Tensor, edge_index: torch.Tensor
     ) -> Data:
         """Create PyTorch Geometric Data object."""
-        # node_features should always contain at least the agent node
-        assert (
-            len(node_features) > 0
-        ), "node_features should contain at least the agent node"
+        # Handle empty graph case (when include_agent_node=False and no entities)
+        if len(node_features) == 0:
+            return create_empty_graph(node_feature_dim=5)
 
         return Data(
             x=node_features,
