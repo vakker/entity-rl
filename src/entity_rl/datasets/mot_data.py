@@ -38,7 +38,7 @@ class MOTDataLoader:
             if self.use_gt:
                 ann_file = data_path / "gt" / "gt.txt"
             else:
-                ann_file = data_path / "det" / "det.txt"
+                ann_file = data_path / "prop.csv"
 
             img_dir = data_path / "img1"
 
@@ -64,7 +64,7 @@ class MOTDataLoader:
 
     def _parse_mot_annotations(
         self, ann_file: Path, max_rows: None
-    ) -> Dict[int, List[Tuple[int, int, int, int, int]]]:
+    ) -> Dict[int, List[Tuple[float, float, float, float, int]]]:
         """
         Parse MOT annotation file.
 
@@ -80,6 +80,10 @@ class MOTDataLoader:
             with open(ann_file, "r") as f:
                 reader = csv.reader(f)
                 for i, row in enumerate(reader):
+                    # Skip header
+                    if i == 0 and ann_file.suffix == '.csv':
+                        continue
+
                     if len(row) < 6:
                         continue
 
@@ -88,7 +92,7 @@ class MOTDataLoader:
                         continue
 
                     track_id = int(row[1]) if len(row) > 1 else -1
-                    x, y, w, h = map(int, row[2:6])
+                    x, y, w, h = map(float, row[2:6])
 
                     # Filter out invalid bounding boxes
                     if w <= 0 or h <= 0:

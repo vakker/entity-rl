@@ -219,7 +219,7 @@ def test_graph_dataset(args):
     edge_counts = []
 
     for i in range(args.num_samples):
-        graph_data, reward = dataset[i]
+        graph_data, reward, agent_pos = dataset[i]
         reward_counts[reward] += 1
         node_counts.append(graph_data.num_nodes)
         edge_counts.append(graph_data.edge_index.shape[1])

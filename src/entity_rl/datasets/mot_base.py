@@ -136,7 +136,7 @@ class MOTBaseDataset(Dataset, ABC):
         """Return the number of samples per epoch."""
         return self.num_samples_per_epoch
 
-    def __getitem__(self, idx: int) -> Tuple[Any, int]:
+    def __getitem__(self, idx: int) -> Tuple[Any, int, Any]:
         """
         Get a sample by index.
 

@@ -103,12 +103,10 @@ def collate_graph_batch(batch):
 
     # Create list of Data objects for batching
     data_list = []
-    agent_pos_list = []
 
     for obs in obs_list:
         data = Data(x=obs["x"], edge_index=obs["edge_index"])
         data_list.append(data)
-        agent_pos_list.append(obs["agent_pos"])
 
     # Batch graphs using PyTorch Geometric's Batch
     batched_graphs = Batch.from_data_list(data_list)
@@ -122,7 +120,7 @@ def collate_graph_batch(batch):
 
     # Convert rewards to tensor
     reward_tensor = torch.tensor(rewards, dtype=torch.float32)
-    agent_pos = torch.stack(agent_pos_list)
+    agent_pos = torch.stack(agent_pos)
 
     return batched_obs, reward_tensor, agent_pos
 
