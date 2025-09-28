@@ -61,8 +61,8 @@ def main(args):
         image_size=tuple(args.image_size),
         max_entities=args.max_entities,
         connect_threshold=args.connect_threshold,
-        use_gt=not args.use_detections,
         max_samples=args.max_samples,
+        use_props=args.use_props,
     )
 
     val_dataset = MOTGraphDataset(
@@ -72,8 +72,8 @@ def main(args):
         image_size=tuple(args.image_size),
         max_entities=args.max_entities,
         connect_threshold=args.connect_threshold,
-        use_gt=not args.use_detections,
         max_samples=args.max_samples,
+        use_props=args.use_props,
     )
 
     print(f"Train samples: {len(train_dataset)}, Val samples: {len(val_dataset)}")
@@ -196,6 +196,7 @@ def main(args):
         avg_tng_acc = matches / num_batches
         tqdm.write(f"Epoch {epoch+1} - TNG Loss: {avg_tng_loss:.4f}")
         tqdm.write(f"Epoch {epoch+1} - TNG Acc: {avg_tng_acc:.4f}")
+        continue
 
         # Validation
         model.eval()
@@ -252,9 +253,9 @@ if __name__ == "__main__":
         "--mot-dirs", nargs="+", required=True, help="MOT data directories"
     )
     parser.add_argument(
-        "--use-detections",
+        "--use-props",
         action="store_true",
-        help="Use detections instead of ground truth",
+        help="Use proposals for graph creation (always uses GT for rewards)",
     )
     parser.add_argument("--no-bar", action="store_true")
     parser.add_argument("--max-samples", type=int, help="Max samples to load")

@@ -1,13 +1,13 @@
 import random
 import time
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 import torch
 from torch_geometric.data import Data
 
 from .graph_utils import create_edges, create_empty_graph, create_node_features
 from .mot_base import MOTBaseDataset
-from .mot_data import check_rectangle_overlap, scale_bboxes
+from .mot_data import MOTDataLoader, check_rectangle_overlap, scale_bboxes
 
 
 class MOTGraphDataset(MOTBaseDataset):
@@ -29,9 +29,9 @@ class MOTGraphDataset(MOTBaseDataset):
         image_size: Tuple[int, int] = (100, 100),
         max_entities: int = 20,
         connect_threshold: float = 50.0,
-        use_gt: bool = True,
         max_samples: Optional[int] = None,
         include_agent_node: bool = True,
+        use_props: bool = False,
     ):
         """
         Initialize the MOT GNN dataset.
@@ -43,22 +43,69 @@ class MOTGraphDataset(MOTBaseDataset):
             image_size: Target image size (width, height)
             max_entities: Maximum number of entities to include per sample
             connect_threshold: Distance threshold for connecting entities in the graph
-            use_gt: Whether to use ground truth (gt.txt) or detections (det.txt)
             max_samples: Maximum number of samples to load from data
             include_agent_node: Whether to include agent as a node in the graph
+            use_props: Whether to use proposals for graph creation (always uses GT for rewards)
         """
         self.max_entities = max_entities
         self.connect_threshold = connect_threshold
         self.include_agent_node = include_agent_node
+        self.use_props = use_props
 
+        # Always load GT data for reward calculation
+        self.gt_data_loader = MOTDataLoader(mot_data_dirs, use_gt=True)
+        self.gt_data = self.gt_data_loader.load_mot_data(max_rows=max_samples)
+
+        # Initialize graph data loader based on use_props setting
+        if use_props:
+            # Use proposals for graph creation
+            self.props_data_loader = MOTDataLoader(mot_data_dirs, use_gt=False)
+            self.props_data = self.props_data_loader.load_mot_data(max_rows=max_samples)
+            # Use props_data as main data for frame selection
+            self.mot_data = self.props_data
+            self.data_loader = self.props_data_loader
+        else:
+            # Use GT for both graph and reward (standard mode)
+            self.props_data_loader = None
+            self.props_data = None
+            self.mot_data = self.gt_data
+            self.data_loader = self.gt_data_loader
+
+        # Initialize base class with simplified parameters
         super().__init__(
             mot_data_dirs,
             agent_radius,
             num_samples_per_epoch,
             image_size,
-            use_gt,
-            max_samples,
+            use_gt=True,  # Always use GT for base class (reward calculation)
+            max_samples=max_samples,
         )
+
+    def select_random_frame_with_props(self) -> Tuple[str, int, List[Tuple], List[Tuple]]:
+        """
+        Select a random frame and return both proposals and GT bboxes.
+
+        Returns:
+            Tuple of (data_dir, frame_id, props_bboxes, gt_bboxes)
+        """
+        if not self.use_props:
+            raise ValueError("select_random_frame_with_props only available when use_props=True")
+
+        # Select from props data (which is the main data when use_props=True)
+        data_dir = random.choice(list(self.props_data.keys()))
+        frame_ids = list(self.props_data[data_dir].keys())
+        frame_id = random.choice(frame_ids)
+
+        props_bboxes = self.props_data[data_dir][frame_id]
+
+        # Get corresponding GT data for the same frame
+        if data_dir in self.gt_data and frame_id in self.gt_data[data_dir]:
+            gt_bboxes = self.gt_data[data_dir][frame_id]
+        else:
+            raise ValueError(f"GT data not found for frame {frame_id} in {data_dir}")
+            # gt_bboxes = []  # No GT data for this frame
+
+        return data_dir, frame_id, props_bboxes, gt_bboxes
 
     def _generate_sample(self) -> Tuple[Data, int, torch.Tensor]:
         """
@@ -67,37 +114,71 @@ class MOTGraphDataset(MOTBaseDataset):
         Returns:
             Tuple of (graph_data, reward, agent_pos)
         """
-        # Select random frame and bboxes
-        data_dir, frame_id, original_bboxes = self.select_random_frame()
+        if self.use_props:
+            # Use proposals for graph creation, GT for reward calculation
+            data_dir, frame_id, props_bboxes, gt_bboxes = self.select_random_frame_with_props()
 
-        # Limit number of entities
-        if len(original_bboxes) > self.max_entities:
-            original_bboxes = random.sample(original_bboxes, self.max_entities)
+            # Limit number of entities for graph (proposals)
+            if len(props_bboxes) > self.max_entities:
+                props_bboxes = random.sample(props_bboxes, self.max_entities)
 
-        # Get original dimensions and scale bboxes
-        orig_w, orig_h = self.data_loader.get_image_dimensions(data_dir, frame_id)
-        scaled_bboxes = scale_bboxes(original_bboxes, (orig_w, orig_h))
+            # Get original dimensions and scale both proposal and GT bboxes
+            orig_w, orig_h = self.data_loader.get_image_dimensions(data_dir, frame_id)
+            scaled_props_bboxes = scale_bboxes(props_bboxes, (orig_w, orig_h))
+            scaled_gt_bboxes = scale_bboxes(gt_bboxes, (orig_w, orig_h))
 
-        # Generate synthetic agent position first
-        agent_x, agent_y = self.generate_agent_position()
+            # Generate synthetic agent position first
+            agent_x, agent_y = self.generate_agent_position()
 
-        # Create node features relative to agent position (like SPG environment)
-        node_features = self._create_relative_node_features(
-            scaled_bboxes,
-            agent_x,
-            agent_y,
-            self.agent_radius,
-            self.include_agent_node,
-        )
+            # Create node features using proposals (what the model sees)
+            node_features = self._create_relative_node_features(
+                scaled_props_bboxes,
+                agent_x,
+                agent_y,
+                self.agent_radius,
+                self.include_agent_node,
+            )
 
-        # Create edges
-        edge_index = create_edges(
-            node_features,
-            self.connect_threshold,
-        )
+            # Create edges based on proposal nodes
+            edge_index = create_edges(
+                node_features,
+                self.connect_threshold,
+            )
 
-        # Compute reward based on agent collision with bounding boxes
-        reward = self._compute_reward(scaled_bboxes, agent_x, agent_y)
+            # Compute reward based on GT collision (correct supervision)
+            reward = self._compute_reward(scaled_gt_bboxes, agent_x, agent_y)
+        else:
+            # Standard mode: use same data for both graph and reward
+            data_dir, frame_id, original_bboxes = self.select_random_frame()
+
+            # Limit number of entities
+            if len(original_bboxes) > self.max_entities:
+                original_bboxes = random.sample(original_bboxes, self.max_entities)
+
+            # Get original dimensions and scale bboxes
+            orig_w, orig_h = self.data_loader.get_image_dimensions(data_dir, frame_id)
+            scaled_bboxes = scale_bboxes(original_bboxes, (orig_w, orig_h))
+
+            # Generate synthetic agent position first
+            agent_x, agent_y = self.generate_agent_position()
+
+            # Create node features relative to agent position (like SPG environment)
+            node_features = self._create_relative_node_features(
+                scaled_bboxes,
+                agent_x,
+                agent_y,
+                self.agent_radius,
+                self.include_agent_node,
+            )
+
+            # Create edges
+            edge_index = create_edges(
+                node_features,
+                self.connect_threshold,
+            )
+
+            # Compute reward based on agent collision with bounding boxes
+            reward = self._compute_reward(scaled_bboxes, agent_x, agent_y)
 
         # Create PyTorch Geometric Data object
         graph_data = self._create_graph_data(node_features, edge_index)
