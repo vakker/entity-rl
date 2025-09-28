@@ -4,7 +4,7 @@ from abc import abstractmethod
 import torch_geometric.nn as pyg_nn
 from torch import nn
 from torch_geometric.data import Batch
-from torch_geometric.nn import MLP, GATv2Conv, aggr
+from torch_geometric.nn import MLP, GATv2Conv, SAGPooling, TopKPooling, aggr
 
 from .base import BaseModule
 from .slot_attention import SlotAttention
@@ -15,6 +15,31 @@ module = sys.modules[__name__]
 def get_conv_layer(in_channels, config):
     layer_class = getattr(module, config["conv_name"])
     return layer_class(n_input_features=in_channels, **config["conv_config"])
+
+
+def get_pooling_layer(in_channels, pooling_config):
+    """
+    Create pooling layer based on configuration.
+
+    Args:
+        in_channels: Number of input channels
+        pooling_config: Dict with 'type' and optional 'params'
+
+    Returns:
+        Pooling layer instance
+    """
+    pooling_type = pooling_config["type"]
+    pooling_params = pooling_config.get("params", {})
+
+    # Support any pooling class from torch_geometric.nn
+    try:
+        pooling_class = getattr(pyg_nn, pooling_type)
+        return pooling_class(in_channels=in_channels, **pooling_params)
+    except AttributeError:
+        raise ValueError(
+            f"Unknown pooling type: {pooling_type}. "
+            f"Must be a class from torch_geometric.nn"
+        )
 
 
 # def get_aggr_layer(config):
@@ -186,6 +211,13 @@ class GNNEncoder(BaseModule):
 
         self._n_input_size = in_channels
 
+        # Add pooling layer if configured
+        pooling_config = model_config.get("pooling", None)
+        if pooling_config:
+            self.pooling = get_pooling_layer(in_channels, pooling_config)
+        else:
+            self.pooling = None
+
         conv_layer = get_conv_layer(in_channels, model_config)
 
         self._encoder = nn.Sequential(conv_layer, nn.Flatten())
@@ -198,7 +230,14 @@ class GNNEncoder(BaseModule):
     def forward(self, inputs):
         assert isinstance(inputs, Batch)
 
-        features = self._encoder((inputs.x, inputs.edge_index, inputs.batch))
+        x, edge_index, batch = inputs.x, inputs.edge_index, inputs.batch
+
+        # Apply pooling before conv layers if configured
+        if self.pooling:
+            x, edge_index, _, batch, _, _ = self.pooling(x, edge_index, batch=batch)
+
+        # Apply conv layers with potentially reduced graph
+        features = self._encoder((x, edge_index, batch))
         return features
 
     # def _hidden_layers(self, input_dict):
