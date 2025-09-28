@@ -38,6 +38,22 @@ class SceneEncoder(BaseModule):
         pass
 
 
+class NoOpSceneEncoder(BaseModule):
+    def __init__(self, model_config, input_space):
+        super().__init__()
+
+        self._out_channels = input_space["node_features"][0]
+
+    @property
+    def out_channels(self):
+        return self._out_channels
+
+    def forward(self, inputs):
+        # For no-op, just return the input features unchanged
+        # inputs should be the entity features from the entity encoder
+        return inputs
+
+
 class GATFeatures(BaseModule):
     def __init__(
         self,
