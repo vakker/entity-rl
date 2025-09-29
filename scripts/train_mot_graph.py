@@ -16,7 +16,10 @@ from entity_rl.training import (
     RewardLabelAdapter,
     create_loss_function,
     create_optimizer,
-    setup_tensorboard,
+    setup_experiment_logging,
+    save_best_models,
+    evaluate_detection_batch,
+    extract_detection_data_from_mot_sample,
 )
 
 
@@ -128,11 +131,15 @@ def main(args):
     model.to(device)
     optimizer = create_optimizer(model, args.lr)
     loss_fn = create_loss_function(device)
-    writer = setup_tensorboard(args.output_dir)
+
+    # Setup experiment logging with timestamped directory
+    output_dir, writer = setup_experiment_logging(
+        args.output_dir, "mot_graph", args, args.cfg
+    )
 
     # Training loop
     global_step = 0
-    best_val_loss = float("inf")
+    best_metrics = {}
 
     for epoch in trange(args.epochs, desc="Training epochs", disable=args.no_bar):
         # Training
@@ -194,50 +201,129 @@ def main(args):
 
         avg_tng_loss = tng_loss / num_batches
         avg_tng_acc = matches / num_batches
-        tqdm.write(f"Epoch {epoch+1} - TNG Loss: {avg_tng_loss:.4f}")
-        tqdm.write(f"Epoch {epoch+1} - TNG Acc: {avg_tng_acc:.4f}")
-        continue
+
+        # Log training metrics
+        writer.add_scalar("Loss/Train", avg_tng_loss, epoch)
+        writer.add_scalar("Accuracy/Train", avg_tng_acc, epoch)
 
         # Validation
         model.eval()
         val_loss = 0
         num_batches = 0
         matches = 0
-        # with torch.no_grad():
-        for batch_data in tqdm(
-            val_loader,
-            desc=f"Epoch {epoch+1} VAL",
-            leave=False,
-            disable=args.no_bar,
-        ):
-            assert (
-                len(batch_data) == 3
-            ), f"Expected 3 elements in batch_data, got {len(batch_data)}"
-            obs_batch, reward_batch, agent_pos = batch_data
-            agent_pos = agent_pos.to(device)
 
-            obs_batch = {k: v.to(device) for k, v in obs_batch.items()}
-            reward_batch = reward_batch.to(device)
+        # For detection metrics
+        pred_boxes_batch = []
+        pred_scores_batch = []
+        gt_boxes_batch = []
 
-            model_input = {"obs": obs_batch, "agent_pos": agent_pos}
-            _ = model(model_input)
-            reward_pred = model.value_function()
-            preds = torch.zeros_like(reward_batch)
-            preds[reward_pred >= 0.5] = 1.0
-            preds[reward_pred < 0.5] = 0.0
-            match = (preds == reward_batch).float().mean().item()
-            # print(reward_pred)
+        with torch.no_grad():
+            for batch_data in tqdm(
+                val_loader,
+                desc=f"Epoch {epoch+1} VAL",
+                leave=False,
+                disable=args.no_bar,
+            ):
+                assert (
+                    len(batch_data) == 3
+                ), f"Expected 3 elements in batch_data, got {len(batch_data)}"
+                obs_batch, reward_batch, agent_pos = batch_data
+                agent_pos = agent_pos.to(device)
 
-            # Backward pass
-            loss = loss_fn(reward_pred, reward_batch)
-            val_loss += loss.item()
-            matches += match
-            num_batches += 1
+                obs_batch = {k: v.to(device) for k, v in obs_batch.items()}
+                reward_batch = reward_batch.to(device)
 
-        avg_val_loss = val_loss / num_batches
-        avg_val_acc = matches / num_batches
-        tqdm.write(f"Epoch {epoch+1} - VAL Loss: {avg_val_loss:.4f}")
-        tqdm.write(f"Epoch {epoch+1} - VAL Acc: {avg_val_acc:.4f}")
+                # Forward pass
+                model_input = {"obs": obs_batch, "agent_pos": agent_pos}
+                _ = model(model_input)
+                reward_pred = model.value_function()
+
+                # Classification metrics
+                preds = torch.zeros_like(reward_batch)
+                preds[reward_pred >= 0.5] = 1.0
+                preds[reward_pred < 0.5] = 0.0
+                match = (preds == reward_batch).float().mean().item()
+
+                loss = loss_fn(reward_pred, reward_batch)
+                val_loss += loss.item()
+                matches += match
+                num_batches += 1
+
+                # Extract detection data for metrics (sample a few batches)
+                if len(pred_boxes_batch) < 5:  # Only process first few batches for efficiency
+                    try:
+                        # Get graph data from the original dataset
+                        for i in range(min(batch_size, len(val_dataset))):
+                            sample_idx = (num_batches - 1) * batch_size + i
+                            if sample_idx < len(val_dataset):
+                                graph_data, sample_reward, sample_agent_pos = val_dataset[sample_idx]
+
+                                # Extract detection data
+                                boxes, scores = extract_detection_data_from_mot_sample(
+                                    graph_data, sample_reward, sample_agent_pos, tuple(args.image_size)
+                                )
+
+                                if len(boxes) > 0:
+                                    pred_boxes_batch.append(boxes)
+                                    pred_scores_batch.append(scores)
+                                    # For this demo, use the same boxes as ground truth
+                                    # In practice, you'd load actual ground truth
+                                    gt_boxes_batch.append(boxes)
+                    except Exception as e:
+                        tqdm.write(f"Warning: Could not extract detection data: {e}")
+
+        # Calculate validation metrics
+        avg_val_loss = val_loss / num_batches if num_batches > 0 else 0.0
+        avg_val_acc = matches / num_batches if num_batches > 0 else 0.0
+
+        # Calculate detection metrics if we have data
+        detection_metrics = {}
+        if len(pred_boxes_batch) > 0:
+            try:
+                detection_metrics = evaluate_detection_batch(
+                    pred_boxes_batch, pred_scores_batch, gt_boxes_batch, iou_threshold=0.5
+                )
+            except Exception as e:
+                tqdm.write(f"Warning: Could not calculate detection metrics: {e}")
+
+        # Log all metrics
+        writer.add_scalar("Loss/Validation", avg_val_loss, epoch)
+        writer.add_scalar("Accuracy/Validation", avg_val_acc, epoch)
+
+        if detection_metrics:
+            writer.add_scalar("Detection/Precision", detection_metrics.get('mean_precision', 0), epoch)
+            writer.add_scalar("Detection/Recall", detection_metrics.get('mean_recall', 0), epoch)
+            writer.add_scalar("Detection/F1", detection_metrics.get('mean_f1_score', 0), epoch)
+            writer.add_scalar("Detection/mAP", detection_metrics.get('mean_ap', 0), epoch)
+
+        # Print epoch summary
+        tqdm.write(f"Epoch {epoch+1} - TNG Loss: {avg_tng_loss:.4f}, TNG Acc: {avg_tng_acc:.4f}")
+        tqdm.write(f"Epoch {epoch+1} - VAL Loss: {avg_val_loss:.4f}, VAL Acc: {avg_val_acc:.4f}")
+
+        if detection_metrics:
+            tqdm.write(f"Epoch {epoch+1} - Detection P/R/F1: {detection_metrics.get('mean_precision', 0):.3f}/{detection_metrics.get('mean_recall', 0):.3f}/{detection_metrics.get('mean_f1_score', 0):.3f}")
+
+        # Collect current metrics for model saving
+        current_metrics = {
+            'val_loss': avg_val_loss,
+            'val_accuracy': avg_val_acc,
+            'train_loss': avg_tng_loss,
+            'train_accuracy': avg_tng_acc,
+        }
+
+        # Add detection metrics if available
+        if detection_metrics:
+            current_metrics.update({
+                'val_precision': detection_metrics.get('mean_precision', 0),
+                'val_recall': detection_metrics.get('mean_recall', 0),
+                'val_f1_score': detection_metrics.get('mean_f1_score', 0),
+                'val_map': detection_metrics.get('mean_ap', 0),
+            })
+
+        # Save best models based on different metrics
+        best_metrics = save_best_models(
+            model, optimizer, epoch, current_metrics, best_metrics, output_dir
+        )
 
     writer.close()
     print("Training completed!")

@@ -4,9 +4,13 @@ Training utilities for MOT-based ENROS training.
 This module provides common training functionality shared across MOT training scripts.
 """
 
+import json
 import os
+import shutil
+import subprocess
+from datetime import datetime
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Any, Optional
 
 import numpy as np
 import torch
@@ -48,9 +52,31 @@ class RewardLabelAdapter(Dataset):
             return sample, reward_class, agent_pos
 
 
+def create_timestamped_log_dir(base_output_dir: str, script_name: str) -> str:
+    """
+    Create timestamped log directory for experiment.
+
+    Args:
+        base_output_dir: Base output directory specified by user
+        script_name: Name of the training script (e.g., 'mot_graph')
+
+    Returns:
+        Path to created timestamped log directory
+    """
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    log_dir = Path(base_output_dir) / f"{script_name}_{timestamp}"
+
+    # Create directory structure
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (log_dir / "tensorboard").mkdir(exist_ok=True)
+    (log_dir / "checkpoints").mkdir(exist_ok=True)
+
+    return str(log_dir)
+
+
 def setup_tensorboard(output_dir: str) -> SummaryWriter:
     """
-    Set up TensorBoard logging.
+    Set up TensorBoard logging with timestamped directory.
 
     Args:
         output_dir: Output directory for logs
@@ -58,8 +84,142 @@ def setup_tensorboard(output_dir: str) -> SummaryWriter:
     Returns:
         TensorBoard writer
     """
-    os.makedirs(output_dir, exist_ok=True)
-    return SummaryWriter(output_dir)
+    tb_dir = Path(output_dir) / "tensorboard"
+    tb_dir.mkdir(parents=True, exist_ok=True)
+    return SummaryWriter(str(tb_dir))
+
+
+def save_training_config(output_dir: str, args: Any, config_data: Optional[Dict] = None) -> None:
+    """
+    Save training configuration and parameters to JSON file.
+
+    Args:
+        output_dir: Output directory for experiment
+        args: Parsed command line arguments
+        config_data: Optional additional config data to save
+    """
+    config_path = Path(output_dir) / "training_params.json"
+
+    # Convert args to dictionary
+    if hasattr(args, '__dict__'):
+        params = vars(args)
+    else:
+        params = args
+
+    # Add additional config data if provided
+    if config_data:
+        params['model_config'] = config_data
+
+    # Add timestamp
+    params['timestamp'] = datetime.now().isoformat()
+
+    # Convert Path objects to strings for JSON serialization
+    for key, value in params.items():
+        if isinstance(value, Path):
+            params[key] = str(value)
+
+    with open(config_path, 'w') as f:
+        json.dump(params, f, indent=2, default=str)
+
+
+def copy_config_file(config_path: str, output_dir: str) -> None:
+    """
+    Copy the original config file to the experiment directory.
+
+    Args:
+        config_path: Path to the original config file
+        output_dir: Output directory for experiment
+    """
+    if os.path.exists(config_path):
+        dest_path = Path(output_dir) / "config.yaml"
+        shutil.copy2(config_path, dest_path)
+
+
+def save_experiment_metadata(output_dir: str) -> None:
+    """
+    Save experiment metadata including git commit hash and environment info.
+
+    Args:
+        output_dir: Output directory for experiment
+    """
+    metadata = {
+        'timestamp': datetime.now().isoformat(),
+        'python_version': f"{subprocess.sys.version_info.major}.{subprocess.sys.version_info.minor}.{subprocess.sys.version_info.micro}",
+    }
+
+    # Try to get git information
+    try:
+        # Get current commit hash
+        commit_hash = subprocess.check_output(
+            ['git', 'rev-parse', 'HEAD'],
+            stderr=subprocess.DEVNULL,
+            text=True
+        ).strip()
+        metadata['git_commit'] = commit_hash
+
+        # Get branch name
+        branch = subprocess.check_output(
+            ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+            stderr=subprocess.DEVNULL,
+            text=True
+        ).strip()
+        metadata['git_branch'] = branch
+
+        # Check if there are uncommitted changes
+        try:
+            subprocess.check_output(
+                ['git', 'diff-index', '--quiet', 'HEAD', '--'],
+                stderr=subprocess.DEVNULL
+            )
+            metadata['git_clean'] = True
+        except subprocess.CalledProcessError:
+            metadata['git_clean'] = False
+
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        metadata['git_info'] = 'Git not available or not in git repository'
+
+    # Save PyTorch and CUDA versions
+    metadata['torch_version'] = torch.__version__
+    metadata['cuda_available'] = torch.cuda.is_available()
+    if torch.cuda.is_available():
+        metadata['cuda_version'] = torch.version.cuda
+        metadata['gpu_count'] = torch.cuda.device_count()
+        if torch.cuda.device_count() > 0:
+            metadata['gpu_name'] = torch.cuda.get_device_name(0)
+
+    metadata_path = Path(output_dir) / "experiment_metadata.json"
+    with open(metadata_path, 'w') as f:
+        json.dump(metadata, f, indent=2)
+
+
+def setup_experiment_logging(base_output_dir: str, script_name: str, args: Any, config_path: str = None) -> tuple[str, SummaryWriter]:
+    """
+    Set up complete experiment logging infrastructure.
+
+    Args:
+        base_output_dir: Base output directory specified by user
+        script_name: Name of the training script
+        args: Parsed command line arguments
+        config_path: Optional path to config file
+
+    Returns:
+        Tuple of (log_directory_path, tensorboard_writer)
+    """
+    # Create timestamped log directory
+    log_dir = create_timestamped_log_dir(base_output_dir, script_name)
+
+    # Setup TensorBoard
+    writer = setup_tensorboard(log_dir)
+
+    # Save all experiment metadata
+    save_training_config(log_dir, args)
+    save_experiment_metadata(log_dir)
+
+    if config_path and os.path.exists(config_path):
+        copy_config_file(config_path, log_dir)
+
+    print(f"Experiment log directory: {log_dir}")
+    return log_dir, writer
 
 
 def move_dict_to_device(data_dict: Dict, device: torch.device) -> Dict:
@@ -75,9 +235,10 @@ def save_model_checkpoint(
     val_accuracy: float,
     output_dir: str,
     filename: str = "best_model.pt",
+    additional_metrics: Optional[Dict[str, float]] = None,
 ) -> None:
     """
-    Save model checkpoint.
+    Save model checkpoint with enhanced metadata.
 
     Args:
         model: Model to save
@@ -87,6 +248,7 @@ def save_model_checkpoint(
         val_accuracy: Validation accuracy
         output_dir: Output directory
         filename: Filename for checkpoint
+        additional_metrics: Optional additional metrics to save
     """
     checkpoint = {
         "epoch": epoch,
@@ -94,10 +256,77 @@ def save_model_checkpoint(
         "optimizer_state_dict": optimizer.state_dict(),
         "val_loss": val_loss,
         "val_accuracy": val_accuracy,
+        "timestamp": datetime.now().isoformat(),
     }
 
-    checkpoint_path = os.path.join(output_dir, filename)
+    # Add additional metrics if provided
+    if additional_metrics:
+        checkpoint.update(additional_metrics)
+
+    # Save to checkpoints subdirectory
+    checkpoints_dir = Path(output_dir) / "checkpoints"
+    checkpoints_dir.mkdir(exist_ok=True)
+    checkpoint_path = checkpoints_dir / filename
+
     torch.save(checkpoint, checkpoint_path)
+    print(f"Checkpoint saved: {checkpoint_path}")
+
+
+def save_best_models(
+    model: ENROSPolicy,
+    optimizer,
+    epoch: int,
+    current_metrics: Dict[str, float],
+    best_metrics: Dict[str, float],
+    output_dir: str,
+) -> Dict[str, float]:
+    """
+    Save best models based on different metrics and update best_metrics tracking.
+
+    Args:
+        model: Model to save
+        optimizer: Optimizer state
+        epoch: Current epoch
+        current_metrics: Current epoch metrics
+        best_metrics: Dictionary tracking best metrics so far
+        output_dir: Output directory
+
+    Returns:
+        Updated best_metrics dictionary
+    """
+    updated_best_metrics = best_metrics.copy()
+
+    # Check if we have new best for each metric
+    for metric_name, metric_value in current_metrics.items():
+        best_key = f"best_{metric_name}"
+
+        # For loss metrics, lower is better. For accuracy/mAP metrics, higher is better.
+        is_loss_metric = 'loss' in metric_name.lower()
+        is_better = (metric_value < best_metrics.get(best_key, float('inf')) if is_loss_metric
+                    else metric_value > best_metrics.get(best_key, 0.0))
+
+        if is_better:
+            updated_best_metrics[best_key] = metric_value
+            updated_best_metrics[f"best_{metric_name}_epoch"] = epoch
+
+            # Save checkpoint for this best metric
+            filename = f"best_{metric_name}.pt"
+            save_model_checkpoint(
+                model, optimizer, epoch,
+                current_metrics.get('val_loss', 0.0),
+                current_metrics.get('val_accuracy', 0.0),
+                output_dir, filename, current_metrics
+            )
+
+    # Always save latest checkpoint
+    save_model_checkpoint(
+        model, optimizer, epoch,
+        current_metrics.get('val_loss', 0.0),
+        current_metrics.get('val_accuracy', 0.0),
+        output_dir, "latest.pt", current_metrics
+    )
+
+    return updated_best_metrics
 
 
 def add_bbox(frame, bbox_pred):
