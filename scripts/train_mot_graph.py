@@ -66,6 +66,7 @@ def main(args):
         connect_threshold=args.connect_threshold,
         max_samples=args.max_samples,
         use_props=args.use_props,
+        include_agent_node=args.include_agent_node,
     )
 
     val_dataset = MOTGraphDataset(
@@ -77,6 +78,7 @@ def main(args):
         connect_threshold=args.connect_threshold,
         max_samples=args.max_samples,
         use_props=args.use_props,
+        include_agent_node=args.include_agent_node,
     )
 
     print(f"Train samples: {len(train_dataset)}, Val samples: {len(val_dataset)}")
@@ -403,6 +405,11 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--image-size", nargs=2, type=int, default=[500, 500], help="Image size"
+    )
+    parser.add_argument(
+        "--include-agent-node",
+        action="store_true",
+        help="Include agent as a node in the graph (default: False)"
     )
 
     main(parser.parse_args())
