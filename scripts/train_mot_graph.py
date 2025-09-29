@@ -16,10 +16,10 @@ from entity_rl.training import (
     RewardLabelAdapter,
     create_loss_function,
     create_optimizer,
-    setup_experiment_logging,
-    save_best_models,
     evaluate_detection_batch,
     extract_detection_data_from_mot_sample,
+    save_best_models,
+    setup_experiment_logging,
 )
 
 
@@ -203,8 +203,8 @@ def main(args):
         avg_tng_acc = matches / num_batches
 
         # Log training metrics
-        writer.add_scalar("Loss/Train", avg_tng_loss, epoch)
-        writer.add_scalar("Accuracy/Train", avg_tng_acc, epoch)
+        writer.add_scalar("loss/train", avg_tng_loss, epoch)
+        writer.add_scalar("accuracy/train", avg_tng_acc, epoch)
 
         # Validation
         model.eval()
@@ -250,17 +250,24 @@ def main(args):
                 num_batches += 1
 
                 # Extract detection data for metrics (sample a few batches)
-                if len(pred_boxes_batch) < 5:  # Only process first few batches for efficiency
+                if (
+                    len(pred_boxes_batch) < 5
+                ):  # Only process first few batches for efficiency
                     try:
                         # Get graph data from the original dataset
                         for i in range(min(batch_size, len(val_dataset))):
                             sample_idx = (num_batches - 1) * batch_size + i
                             if sample_idx < len(val_dataset):
-                                graph_data, sample_reward, sample_agent_pos = val_dataset[sample_idx]
+                                graph_data, sample_reward, sample_agent_pos = (
+                                    val_dataset[sample_idx]
+                                )
 
                                 # Extract detection data
                                 boxes, scores = extract_detection_data_from_mot_sample(
-                                    graph_data, sample_reward, sample_agent_pos, tuple(args.image_size)
+                                    graph_data,
+                                    sample_reward,
+                                    sample_agent_pos,
+                                    tuple(args.image_size),
                                 )
 
                                 if len(boxes) > 0:
@@ -281,44 +288,63 @@ def main(args):
         if len(pred_boxes_batch) > 0:
             try:
                 detection_metrics = evaluate_detection_batch(
-                    pred_boxes_batch, pred_scores_batch, gt_boxes_batch, iou_threshold=0.5
+                    pred_boxes_batch,
+                    pred_scores_batch,
+                    gt_boxes_batch,
+                    iou_threshold=0.5,
                 )
             except Exception as e:
                 tqdm.write(f"Warning: Could not calculate detection metrics: {e}")
 
         # Log all metrics
-        writer.add_scalar("Loss/Validation", avg_val_loss, epoch)
-        writer.add_scalar("Accuracy/Validation", avg_val_acc, epoch)
+        writer.add_scalar("loss/validation", avg_val_loss, epoch)
+        writer.add_scalar("accuracy/validation", avg_val_acc, epoch)
 
         if detection_metrics:
-            writer.add_scalar("Detection/Precision", detection_metrics.get('mean_precision', 0), epoch)
-            writer.add_scalar("Detection/Recall", detection_metrics.get('mean_recall', 0), epoch)
-            writer.add_scalar("Detection/F1", detection_metrics.get('mean_f1_score', 0), epoch)
-            writer.add_scalar("Detection/mAP", detection_metrics.get('mean_ap', 0), epoch)
+            writer.add_scalar(
+                "detection/precision", detection_metrics.get("mean_precision", 0), epoch
+            )
+            writer.add_scalar(
+                "detection/recall", detection_metrics.get("mean_recall", 0), epoch
+            )
+            writer.add_scalar(
+                "detection/F1", detection_metrics.get("mean_f1_score", 0), epoch
+            )
+            writer.add_scalar(
+                "detection/mAP", detection_metrics.get("mean_ap", 0), epoch
+            )
 
         # Print epoch summary
-        tqdm.write(f"Epoch {epoch+1} - TNG Loss: {avg_tng_loss:.4f}, TNG Acc: {avg_tng_acc:.4f}")
-        tqdm.write(f"Epoch {epoch+1} - VAL Loss: {avg_val_loss:.4f}, VAL Acc: {avg_val_acc:.4f}")
+        tqdm.write(
+            f"Epoch {epoch+1} - TNG Loss: {avg_tng_loss:.4f}, TNG Acc: {avg_tng_acc:.4f}"
+        )
+        tqdm.write(
+            f"Epoch {epoch+1} - VAL Loss: {avg_val_loss:.4f}, VAL Acc: {avg_val_acc:.4f}"
+        )
 
         if detection_metrics:
-            tqdm.write(f"Epoch {epoch+1} - Detection P/R/F1: {detection_metrics.get('mean_precision', 0):.3f}/{detection_metrics.get('mean_recall', 0):.3f}/{detection_metrics.get('mean_f1_score', 0):.3f}")
+            tqdm.write(
+                f"Epoch {epoch+1} - Detection P/R/F1: {detection_metrics.get('mean_precision', 0):.3f}/{detection_metrics.get('mean_recall', 0):.3f}/{detection_metrics.get('mean_f1_score', 0):.3f}"
+            )
 
         # Collect current metrics for model saving
         current_metrics = {
-            'val_loss': avg_val_loss,
-            'val_accuracy': avg_val_acc,
-            'train_loss': avg_tng_loss,
-            'train_accuracy': avg_tng_acc,
+            "val_loss": avg_val_loss,
+            "val_accuracy": avg_val_acc,
+            "train_loss": avg_tng_loss,
+            "train_accuracy": avg_tng_acc,
         }
 
         # Add detection metrics if available
         if detection_metrics:
-            current_metrics.update({
-                'val_precision': detection_metrics.get('mean_precision', 0),
-                'val_recall': detection_metrics.get('mean_recall', 0),
-                'val_f1_score': detection_metrics.get('mean_f1_score', 0),
-                'val_map': detection_metrics.get('mean_ap', 0),
-            })
+            current_metrics.update(
+                {
+                    "val_precision": detection_metrics.get("mean_precision", 0),
+                    "val_recall": detection_metrics.get("mean_recall", 0),
+                    "val_f1_score": detection_metrics.get("mean_f1_score", 0),
+                    "val_map": detection_metrics.get("mean_ap", 0),
+                }
+            )
 
         # Save best models based on different metrics
         best_metrics = save_best_models(
