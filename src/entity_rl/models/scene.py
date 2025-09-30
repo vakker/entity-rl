@@ -1,10 +1,15 @@
 import sys
 from abc import abstractmethod
+from typing import Optional
 
+import torch
 import torch_geometric.nn as pyg_nn
-from torch import nn
+from torch import Tensor, nn
 from torch_geometric.data import Batch
 from torch_geometric.nn import MLP, GATv2Conv, SAGPooling, TopKPooling, aggr
+from torch_geometric.nn.aggr import Aggregation
+from torch_geometric.nn.inits import reset
+from torch_geometric.utils import softmax
 
 from entity_rl.utils import TicToc
 
@@ -136,7 +141,7 @@ class GATFeatures(BaseModule):
             # TODO: change act to LeakyReLU
             gate_nn = MLP([in_channels, 1])
             feat_nn = MLP([in_channels, in_channels])
-            self._aggr = aggr.AttentionalAggregation(gate_nn, feat_nn)
+            self._aggr = CustomAttentionalAggregation(gate_nn, feat_nn)
 
         elif aggr_layer == "mean":
             self._aggr = aggr.MeanAggregation()
@@ -402,3 +407,36 @@ class SlotAttnDecoder(BaseModule):
 
         features = self._encoder((inputs.x, inputs.edge_index, inputs.batch))
         return features
+
+
+class CustomAttentionalAggregation(aggr.AttentionalAggregation):
+    def __init__(
+        self,
+        gate_nn: torch.nn.Module,
+        nn: Optional[torch.nn.Module] = None,
+    ):
+        super().__init__(gate_nn, nn)
+
+        self.attention_acts = None
+
+    def forward(
+        self,
+        x: Tensor,
+        index: Optional[Tensor] = None,
+        ptr: Optional[Tensor] = None,
+        dim_size: Optional[int] = None,
+        dim: int = -2,
+    ) -> Tensor:
+        if self.gate_mlp is not None:
+            gate = self.gate_mlp(x, batch=index, batch_size=dim_size)
+        else:
+            gate = self.gate_nn(x)
+
+        if self.mlp is not None:
+            x = self.mlp(x, batch=index, batch_size=dim_size)
+        elif self.nn is not None:
+            x = self.nn(x)
+
+        gate = softmax(gate, index, ptr, dim_size, dim)
+        self.attention_acts = gate.detach().cpu()
+        return self.reduce(gate * x, index, ptr, dim_size, dim)
