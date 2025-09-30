@@ -21,6 +21,7 @@ from entity_rl.training import (
     save_best_models,
     setup_experiment_logging,
 )
+from entity_rl.utils import TicToc
 
 
 class GNNDatasetAdapter(RewardLabelAdapter):
@@ -143,12 +144,21 @@ def main(args):
     global_step = 0
     best_metrics = {}
 
+    # Initialize timer (enabled/disabled based on --benchmark flag)
+    timer = TicToc(enabled=args.benchmark)
+
     for epoch in trange(args.epochs, desc="Training epochs", disable=args.no_bar):
+        timer.reset()
+
         # Training
+        timer.tic("tng")
         model.train()
+        timer.toc("tng")
         tng_loss = 0
         num_batches = 0
         matches = 0
+
+        timer.tic("data_loading")
 
         for batch_data in tqdm(
             train_loader,
@@ -160,6 +170,11 @@ def main(args):
                 len(batch_data) == 3
             ), f"Expected 3 elements in batch_data, got {len(batch_data)}"
             obs_batch, reward_batch, agent_pos = batch_data
+
+            timer.toc("data_loading")
+
+            timer.tic("data_to_gpu")
+
             agent_pos = agent_pos.to(device)
 
             # Move to device
@@ -171,10 +186,16 @@ def main(args):
             # )
             reward_batch = reward_batch.to(device)
 
+            timer.toc("data_to_gpu")
+            timer.tic("forward_pass")
+
             # Forward pass
             model_input = {"obs": obs_batch, "agent_pos": agent_pos}
             _ = model(model_input)
             reward_pred = model.value_function()
+
+            timer.toc("forward_pass")
+            timer.tic("loss_compute")
 
             # Get matches
             preds = torch.zeros_like(reward_batch)
@@ -185,13 +206,22 @@ def main(args):
 
             # Backward pass
             loss = loss_fn(reward_pred, reward_batch)
+
+            timer.toc("loss_compute")
+            timer.tic("backward_pass")
+
             loss.backward()
+
+            timer.toc("backward_pass")
+            timer.tic("optimizer_step")
 
             if args.grad_clip > 0:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
 
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
+
+            timer.toc("optimizer_step")
 
             # Logging
             tng_loss += loss.item()
@@ -201,12 +231,21 @@ def main(args):
             # if global_step % args.log_interval == 0:
             #     writer.add_scalar("train_loss", loss.item(), global_step)
 
+            # For the next data loading
+            timer.tic("data_loading")
+
         avg_tng_loss = tng_loss / num_batches
         avg_tng_acc = matches / num_batches
 
         # Log training metrics
         writer.add_scalar("loss/train", avg_tng_loss, epoch)
         writer.add_scalar("accuracy/train", avg_tng_acc, epoch)
+
+        # Print timing statistics for training
+        timer.print_stats(title=f"Epoch {epoch+1} Training Timing")
+
+        if not epoch % args.val_int == 0:
+            continue
 
         # Validation
         model.eval()
@@ -219,6 +258,8 @@ def main(args):
         pred_scores_batch = []
         gt_boxes_batch = []
 
+        timer.reset()
+
         with torch.no_grad():
             for batch_data in tqdm(
                 val_loader,
@@ -226,19 +267,31 @@ def main(args):
                 leave=False,
                 disable=args.no_bar,
             ):
+                timer.tic("val_data_loading")
+
                 assert (
                     len(batch_data) == 3
                 ), f"Expected 3 elements in batch_data, got {len(batch_data)}"
                 obs_batch, reward_batch, agent_pos = batch_data
+
+                timer.toc("val_data_loading")
+                timer.tic("val_data_to_gpu")
+
                 agent_pos = agent_pos.to(device)
 
                 obs_batch = {k: v.to(device) for k, v in obs_batch.items()}
                 reward_batch = reward_batch.to(device)
 
+                timer.toc("val_data_to_gpu")
+                timer.tic("val_forward_pass")
+
                 # Forward pass
                 model_input = {"obs": obs_batch, "agent_pos": agent_pos}
                 _ = model(model_input)
                 reward_pred = model.value_function()
+
+                timer.toc("val_forward_pass")
+                timer.tic("val_metrics")
 
                 # Classification metrics
                 preds = torch.zeros_like(reward_batch)
@@ -250,6 +303,8 @@ def main(args):
                 val_loss += loss.item()
                 matches += match
                 num_batches += 1
+
+                timer.toc("val_metrics")
 
                 # Extract detection data for metrics (sample a few batches)
                 if (
@@ -301,6 +356,9 @@ def main(args):
         # Log all metrics
         writer.add_scalar("loss/validation", avg_val_loss, epoch)
         writer.add_scalar("accuracy/validation", avg_val_acc, epoch)
+
+        # Print timing statistics for validation
+        timer.print_stats(title=f"Epoch {epoch+1} Validation Timing")
 
         if detection_metrics:
             writer.add_scalar(
@@ -396,6 +454,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--max-entities", type=int, default=100, help="Max entities per sample"
     )
+
+    parser.add_argument("--val-int", type=int, default=10, help="Validation interval")
     parser.add_argument("--num-workers", type=int, default=10)
     parser.add_argument(
         "--connect-threshold",
@@ -409,7 +469,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--include-agent-node",
         action="store_true",
-        help="Include agent as a node in the graph (default: False)"
+        help="Include agent as a node in the graph (default: False)",
+    )
+    parser.add_argument(
+        "--benchmark",
+        action="store_true",
+        help="Enable detailed timing benchmarks for each training component",
     )
 
     main(parser.parse_args())
