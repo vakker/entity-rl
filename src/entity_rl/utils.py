@@ -327,40 +327,204 @@ def get_search_alg_sched(conf_yaml, args, is_grid_search):
 
 
 class TicToc:
+    """Timer class for benchmarking different operations.
+
+    Supports two modes:
+    1. Simple lap timing: tic(), then repeated toc(message) calls
+    2. Named timers: tic(name), toc(name) pairs for different operations
+
+    Usage (simple):
+        timer = TicToc()
+        # ... some work ...
+        timer.toc("loaded data")
+        # ... more work ...
+        timer.toc("processed data")
+
+    Usage (named timers):
+        timer = TicToc()
+        timer.tic("data_loading")
+        # ... data loading ...
+        timer.toc("data_loading")
+
+        timer.tic("forward_pass")
+        # ... forward pass ...
+        timer.toc("forward_pass")
+
+        # Print statistics
+        timer.print_stats()
+
+    When enabled=False, all timing operations are disabled (no-ops).
+    """
+
     def __init__(self, enabled=True):
         self.start = 0
         self.lap = 0
         self.counter = 0
         self.enabled = enabled
 
+        # For named timer support
+        from collections import defaultdict
+
+        self._start_times = {}
+        self._durations = defaultdict(list)
+        self._counts = defaultdict(int)
+
         self.tic()
 
-    def tic(self):
-        self.start = time.time()
-        self.lap = self.start
-        self.counter = 0
+    def tic(self, name=None):
+        """Start timing.
 
-    def toc(self, message=""):
+        Args:
+            name: Optional name for the timer. If provided, enables named timer mode.
+        """
+        if name is None:
+            # Simple mode: reset lap timer
+            self.start = time.time()
+            self.lap = self.start
+            self.counter = 0
+        else:
+            # Named timer mode
+            if not self.enabled:
+                return
+            self._start_times[name] = time.perf_counter()
+
+    def toc(self, name_or_message=""):
+        """Stop timing and optionally print/record result.
+
+        Args:
+            name_or_message: If a named timer was started, this should be the timer name.
+                           Otherwise, it's treated as a message to print with lap time.
+
+        Returns:
+            Duration in seconds (for named timers) or None (for simple mode)
+        """
         if not self.enabled:
-            return
+            return 0.0 if name_or_message in self._start_times else None
 
+        # Check if this is a named timer
+        if name_or_message in self._start_times:
+            duration = time.perf_counter() - self._start_times[name_or_message]
+            self._durations[name_or_message].append(duration)
+            self._counts[name_or_message] += 1
+            del self._start_times[name_or_message]
+            return duration
+
+        # Simple mode: print lap time
         now = time.time()
         elapsed_1 = now - self.start
         elapsed_2 = now - self.lap
         m = f"{self.counter}\tCum: {elapsed_1:.6f}\tLap: {elapsed_2:.6f}"
-        if message:
-            m += f", {message}"
-        # logging.debug(m)
+        if name_or_message:
+            m += f", {name_or_message}"
         print(m)
         self.lap = now
         self.counter += 1
+        return None
 
     def cum(self):
+        """Print cumulative time since start."""
         now = time.time()
         elapsed = now - self.start
         m = f"Cum: {elapsed:.6f}\t"
         print(m)
-        # logging.debug(m)
+
+    def get_stats(self, name):
+        """Get statistics for a named timer.
+
+        Args:
+            name: Name of the timer
+
+        Returns:
+            Dictionary with statistics (total, mean, min, max, count) or None if no data
+        """
+        if name not in self._durations or not self._durations[name]:
+            return None
+
+        durations = self._durations[name]
+        return {
+            "total": sum(durations),
+            "mean": sum(durations) / len(durations),
+            "min": min(durations),
+            "max": max(durations),
+            "count": len(durations),
+        }
+
+    def get_all_stats(self):
+        """Get statistics for all named timers.
+
+        Returns:
+            Dictionary mapping timer names to their statistics
+        """
+        return {
+            name: self.get_stats(name)
+            for name in self._durations
+            if self._durations[name]
+        }
+
+    def print_stats(self, title="Timing Statistics", scale="ms"):
+        """Print statistics for all named timers.
+
+        Args:
+            title: Title to print before statistics
+            scale: Time scale to use ('s', 'ms', or 'us')
+        """
+        if not self.enabled:
+            return
+
+        if scale == "ms":
+            scale_factor = 1000
+            scale_label = "ms"
+        elif scale == "us":
+            scale_factor = 1_000_000
+            scale_label = "μs"
+        else:
+            scale_factor = 1
+            scale_label = "s"
+
+        stats = self.get_all_stats()
+
+        if not stats:
+            return
+
+        print(f"\n{'='*70}")
+        print(f"{title} - {scale_label}")
+        print(f"{'='*70}")
+
+        # Calculate max name length for formatting
+        max_name_len = max(len(name) for name in stats.keys())
+
+        # Print header
+        header = f"{'Operation':<{max_name_len}}  {'Count':>8}  {'Total':>10}  {'Mean':>10}  {'Min':>10}  {'Max':>10}"
+        print(header)
+        print("-" * len(header))
+
+        # Print each timer's stats
+        for name in sorted(stats.keys()):
+            s = stats[name]
+            print(
+                f"{name:<{max_name_len}}  "
+                f"{s['count']:>8d}  "
+                f"{s['total']*scale_factor:>10.2f}  "
+                f"{s['mean']*scale_factor:>10.2f}  "
+                f"{s['min']*scale_factor:>10.2f}  "
+                f"{s['max']*scale_factor:>10.2f}"
+            )
+
+        # Calculate total time
+        total_time = sum(s["total"] for s in stats.values())
+        print("-" * len(header))
+        print(
+            f"{'Total':<{max_name_len}}  {' ':>8}  {total_time*scale_factor:>10.2f}  {scale_label}"
+        )
+        print(f"{'='*70}\n")
+
+    def reset(self):
+        """Reset all named timers and statistics."""
+        if not self.enabled:
+            return
+        self._start_times.clear()
+        self._durations.clear()
+        self._counts.clear()
 
 
 def timing_wrapper(method):
