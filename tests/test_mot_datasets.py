@@ -206,7 +206,9 @@ def test_graph_dataset(args):
         image_size=tuple(args.image_size),
         max_entities=args.max_entities,
         connect_threshold=args.connect_threshold,
-        use_gt=not args.use_detections,
+        # max_samples=args.max_samples,
+        use_props=args.use_props,
+        include_agent_node=args.include_agent_node,
     )
 
     print(f"Dataset length: {len(dataset)}")
@@ -302,6 +304,16 @@ def main():
         type=float,
         default=50.0,
         help="Distance threshold for edges (graph only)",
+    )
+    parser.add_argument(
+        "--use-props",
+        action="store_true",
+        help="Use proposals for graph creation (always uses GT for rewards)",
+    )
+    parser.add_argument(
+        "--include-agent-node",
+        action="store_true",
+        help="Include agent as a node in the graph (default: False)"
     )
 
     args = parser.parse_args()
