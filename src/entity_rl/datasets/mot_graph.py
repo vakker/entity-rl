@@ -81,7 +81,9 @@ class MOTGraphDataset(MOTBaseDataset):
             max_samples=max_samples,
         )
 
-    def select_random_frame_with_props(self) -> Tuple[str, int, List[Tuple], List[Tuple]]:
+    def select_random_frame_with_props(
+        self,
+    ) -> Tuple[str, int, List[Tuple], List[Tuple]]:
         """
         Select a random frame and return both proposals and GT bboxes.
 
@@ -89,7 +91,9 @@ class MOTGraphDataset(MOTBaseDataset):
             Tuple of (data_dir, frame_id, props_bboxes, gt_bboxes)
         """
         if not self.use_props:
-            raise ValueError("select_random_frame_with_props only available when use_props=True")
+            raise ValueError(
+                "select_random_frame_with_props only available when use_props=True"
+            )
 
         # Select from props data (which is the main data when use_props=True)
         data_dir = random.choice(list(self.props_data.keys()))
@@ -114,71 +118,46 @@ class MOTGraphDataset(MOTBaseDataset):
         Returns:
             Tuple of (graph_data, reward, agent_pos)
         """
+        # Use proposals for graph creation, GT for reward calculation
+        data_dir, frame_id, props_bboxes, gt_bboxes = (
+            self.select_random_frame_with_props()
+        )
+
+        # Limit number of entities for graph (proposals)
+        if len(props_bboxes) > self.max_entities:
+            props_bboxes = random.sample(props_bboxes, self.max_entities)
+
+        # Get original dimensions and scale both proposal and GT bboxes
+        orig_w, orig_h = self.data_loader.get_image_dimensions(data_dir, frame_id)
+
         if self.use_props:
-            # Use proposals for graph creation, GT for reward calculation
-            data_dir, frame_id, props_bboxes, gt_bboxes = self.select_random_frame_with_props()
-
-            # Limit number of entities for graph (proposals)
-            if len(props_bboxes) > self.max_entities:
-                props_bboxes = random.sample(props_bboxes, self.max_entities)
-
-            # Get original dimensions and scale both proposal and GT bboxes
-            orig_w, orig_h = self.data_loader.get_image_dimensions(data_dir, frame_id)
-            scaled_props_bboxes = scale_bboxes(props_bboxes, (orig_w, orig_h))
             scaled_gt_bboxes = scale_bboxes(gt_bboxes, (orig_w, orig_h))
+            scaled_props_bboxes = scale_bboxes(props_bboxes, (orig_w, orig_h))
 
-            # Generate synthetic agent position first
-            agent_x, agent_y = self.generate_agent_position()
-
-            # Create node features using proposals (what the model sees)
-            node_features = self._create_relative_node_features(
-                scaled_props_bboxes,
-                agent_x,
-                agent_y,
-                self.agent_radius,
-                self.include_agent_node,
-            )
-
-            # Create edges based on proposal nodes
-            edge_index = create_edges(
-                node_features,
-                self.connect_threshold,
-            )
-
-            # Compute reward based on GT collision (correct supervision)
-            reward = self._compute_reward(scaled_gt_bboxes, agent_x, agent_y)
         else:
-            # Standard mode: use same data for both graph and reward
-            data_dir, frame_id, original_bboxes = self.select_random_frame()
+            scaled_gt_bboxes = scale_bboxes(gt_bboxes, (orig_w, orig_h))
+            scaled_props_bboxes = scaled_gt_bboxes
 
-            # Limit number of entities
-            if len(original_bboxes) > self.max_entities:
-                original_bboxes = random.sample(original_bboxes, self.max_entities)
+        # Generate synthetic agent position first
+        agent_x, agent_y = self.generate_agent_position()
 
-            # Get original dimensions and scale bboxes
-            orig_w, orig_h = self.data_loader.get_image_dimensions(data_dir, frame_id)
-            scaled_bboxes = scale_bboxes(original_bboxes, (orig_w, orig_h))
+        # Create node features relative to agent position (like SPG environment)
+        node_features = self._create_relative_node_features(
+            scaled_props_bboxes,
+            agent_x,
+            agent_y,
+            self.agent_radius,
+            self.include_agent_node,
+        )
 
-            # Generate synthetic agent position first
-            agent_x, agent_y = self.generate_agent_position()
+        # Create edges
+        edge_index = create_edges(
+            node_features,
+            self.connect_threshold,
+        )
 
-            # Create node features relative to agent position (like SPG environment)
-            node_features = self._create_relative_node_features(
-                scaled_bboxes,
-                agent_x,
-                agent_y,
-                self.agent_radius,
-                self.include_agent_node,
-            )
-
-            # Create edges
-            edge_index = create_edges(
-                node_features,
-                self.connect_threshold,
-            )
-
-            # Compute reward based on agent collision with bounding boxes
-            reward = self._compute_reward(scaled_bboxes, agent_x, agent_y)
+        # Compute reward based on agent collision with bounding boxes
+        reward = self._compute_reward(scaled_gt_bboxes, agent_x, agent_y)
 
         # Create PyTorch Geometric Data object
         graph_data = self._create_graph_data(node_features, edge_index)
