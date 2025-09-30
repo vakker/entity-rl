@@ -1,9 +1,11 @@
+import configparser
 import csv
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
+from PIL import Image
 
 
 class MOTDataLoader:
@@ -19,6 +21,74 @@ class MOTDataLoader:
         """
         self.mot_data_dirs = mot_data_dirs
         self.use_gt = use_gt
+
+        # Cache for image dimensions (per directory)
+        self._dimension_cache: Dict[str, Tuple[int, int]] = {}
+        self._load_all_metadata()
+
+    def _load_all_metadata(self) -> None:
+        """Load metadata (image dimensions) for all MOT directories."""
+        for data_dir in self.mot_data_dirs:
+            dimensions = self._load_sequence_metadata(data_dir)
+            if dimensions:
+                self._dimension_cache[str(data_dir)] = dimensions
+
+    def _load_sequence_metadata(self, data_dir: str) -> Optional[Tuple[int, int]]:
+        """
+        Load sequence metadata from seqinfo.ini file.
+
+        Args:
+            data_dir: MOT data directory
+
+        Returns:
+            Tuple of (width, height) or None if metadata unavailable
+        """
+        data_path = Path(data_dir)
+        seqinfo_path = data_path / "seqinfo.ini"
+
+        if seqinfo_path.exists():
+            try:
+                config = configparser.ConfigParser()
+                config.read(seqinfo_path)
+
+                if "Sequence" in config:
+                    width = config.getint("Sequence", "imWidth")
+                    height = config.getint("Sequence", "imHeight")
+                    return (width, height)
+            except Exception as e:
+                print(f"Warning: Could not parse seqinfo.ini in {data_dir}: {e}")
+
+        # Fallback: try to get dimensions from first image
+        img_dir = data_path / "img1"
+        if img_dir.exists():
+            # Find first image file
+            for img_file in sorted(img_dir.glob("*.jpg")):
+                dimensions = self._get_image_dimensions_from_header(img_file)
+                if dimensions:
+                    return dimensions
+                break  # Only try first image
+
+        return None
+
+    def _get_image_dimensions_from_header(
+        self, img_path: Path
+    ) -> Optional[Tuple[int, int]]:
+        """
+        Get image dimensions by reading only the header (fast).
+
+        Args:
+            img_path: Path to image file
+
+        Returns:
+            Tuple of (width, height) or None if failed
+        """
+        try:
+            with Image.open(img_path) as img:
+                width, height = img.size
+                return (width, height)
+        except Exception as e:
+            print(f"Warning: Could not read image header from {img_path}: {e}")
+            return None
 
     def load_mot_data(
         self, max_rows: Optional[int] = None
@@ -134,20 +204,37 @@ class MOTDataLoader:
         """
         Get original image dimensions for a specific frame.
 
+        Uses cached metadata from seqinfo.ini or first image header for speed.
+        Only falls back to loading full image if cache miss occurs.
+
         Args:
             data_dir: MOT data directory
-            frame_id: Frame ID
+            frame_id: Frame ID (unused if metadata cached)
 
         Returns:
             Tuple of (width, height)
         """
+        # Try to use cached dimensions first
+        data_dir_str = str(data_dir)
+        if data_dir_str in self._dimension_cache:
+            return self._dimension_cache[data_dir_str]
+
+        # Cache miss - try to load metadata now
+        dimensions = self._load_sequence_metadata(data_dir_str)
+        if dimensions:
+            self._dimension_cache[data_dir_str] = dimensions
+            return dimensions
+
+        # Last resort: load full image (slow, old behavior)
         img_path = Path(data_dir) / "img1" / f"{frame_id:06d}.jpg"
         img = cv2.imread(str(img_path))
 
         if img is None:
-            return 640, 480  # Fallback dimensions
+            raise Exception(f"Failed to load image {img_path}")
 
         h, w = img.shape[:2]
+        # Cache for future use
+        self._dimension_cache[data_dir_str] = (w, h)
         return w, h
 
 
