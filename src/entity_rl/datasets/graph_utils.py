@@ -60,10 +60,11 @@ def create_edges(
     """
     Create edge connectivity based on spatial proximity.
 
+    Uses vectorized distance computation for efficiency.
+
     Args:
         node_features: Node features tensor (num_nodes, feature_dim)
         connect_threshold: Distance threshold for connecting nodes
-        image_size: Image size for normalizing threshold
 
     Returns:
         Edge index tensor of shape (2, num_edges)
@@ -74,19 +75,23 @@ def create_edges(
     # Extract center coordinates (first 2 features)
     centers = node_features[:, :2]  # Shape: (num_nodes, 2)
     num_nodes = centers.shape[0]
-    edge_indices = []
 
-    # NOTE: this is slow AF
-    for i in range(num_nodes):
-        for j in range(i + 1, num_nodes):
-            dist = torch.norm(centers[i] - centers[j])
-            if dist < connect_threshold:
-                edge_indices.extend([[i, j], [j, i]])  # Undirected edges
+    # Vectorized distance computation - much faster than nested loops
+    # Compute pairwise distances using broadcasting
+    diff = centers.unsqueeze(1) - centers.unsqueeze(0)  # Shape: (N, N, 2)
+    distances = torch.norm(diff, dim=2)  # Shape: (N, N)
 
-    if not edge_indices:
+    # Create adjacency mask (distances < threshold)
+    adj_mask = distances < connect_threshold
+
+    # Get indices where mask is True, excluding self-loops
+    edge_indices = torch.nonzero(adj_mask & (distances > 0), as_tuple=False)
+
+    if edge_indices.shape[0] == 0:
         return torch.zeros((2, 0), dtype=torch.long)
 
-    return torch.tensor(edge_indices).t().contiguous()
+    # Transpose to get shape (2, num_edges)
+    return edge_indices.t().contiguous()
 
 
 def collate_graph_batch(batch):
