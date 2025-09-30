@@ -53,23 +53,42 @@ class MOTGraphDataset(MOTBaseDataset):
         self.use_props = use_props
 
         # Always load GT data for reward calculation
-        self.gt_data_loader = MOTDataLoader(mot_data_dirs, use_gt=True)
-        self.gt_data = self.gt_data_loader.load_mot_data(max_rows=max_samples)
+        self.gt_data_loader = MOTDataLoader(
+            mot_data_dirs, use_gt=True, max_samples=max_samples
+        )
+        # FIXME: for compatibility
+        self.gt_data = self.gt_data_loader.mot_data()
 
         # Initialize graph data loader based on use_props setting
         if use_props:
             # Use proposals for graph creation
-            self.props_data_loader = MOTDataLoader(mot_data_dirs, use_gt=False)
-            self.props_data = self.props_data_loader.load_mot_data(max_rows=max_samples)
-            # Use props_data as main data for frame selection
-            self.mot_data = self.props_data
-            self.data_loader = self.props_data_loader
+            self.props_data_loader = MOTDataLoader(
+                mot_data_dirs, use_gt=False, max_samples=max_samples
+            )
+            # FIXME: for compatibility
+            self.props_data = self.props_data_loader.mot_data()
+
+            entities = self.gt_data_loader.get_entities()
+            print("#### GT")
+            print(
+                f"Max detections: {max(entities)}, Min detections: {min(entities)}, Avg detections: {sum(entities) / len(entities)}"
+            )
+            entities = self.props_data_loader.get_entities()
+            print("#### Props")
+            print(
+                f"Max detections: {max(entities)}, Min detections: {min(entities)}, Avg detections: {sum(entities) / len(entities)}"
+            )
         else:
             # Use GT for both graph and reward (standard mode)
             self.props_data_loader = None
             self.props_data = None
-            self.mot_data = self.gt_data
-            self.data_loader = self.gt_data_loader
+
+            entities = self.gt_data_loader.get_entities()
+            print("#### GT")
+            print(
+                f"Max detections: {max(entities)}, Min detections: {min(entities)}, Avg detections: {sum(entities) / len(entities)}"
+            )
+            print("#### Props - none")
 
         # Initialize base class with simplified parameters
         super().__init__(
@@ -118,18 +137,32 @@ class MOTGraphDataset(MOTBaseDataset):
         Returns:
             Tuple of (graph_data, reward, agent_pos)
         """
-        # Use proposals for graph creation, GT for reward calculation
-        data_dir, frame_id, props_bboxes, gt_bboxes = (
-            self.select_random_frame_with_props()
-        )
+        # Select frame based on use_props setting
+        if self.use_props:
+            # Use proposals for graph creation, GT for reward calculation
+            self._timer.tic("select_random_frame_with_props")
+            data_dir, frame_id, props_bboxes, gt_bboxes = (
+                self.select_random_frame_with_props()
+            )
+            self._timer.toc("select_random_frame_with_props")
+        else:
+            # Use GT for both graph and reward
+            self._timer.tic("select_random_frame")
+            data_dir, frame_id, bboxes = self.select_random_frame()
+            props_bboxes = bboxes
+            gt_bboxes = bboxes
+            self._timer.toc("select_random_frame")
 
         # Limit number of entities for graph (proposals)
         if len(props_bboxes) > self.max_entities:
             props_bboxes = random.sample(props_bboxes, self.max_entities)
 
         # Get original dimensions and scale both proposal and GT bboxes
-        orig_w, orig_h = self.data_loader.get_image_dimensions(data_dir, frame_id)
+        self._timer.tic("get_image_dimensions")
+        orig_w, orig_h = self.gt_data_loader.get_image_dimensions(data_dir, frame_id)
+        self._timer.toc("get_image_dimensions")
 
+        self._timer.tic("scale_bboxes")
         if self.use_props:
             scaled_gt_bboxes = scale_bboxes(gt_bboxes, (orig_w, orig_h))
             scaled_props_bboxes = scale_bboxes(props_bboxes, (orig_w, orig_h))
@@ -138,10 +171,15 @@ class MOTGraphDataset(MOTBaseDataset):
             scaled_gt_bboxes = scale_bboxes(gt_bboxes, (orig_w, orig_h))
             scaled_props_bboxes = scaled_gt_bboxes
 
+        self._timer.toc("scale_bboxes")
+
         # Generate synthetic agent position first
+        self._timer.tic("generate_agent_position")
         agent_x, agent_y = self.generate_agent_position()
+        self._timer.toc("generate_agent_position")
 
         # Create node features relative to agent position (like SPG environment)
+        self._timer.tic("create_relative_node_features")
         node_features = self._create_relative_node_features(
             scaled_props_bboxes,
             agent_x,
@@ -149,24 +187,33 @@ class MOTGraphDataset(MOTBaseDataset):
             self.agent_radius,
             self.include_agent_node,
         )
+        self._timer.toc("create_relative_node_features")
 
         # Create edges
+        self._timer.tic("create_edges")
         edge_index = create_edges(
             node_features,
             self.connect_threshold,
         )
+        self._timer.toc("create_edges")
 
         # Compute reward based on agent collision with bounding boxes
+        self._timer.tic("compute_reward")
         reward = self._compute_reward(scaled_gt_bboxes, agent_x, agent_y)
+        self._timer.toc("compute_reward")
 
         # Create PyTorch Geometric Data object
+        self._timer.tic("create_graph_data")
         graph_data = self._create_graph_data(node_features, edge_index)
+        self._timer.toc("create_graph_data")
 
         # Create agent_pos tensor matching MOTVisDataset format
+        self._timer.tic("create_agent_pos")
         agent_pos = torch.tensor(
             [agent_x, agent_y, self.agent_radius, self.agent_radius],
             dtype=torch.float32,
         )
+        self._timer.toc("create_agent_pos")
 
         # print(graph_data.x, reward)
         return graph_data, reward, agent_pos

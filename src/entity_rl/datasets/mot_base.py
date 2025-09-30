@@ -1,8 +1,11 @@
 import random
+import time
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Tuple
 
 from torch.utils.data import Dataset
+
+from entity_rl.utils import TicToc
 
 from .mot_data import MOTDataLoader, check_rectangle_overlap
 
@@ -37,31 +40,15 @@ class MOTBaseDataset(Dataset, ABC):
         self.mot_data_dirs = mot_data_dirs
         self.agent_radius = agent_radius
         self.image_size = image_size
-        self.use_gt = use_gt
 
-        # Load MOT data
-        self.data_loader = MOTDataLoader(mot_data_dirs, use_gt)
-        self.mot_data = self.data_loader.load_mot_data(max_rows=max_samples)
-
-        if not self.mot_data:
-            raise ValueError("No valid MOT data found in the provided directories")
-
-        total_frames = sum(len(frames) for frames in self.mot_data.values())
-        entities = []
-        for frames in self.mot_data.values():
-            for frame in frames.values():
-                entities.append(len(frame))
-
+        total_frames = self.gt_data_loader.get_total_frames()
         self.num_samples_per_epoch = min(total_frames, num_samples_per_epoch)
 
-        print(f"Loaded MOT data from {len(self.mot_data_dirs)} directories")
         print(f"Total frames available: {total_frames}")
 
-        print(
-            f"Max detections: {max(entities)}, Min detections: {min(entities)}, Avg detections: {sum(entities) / len(entities)}"
-        )
         # Validate parameters
         self._validate_parameters()
+        self._timer = TicToc()
 
     def _validate_parameters(self) -> None:
         """Validate initialization parameters."""
@@ -146,9 +133,9 @@ class MOTBaseDataset(Dataset, ABC):
         Returns:
             Generated sample
         """
-        # start_time = time.time()
+        self._timer.tic("generate_sample")
         sample = self._generate_sample()
-        # print(f"Generated sample in {time.time() - start_time:.2f} seconds")
+        self._timer.toc("generate_sample")
         return sample
 
     @property

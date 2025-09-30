@@ -11,7 +11,12 @@ from PIL import Image
 class MOTDataLoader:
     """Base class for loading MOT (Multiple Object Tracking) data."""
 
-    def __init__(self, mot_data_dirs: List[str], use_gt: bool = True):
+    def __init__(
+        self,
+        mot_data_dirs: List[str],
+        use_gt: bool = True,
+        max_samples: Optional[int] = None,
+    ):
         """
         Initialize MOT data loader.
 
@@ -20,11 +25,33 @@ class MOTDataLoader:
             use_gt: Whether to use ground truth (gt.txt) or detections (det.txt)
         """
         self.mot_data_dirs = mot_data_dirs
+        print(f"Loaded MOT data from {len(self.mot_data_dirs)} directories")
         self.use_gt = use_gt
 
         # Cache for image dimensions (per directory)
         self._dimension_cache: Dict[str, Tuple[int, int]] = {}
         self._load_all_metadata()
+
+        self._mot_data = self.load_mot_data(max_rows=max_samples)
+
+    def mot_data(self):
+        return self._mot_data
+
+    def get_total_frames(self):
+        all_frames = []
+        for frames in self._mot_data.values():
+            for frame in frames.values():
+                all_frames.append(len(frame))
+
+        return sum(all_frames)
+
+    def get_entities(self):
+        entities = []
+        for frames in self._mot_data.values():
+            for frame in frames.values():
+                entities.append(len(frame))
+
+        return entities
 
     def _load_all_metadata(self) -> None:
         """Load metadata (image dimensions) for all MOT directories."""
@@ -151,7 +178,7 @@ class MOTDataLoader:
                 reader = csv.reader(f)
                 for i, row in enumerate(reader):
                     # Skip header
-                    if i == 0 and ann_file.suffix == '.csv':
+                    if i == 0 and ann_file.suffix == ".csv":
                         continue
 
                     if len(row) < 6:
