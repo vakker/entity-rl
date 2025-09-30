@@ -4,6 +4,8 @@ from ray.rllib.models.torch.torch_modelv2 import TorchModelV2
 from ray.rllib.utils.annotations import override
 from torch import nn
 
+from entity_rl.utils import TicToc
+
 from . import combined, entity, scene
 from .base import BaseModule, get_num_params
 
@@ -44,8 +46,13 @@ class Encoder(BaseModule):
         return base_channels + (4 if self.include_agent_pos else 0)
 
     def forward(self, inputs, agent_pos=None):
+        timer = TicToc(enabled=False)
         for stage in self._stages:
+            timer.tic(f"stage {stage.__class__.__name__}")
             inputs = stage(inputs)
+            timer.toc(f"stage {stage.__class__.__name__}")
+
+        timer.print_stats(title="ENROS encoder")
 
         if self.include_agent_pos:
             if agent_pos is None:
@@ -154,16 +161,61 @@ class ENROSPolicy(TorchModelV2, BaseModule):
 
         self._features = None
 
+    # @override(TorchModelV2)
+    # def forward(self, input_dict, state, seq_lens):
+    #     timer = TicToc()
+    #     with torch.autocast(device_type="cuda", enabled=self.use_amp):
+    #         agent_pos = input_dict.get("agent_pos", None)
+    #
+    #         timer.tic("encoder")
+    #         self._features = self._encoder(input_dict["obs"], agent_pos=agent_pos)
+    #         timer.toc("encoder")
+    #         timer.tic("policy")
+    #         logits = self._policy(self._features)
+    #         timer.toc("policy")
+    #
+    #         # NOTE: this is a trick to avoid issues with the action distribution
+    #         timer.toc("tanh")
+    #         logits = torch.tanh(logits) * 10
+    #         timer.toc("tanh")
+    #
+    #     timer.print_stats(title="ENROS forward")
+    #     return logits, state
+
     @override(TorchModelV2)
     def forward(self, input_dict, state, seq_lens):
-        with torch.autocast(device_type="cuda", enabled=self.use_amp):
-            agent_pos = input_dict.get("agent_pos", None)
-            self._features = self._encoder(input_dict["obs"], agent_pos=agent_pos)
-            logits = self._policy(self._features)
+        timer = TicToc(enabled=False)
+        agent_pos = input_dict.get("agent_pos", None)
 
-            # NOTE: this is a trick to avoid issues with the action distribution
-            logits = torch.tanh(logits) * 10
+        timer.tic("encoder")
+        self._features = self._encoder(input_dict["obs"], agent_pos=agent_pos)
+        timer.toc("encoder")
+        timer.tic("policy")
+        logits = self._policy(self._features)
+        timer.toc("policy")
+
+        # NOTE: this is a trick to avoid issues with the action distribution
+        timer.tic("tanh")
+        logits = torch.tanh(logits) * 10
+        timer.toc("tanh")
+
+        timer.print_stats(title="ENROS forward")
         return logits, state
+
+    # @override(TorchModelV2)
+    # def value_function(self):
+    #     assert self._features is not None, "must call forward() first"
+    #
+    #     # squeeze(1) is needed because the value function is expected to be just
+    #     # a single number per batch element, and not B x 1
+    #
+    #     timer = TicToc(enabled=False)
+    #     with torch.autocast(device_type="cuda", enabled=self.use_amp):
+    #         timer.tic("vf")
+    #         output = self._vf(self._features).squeeze(1)
+    #         timer.toc("vf")
+    #         timer.print_stats(title="ENROS value function")
+    #         return output
 
     @override(TorchModelV2)
     def value_function(self):
@@ -171,8 +223,13 @@ class ENROSPolicy(TorchModelV2, BaseModule):
 
         # squeeze(1) is needed because the value function is expected to be just
         # a single number per batch element, and not B x 1
-        with torch.autocast(device_type="cuda", enabled=self.use_amp):
-            return self._vf(self._features).squeeze(1)
+
+        timer = TicToc(enabled=False)
+        timer.tic("vf")
+        output = self._vf(self._features).squeeze(1)
+        timer.toc("vf")
+        timer.print_stats(title="ENROS value function")
+        return output
 
     @property
     def num_params(self):

@@ -6,6 +6,8 @@ from torch import nn
 from torch_geometric.data import Batch
 from torch_geometric.nn import MLP, GATv2Conv, SAGPooling, TopKPooling, aggr
 
+from entity_rl.utils import TicToc
+
 from .base import BaseModule
 from .slot_attention import SlotAttention
 
@@ -148,12 +150,18 @@ class GATFeatures(BaseModule):
 
     def forward(self, inputs):
         x, edge_index, batch = inputs
+        timer = TicToc(enabled=False)
         for conv, norm in zip(self._convs, self._norms):
+            timer.tic("conv")
             x = self.act(norm(conv(x, edge_index)))
+            timer.toc("conv")
 
         if self._aggr is not None:
+            timer.tic("aggr")
             x = self._aggr(x, batch)
+            timer.toc("aggr")
 
+        timer.print_stats(title="GAT forward")
         return x
 
 
@@ -231,13 +239,20 @@ class GNNEncoder(BaseModule):
         assert isinstance(inputs, Batch)
 
         x, edge_index, batch = inputs.x, inputs.edge_index, inputs.batch
+        timer = TicToc(enabled=False)
 
         # Apply pooling before conv layers if configured
         if self.pooling:
+            timer.tic("pooling")
             x, edge_index, _, batch, _, _ = self.pooling(x, edge_index, batch=batch)
+            timer.toc("pooling")
 
         # Apply conv layers with potentially reduced graph
+        timer.tic("conv")
         features = self._encoder((x, edge_index, batch))
+        timer.toc("conv")
+
+        timer.print_stats(title="GNNEncoder forward")
         return features
 
     # def _hidden_layers(self, input_dict):
