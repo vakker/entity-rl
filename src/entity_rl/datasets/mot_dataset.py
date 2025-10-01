@@ -223,9 +223,9 @@ class MOTDataset(Dataset):
 
     def _generate_sample(
         self,
-        data_dir,
-        frame_id,
-        agent_pos,
+        data_dir: str | None = None,
+        frame_id: int | None = None,
+        agent_pos: Tuple[float, float, float, float] | None = None,
     ) -> Tuple[Dict[str, Any], int]:
         """
         Generate a single sample.
@@ -249,6 +249,8 @@ class MOTDataset(Dataset):
 
         if agent_pos is not None:
             agent_x, agent_y = agent_pos[0], agent_pos[1]
+            assert agent_pos[2] == self.agent_radius
+            assert agent_pos[3] == self.agent_radius
         else:
             self._timer.tic("generate_agent_position")
             agent_x, agent_y = self.generate_agent_position()
@@ -258,16 +260,12 @@ class MOTDataset(Dataset):
         reward = self._compute_reward(gt_bboxes, agent_x, agent_y)
         self._timer.toc("compute_reward")
 
-        self._timer.tic("create_agent_pos")
-        agent_pos = torch.tensor(
-            [agent_x, agent_y, self.agent_radius, self.agent_radius],
-            dtype=torch.float32,
-        )
-        self._timer.toc("create_agent_pos")
-
         data: Dict[str, Any] = {
             "graph": self._create_graph(props_bboxes, agent_x, agent_y),
-            "agent_pos": agent_pos,
+            "agent_pos": torch.tensor(
+                [agent_x, agent_y, self.agent_radius, self.agent_radius],
+                dtype=torch.float32,
+            ),
         }
 
         if self.return_image:
