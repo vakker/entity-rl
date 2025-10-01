@@ -6,14 +6,14 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm, trange
 
 from entity_rl import utils
-from entity_rl.datasets import MOTGraphDataset
+from entity_rl.datasets import MOTDataset
 from entity_rl.datasets.graph_utils import (
     collate_graph_batch,
     create_graph_observation_space,
 )
 from entity_rl.models.enros import ENROSPolicy
 from entity_rl.training import (
-    RewardLabelAdapter,
+    GNNDatasetAdapter,
     create_loss_function,
     create_optimizer,
     evaluate_detection_batch,
@@ -22,28 +22,6 @@ from entity_rl.training import (
     setup_experiment_logging,
 )
 from entity_rl.utils import TicToc
-
-
-class GNNDatasetAdapter(RewardLabelAdapter):
-    """Adapter for GNN dataset to provide correct observation format."""
-
-    def __getitem__(self, index):
-        result = self.base_dataset[index]
-
-        assert len(result) == 3
-        graph_data, reward, agent_pos = result
-
-        # Convert reward to class label
-        reward_class = self.label_map[reward]
-
-        # Format as dict observation expected by ENROS
-        obs_dict = {
-            "x": graph_data.x,
-            "edge_index": graph_data.edge_index,
-            "batch": torch.zeros(graph_data.num_nodes, dtype=torch.long),
-        }
-
-        return obs_dict, reward_class, agent_pos
 
 
 def main(args):
@@ -58,7 +36,7 @@ def main(args):
     assert len(val_dirs) > 0
 
     # Create datasets
-    train_dataset = MOTGraphDataset(
+    train_dataset = MOTDataset(
         mot_data_dirs=tng_dirs,
         agent_radius=args.agent_radius,
         num_samples_per_epoch=args.num_samples,
@@ -70,7 +48,7 @@ def main(args):
         include_agent_node=args.include_agent_node,
     )
 
-    val_dataset = MOTGraphDataset(
+    val_dataset = MOTDataset(
         mot_data_dirs=val_dirs,
         agent_radius=args.agent_radius,
         num_samples_per_epoch=args.num_samples,
@@ -306,35 +284,33 @@ def main(args):
 
                 timer.toc("val_metrics")
 
+                # FIXME
                 # Extract detection data for metrics (sample a few batches)
-                if (
-                    len(pred_boxes_batch) < 5
-                ):  # Only process first few batches for efficiency
-                    try:
-                        # Get graph data from the original dataset
-                        for i in range(min(batch_size, len(val_dataset))):
-                            sample_idx = (num_batches - 1) * batch_size + i
-                            if sample_idx < len(val_dataset):
-                                graph_data, sample_reward, sample_agent_pos = (
-                                    val_dataset[sample_idx]
-                                )
-
-                                # Extract detection data
-                                boxes, scores = extract_detection_data_from_mot_sample(
-                                    graph_data,
-                                    sample_reward,
-                                    sample_agent_pos,
-                                    tuple(args.image_size),
-                                )
-
-                                if len(boxes) > 0:
-                                    pred_boxes_batch.append(boxes)
-                                    pred_scores_batch.append(scores)
-                                    # For this demo, use the same boxes as ground truth
-                                    # In practice, you'd load actual ground truth
-                                    gt_boxes_batch.append(boxes)
-                    except Exception as e:
-                        tqdm.write(f"Warning: Could not extract detection data: {e}")
+                # if (
+                #     len(pred_boxes_batch) < 5
+                # ):  # Only process first few batches for efficiency
+                #     # Get graph data from the original dataset
+                #     for i in range(min(batch_size, len(val_dataset))):
+                #         sample_idx = (num_batches - 1) * batch_size + i
+                #         if sample_idx < len(val_dataset):
+                #             graph_data, sample_reward, sample_agent_pos = val_dataset[
+                #                 sample_idx
+                #             ]
+                #
+                #             # Extract detection data
+                #             boxes, scores = extract_detection_data_from_mot_sample(
+                #                 graph_data,
+                #                 sample_reward,
+                #                 sample_agent_pos,
+                #                 tuple(args.image_size),
+                #             )
+                #
+                #             if len(boxes) > 0:
+                #                 pred_boxes_batch.append(boxes)
+                #                 pred_scores_batch.append(scores)
+                #                 # For this demo, use the same boxes as ground truth
+                #                 # In practice, you'd load actual ground truth
+                #                 gt_boxes_batch.append(boxes)
 
         # Calculate validation metrics
         avg_val_loss = val_loss / num_batches if num_batches > 0 else 0.0

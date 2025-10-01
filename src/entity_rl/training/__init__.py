@@ -1,5 +1,5 @@
 from .mot_utils import (
-    RewardLabelAdapter,
+    GNNDatasetAdapter,
     add_bbox,
     create_loss_function,
     create_optimizer,
@@ -23,7 +23,7 @@ from .detection_metrics import (
 )
 
 __all__ = [
-    "RewardLabelAdapter",
+    "GNNDatasetAdapter",
     "add_bbox",
     "log_gradients",
     "process_outputs",
