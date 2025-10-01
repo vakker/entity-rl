@@ -212,16 +212,7 @@ class MOTDataset(Dataset):
     @property
     def total_frames(self) -> int:
         """Get total number of frames across all datasets."""
-        # FIXME:
-        return sum(self.dataset_info.values())
-
-    @property
-    def dataset_info(self) -> Dict[str, int]:
-        """Get information about loaded datasets."""
-        info = {}
-        for data_dir, frames in self.gt_data.items():
-            info[data_dir] = len(frames)
-        return info
+        return self.gt_data_loader.get_total_frames()
 
     def _generate_sample(
         self,
