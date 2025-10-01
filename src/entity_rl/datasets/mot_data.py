@@ -38,6 +38,7 @@ class MOTDataLoader:
         return self._mot_data
 
     def get_total_frames(self):
+        # FIXME: this is not correct
         all_frames = []
         for frames in self._mot_data.values():
             for frame in frames.values():

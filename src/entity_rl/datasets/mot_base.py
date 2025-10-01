@@ -89,10 +89,10 @@ class MOTBaseDataset(Dataset, ABC):
             Tuple of (data_dir, frame_id, bboxes)
         """
         # Randomly select data directory and frame
-        data_dir = random.choice(list(self.mot_data.keys()))
-        frame_ids = list(self.mot_data[data_dir].keys())
+        data_dir = random.choice(list(self.gt_data.keys()))
+        frame_ids = list(self.gt_data[data_dir].keys())
         frame_id = random.choice(frame_ids)
-        bboxes = self.mot_data[data_dir][frame_id]
+        bboxes = self.gt_data[data_dir][frame_id]
 
         return data_dir, frame_id, bboxes
 
