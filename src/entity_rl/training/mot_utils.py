@@ -281,13 +281,13 @@ def save_best_models(
     output_dir: str,
 ) -> Dict[str, float]:
     """
-    Save best models based on different metrics and update best_metrics tracking.
+    Save best model based on validation loss and update best_metrics tracking.
 
     Args:
         model: Model to save
         optimizer: Optimizer state
         epoch: Current epoch
-        current_metrics: Current epoch metrics
+        current_metrics: Current epoch metrics (must include 'val_loss')
         best_metrics: Dictionary tracking best metrics so far
         output_dir: Output directory
 
@@ -296,34 +296,39 @@ def save_best_models(
     """
     updated_best_metrics = best_metrics.copy()
 
-    # Check if we have new best for each metric
-    for metric_name, metric_value in current_metrics.items():
-        best_key = f"best_{metric_name}"
+    # Check if we have new best validation loss
+    val_loss = current_metrics.get("val_loss")
+    if val_loss is None:
+        raise ValueError("current_metrics must include 'val_loss'")
 
-        # For loss metrics, lower is better. For accuracy/mAP metrics, higher is better.
-        is_loss_metric = 'loss' in metric_name.lower()
-        is_better = (metric_value < best_metrics.get(best_key, float('inf')) if is_loss_metric
-                    else metric_value > best_metrics.get(best_key, 0.0))
+    best_val_loss = best_metrics.get("best_val_loss", float("inf"))
 
-        if is_better:
-            updated_best_metrics[best_key] = metric_value
-            updated_best_metrics[f"best_{metric_name}_epoch"] = epoch
+    if val_loss < best_val_loss:
+        updated_best_metrics["best_val_loss"] = val_loss
+        updated_best_metrics["best_val_loss_epoch"] = epoch
 
-            # Save checkpoint for this best metric
-            filename = f"best_{metric_name}.pt"
-            save_model_checkpoint(
-                model, optimizer, epoch,
-                current_metrics.get('val_loss', 0.0),
-                current_metrics.get('val_accuracy', 0.0),
-                output_dir, filename, current_metrics
-            )
+        # Save best model checkpoint
+        save_model_checkpoint(
+            model,
+            optimizer,
+            epoch,
+            current_metrics.get("val_loss", 0.0),
+            current_metrics.get("val_accuracy", 0.0),
+            output_dir,
+            "best.pt",
+            current_metrics,
+        )
 
     # Always save latest checkpoint
     save_model_checkpoint(
-        model, optimizer, epoch,
-        current_metrics.get('val_loss', 0.0),
-        current_metrics.get('val_accuracy', 0.0),
-        output_dir, "latest.pt", current_metrics
+        model,
+        optimizer,
+        epoch,
+        current_metrics.get("val_loss", 0.0),
+        current_metrics.get("val_accuracy", 0.0),
+        output_dir,
+        "latest.pt",
+        current_metrics,
     )
 
     return updated_best_metrics
