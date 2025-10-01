@@ -90,7 +90,9 @@ def setup_tensorboard(output_dir: str) -> SummaryWriter:
     return SummaryWriter(str(tb_dir))
 
 
-def save_training_config(output_dir: str, args: Any, config_data: Optional[Dict] = None) -> None:
+def save_training_config(
+    output_dir: str, args: Any, config_data: Optional[Dict] = None
+) -> None:
     """
     Save training configuration and parameters to JSON file.
 
@@ -102,24 +104,24 @@ def save_training_config(output_dir: str, args: Any, config_data: Optional[Dict]
     config_path = Path(output_dir) / "training_params.json"
 
     # Convert args to dictionary
-    if hasattr(args, '__dict__'):
+    if hasattr(args, "__dict__"):
         params = vars(args)
     else:
         params = args
 
     # Add additional config data if provided
     if config_data:
-        params['model_config'] = config_data
+        params["model_config"] = config_data
 
     # Add timestamp
-    params['timestamp'] = datetime.now().isoformat()
+    params["timestamp"] = datetime.now().isoformat()
 
     # Convert Path objects to strings for JSON serialization
     for key, value in params.items():
         if isinstance(value, Path):
             params[key] = str(value)
 
-    with open(config_path, 'w') as f:
+    with open(config_path, "w") as f:
         json.dump(params, f, indent=2, default=str)
 
 
@@ -144,56 +146,56 @@ def save_experiment_metadata(output_dir: str) -> None:
         output_dir: Output directory for experiment
     """
     metadata = {
-        'timestamp': datetime.now().isoformat(),
-        'python_version': f"{subprocess.sys.version_info.major}.{subprocess.sys.version_info.minor}.{subprocess.sys.version_info.micro}",
+        "timestamp": datetime.now().isoformat(),
+        "python_version": f"{subprocess.sys.version_info.major}.{subprocess.sys.version_info.minor}.{subprocess.sys.version_info.micro}",
     }
 
     # Try to get git information
     try:
         # Get current commit hash
         commit_hash = subprocess.check_output(
-            ['git', 'rev-parse', 'HEAD'],
-            stderr=subprocess.DEVNULL,
-            text=True
+            ["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL, text=True
         ).strip()
-        metadata['git_commit'] = commit_hash
+        metadata["git_commit"] = commit_hash
 
         # Get branch name
         branch = subprocess.check_output(
-            ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
             stderr=subprocess.DEVNULL,
-            text=True
+            text=True,
         ).strip()
-        metadata['git_branch'] = branch
+        metadata["git_branch"] = branch
 
         # Check if there are uncommitted changes
         try:
             subprocess.check_output(
-                ['git', 'diff-index', '--quiet', 'HEAD', '--'],
-                stderr=subprocess.DEVNULL
+                ["git", "diff-index", "--quiet", "HEAD", "--"],
+                stderr=subprocess.DEVNULL,
             )
-            metadata['git_clean'] = True
+            metadata["git_clean"] = True
         except subprocess.CalledProcessError:
-            metadata['git_clean'] = False
+            metadata["git_clean"] = False
 
     except (subprocess.CalledProcessError, FileNotFoundError):
-        metadata['git_info'] = 'Git not available or not in git repository'
+        metadata["git_info"] = "Git not available or not in git repository"
 
     # Save PyTorch and CUDA versions
-    metadata['torch_version'] = torch.__version__
-    metadata['cuda_available'] = torch.cuda.is_available()
+    metadata["torch_version"] = torch.__version__
+    metadata["cuda_available"] = torch.cuda.is_available()
     if torch.cuda.is_available():
-        metadata['cuda_version'] = torch.version.cuda
-        metadata['gpu_count'] = torch.cuda.device_count()
+        metadata["cuda_version"] = torch.version.cuda
+        metadata["gpu_count"] = torch.cuda.device_count()
         if torch.cuda.device_count() > 0:
-            metadata['gpu_name'] = torch.cuda.get_device_name(0)
+            metadata["gpu_name"] = torch.cuda.get_device_name(0)
 
     metadata_path = Path(output_dir) / "experiment_metadata.json"
-    with open(metadata_path, 'w') as f:
+    with open(metadata_path, "w") as f:
         json.dump(metadata, f, indent=2)
 
 
-def setup_experiment_logging(base_output_dir: str, script_name: str, args: Any, config_path: str = None) -> tuple[str, SummaryWriter]:
+def setup_experiment_logging(
+    base_output_dir: str, script_name: str, args: Any, config_path: str = None
+) -> tuple[str, SummaryWriter]:
     """
     Set up complete experiment logging infrastructure.
 
