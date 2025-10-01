@@ -1,16 +1,10 @@
-"""
-Training utilities for MOT-based ENROS training.
-
-This module provides common training functionality shared across MOT training scripts.
-"""
-
 import json
 import os
 import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 import numpy as np
 import torch
@@ -20,8 +14,8 @@ from torch.utils.tensorboard import SummaryWriter
 from entity_rl.models.enros import ENROSPolicy
 
 
-class RewardLabelAdapter(Dataset):
-    """Adapter class to convert rewards to class labels for training."""
+class GNNDatasetAdapter(Dataset):
+    """Adapter for GNN dataset to provide correct observation format."""
 
     def __init__(self, base_dataset):
         """
@@ -31,25 +25,32 @@ class RewardLabelAdapter(Dataset):
             base_dataset: Base dataset to wrap
         """
         self.base_dataset = base_dataset
-        self.label_map = {-1: 0.0, 1: 1.0}
+        self.label_map = {0: 0.0, 1: 1.0}
 
     def __len__(self):
         return len(self.base_dataset)
 
     def __getitem__(self, index):
-        sample_data = self.base_dataset[index]
+        result = self.base_dataset[index]
 
-        # Handle both old format (sample, reward) and new format (sample, reward, agent_x, agent_y)
-        if len(sample_data) == 2:
-            sample, reward = sample_data
-            # Convert reward to class label
-            reward_class = self.label_map[reward]
-            return sample, reward_class
-        else:
-            sample, reward, agent_pos = sample_data
-            # Convert reward to class label
-            reward_class = self.label_map[reward]
-            return sample, reward_class, agent_pos
+        assert len(result) == 2
+        data_dict, reward = result
+
+        # Extract components
+        graph_data = data_dict["graph"]
+        agent_pos = data_dict["agent_pos"]
+
+        # Convert reward to class label
+        reward_class = self.label_map[reward]
+
+        # Format as dict observation expected by ENROS
+        obs_dict = {
+            "x": graph_data.x,
+            "edge_index": graph_data.edge_index,
+            "batch": torch.zeros(graph_data.num_nodes, dtype=torch.long),
+        }
+
+        return obs_dict, reward_class, agent_pos
 
 
 def create_timestamped_log_dir(base_output_dir: str, script_name: str) -> str:
