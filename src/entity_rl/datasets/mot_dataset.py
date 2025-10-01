@@ -141,17 +141,24 @@ class MOTDataset(Dataset):
         ):
             raise ValueError("agent_radius too large for image_size")
 
-    def select_random_frame(self) -> Tuple[str, int, List[Tuple], List[Tuple]]:
+    def select_random_frame(
+        self,
+        data_dir=None,
+        frame_id=None,
+    ) -> Tuple[str, int, List[Tuple], List[Tuple]]:
         """
         Select a random frame from the loaded data.
 
         Returns:
             Tuple of (data_dir, frame_id, bboxes)
         """
-        # Randomly select data directory and frame
-        data_dir = random.choice(list(self.gt_data.keys()))
-        frame_ids = list(self.gt_data[data_dir].keys())
-        frame_id = random.choice(frame_ids)
+        if data_dir is None:
+            data_dir = random.choice(list(self.gt_data.keys()))
+
+        if frame_id is None:
+            frame_ids = list(self.gt_data[data_dir].keys())
+            frame_id = random.choice(frame_ids)
+
         gt_bboxes = self.gt_data[data_dir][frame_id]
 
         orig_w, orig_h = self.gt_data_loader.get_image_dimensions(data_dir, frame_id)
@@ -216,6 +223,9 @@ class MOTDataset(Dataset):
 
     def _generate_sample(
         self,
+        data_dir,
+        frame_id,
+        agent_pos,
     ) -> Tuple[Dict[str, Any], int]:
         """
         Generate a single sample.
@@ -227,16 +237,22 @@ class MOTDataset(Dataset):
             - agent_pos: Tensor [agent_x, agent_y, agent_radius, agent_radius]
         """
         self._timer.tic("select_random_frame")
-        data_dir, frame_id, props_bboxes, gt_bboxes = self.select_random_frame()
+        data_dir, frame_id, props_bboxes, gt_bboxes = self.select_random_frame(
+            data_dir=data_dir,
+            frame_id=frame_id,
+        )
         self._timer.toc("select_random_frame")
 
         # Limit entities for graph mode
         if len(props_bboxes) > self.max_entities:
             props_bboxes = random.sample(props_bboxes, self.max_entities)
 
-        self._timer.tic("generate_agent_position")
-        agent_x, agent_y = self.generate_agent_position()
-        self._timer.toc("generate_agent_position")
+        if agent_pos is not None:
+            agent_x, agent_y = agent_pos[0], agent_pos[1]
+        else:
+            self._timer.tic("generate_agent_position")
+            agent_x, agent_y = self.generate_agent_position()
+            self._timer.toc("generate_agent_position")
 
         self._timer.tic("compute_reward")
         reward = self._compute_reward(gt_bboxes, agent_x, agent_y)
@@ -260,6 +276,14 @@ class MOTDataset(Dataset):
             self._timer.toc("create_image")
 
         return data, reward
+
+    def get_sample(
+        self,
+        data_dir: str,
+        frame_id: int,
+        agent_pos: Tuple[float, float, float, float],
+    ) -> Tuple[Dict[str, Any], int]:
+        return self._generate_sample(data_dir, frame_id, agent_pos)
 
     def _create_graph(
         self,
