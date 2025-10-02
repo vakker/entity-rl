@@ -243,21 +243,38 @@ class ENROSMOTVisualizer:
             _ = self.model(model_input)
             value = self.model.value_function()
 
-        # Extract attention weights from pooling layer if available
+        # Extract attention weights from GNN aggregation layer if available
+        # Path: encoder._stages[1] (GNNEncoder) -> ._encoder[0] (GATFeatures) -> ._aggr (CustomAttentionalAggregation)
         attention_weights = None
+        attention_stats = {}
         try:
             # Navigate to GNN encoder's aggregation layer
             encoder = self.model._encoder
-            attention_weights = (
-                encoder._stages[1]._encoder[0]._aggr.attention_acts.numpy()
-            )
-            attention_weights = attention_weights - attention_weights.min()
-            attention_weights = attention_weights / attention_weights.max()
-            # print(attention_weights.min(), attention_weights.max())
+            gnn_encoder = encoder._stages[1]  # Scene encoder (GNNEncoder)
+            gat_features = gnn_encoder._encoder[0]  # Conv layer (GATFeatures)
+            aggr_layer = gat_features._aggr  # Aggregation layer (CustomAttentionalAggregation)
+
+            raw_attention = aggr_layer.attention_acts.numpy()
+
+            # Store statistics for debugging
+            attention_stats = {
+                'raw_min': raw_attention.min(),
+                'raw_max': raw_attention.max(),
+                'raw_mean': raw_attention.mean(),
+                'raw_std': raw_attention.std(),
+                'num_nodes': len(raw_attention),
+            }
+
+            # Normalize for visualization
+            attention_weights = raw_attention - raw_attention.min()
+            if attention_weights.max() > 0:
+                attention_weights = attention_weights / attention_weights.max()
+
         except Exception as e:
             print(f"Warning: Could not extract attention weights: {e}")
+            print("  Make sure the model uses 'aggr_layer: attn' in config")
 
-        return value.cpu(), attention_weights
+        return value.cpu(), attention_weights, attention_stats
 
     def _draw_predictions(
         self,
@@ -482,7 +499,7 @@ class ENROSMOTVisualizer:
         return image
 
     def generate_video(
-        self, output_name: str = "enros_mot_inference", num_frames: int = None
+        self, output_name: str = "enros_mot_inference", num_frames: int = None, verbose: bool = False
     ) -> str:
         """
         Generate video with ENROS predictions.
@@ -490,6 +507,7 @@ class ENROSMOTVisualizer:
         Args:
             output_name: Name for output video file
             num_frames: Number of frames to process (None = all frames)
+            verbose: Print detailed attention diagnostics
 
         Returns:
             Path to generated video file
@@ -552,7 +570,7 @@ class ENROSMOTVisualizer:
             agent_pos = data_dict["agent_pos"]
 
             # Run inference and extract attention weights
-            value, attention_weights = self._run_inference(graph_data, agent_pos)
+            value, attention_weights, attention_stats = self._run_inference(graph_data, agent_pos)
 
             # Calculate accuracy using dataset method
             reward_tensor = torch.tensor([reward_gt])
@@ -570,6 +588,39 @@ class ENROSMOTVisualizer:
                 scaled_prop_bboxes = scale_bboxes(prop_bboxes, (orig_w, orig_h))
             else:
                 scaled_prop_bboxes = scaled_gt_bboxes
+
+            # Print attention diagnostics if verbose
+            if verbose and attention_weights is not None:
+                print(f"\n{'='*60}")
+                print(f"Frame {frame_id}:")
+                print(f"  Value prediction: {value.item():.4f} ({'COLLISION' if value.item() < 0 else 'SAFE'})")
+                print(f"  Ground truth: {reward_gt} ({'COLLISION' if reward_gt == 0.0 or reward_gt == -1.0 else 'SAFE'})")
+                print(f"  Agent pos: ({agent_x:.3f}, {agent_y:.3f})")
+                print(f"  Num entities: {len(scaled_prop_bboxes)}")
+                print(f"  Attention stats: min={attention_stats.get('raw_min', 0):.4f}, "
+                      f"max={attention_stats.get('raw_max', 0):.4f}, "
+                      f"mean={attention_stats.get('raw_mean', 0):.4f}, "
+                      f"std={attention_stats.get('raw_std', 0):.4f}")
+                print(f"  Num attention nodes: {attention_stats.get('num_nodes', 0)}")
+
+                # Calculate distances and show attention per bbox
+                attention_offset = 1 if self.include_agent_node else 0
+                print(f"\n  Entity details (offset={attention_offset}):")
+                for i, (x, y, w, h, track_id) in enumerate(scaled_prop_bboxes):
+                    # Calculate distance from agent center to bbox center
+                    dist = np.sqrt((x + w/2 - agent_x)**2 + (y + h/2 - agent_y)**2)
+                    att_idx = i + attention_offset
+                    if att_idx < len(attention_weights):
+                        att_val = attention_weights[att_idx][0]
+                        raw_att_val = attention_stats.get('raw_min', 0) + att_val * (
+                            attention_stats.get('raw_max', 0) - attention_stats.get('raw_min', 0)
+                        )
+                        print(f"    Entity {i} (ID={int(track_id)}): dist={dist:.3f}, "
+                              f"attn_norm={att_val:.4f}, attn_raw={raw_att_val:.4f}")
+                    else:
+                        print(f"    Entity {i} (ID={int(track_id)}): dist={dist:.3f}, "
+                              f"attn=N/A (idx {att_idx} >= {len(attention_weights)})")
+                print(f"{'='*60}")
 
             # Draw visualizations with attention weights
             frame = self._draw_predictions(
@@ -704,6 +755,12 @@ Examples:
         help="Number of frames to process (default: all frames)",
     )
 
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Print detailed attention diagnostics",
+    )
+
     args = parser.parse_args()
 
     if args.output_dir is None:
@@ -730,6 +787,7 @@ Examples:
     output_path = visualizer.generate_video(
         output_name=args.output_name,
         num_frames=args.num_frames,
+        verbose=args.verbose,
     )
 
     print(f"Success! Video saved to: {output_path}")
