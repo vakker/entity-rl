@@ -262,7 +262,8 @@ class ENROSMOTVisualizer:
     def _draw_predictions(
         self,
         image: np.ndarray,
-        bboxes: List[Tuple],
+        gt_bboxes: List[Tuple],
+        prop_bboxes: List[Tuple],
         agent_pos: Tuple[float, float, float, float],
         value_pred: float,
         frame_id: int,
@@ -273,7 +274,9 @@ class ENROSMOTVisualizer:
 
         Args:
             image: Input image
-            bboxes: List of scaled bboxes (x, y, w, h, track_id) in normalized coords
+            gt_bboxes: List of scaled GT bboxes (x, y, w, h, track_id) in normalized coords
+            prop_bboxes: List of scaled proposal bboxes (x, y, w, h, track_id) in normalized coords
+                        (same as gt_bboxes if not using proposals)
             agent_pos: Agent position (x, y, radius_x, radius_y) in normalized coords
             value_pred: Predicted value (classification: 0=collision, 1=safe)
             frame_id: Frame number
@@ -289,8 +292,29 @@ class ENROSMOTVisualizer:
         # If include_agent_node is True, first node is agent, rest are bboxes
         attention_offset = 1 if self.include_agent_node else 0
 
-        # Draw bounding boxes
-        for bbox_idx, (x, y, bbox_w, bbox_h, track_id) in enumerate(bboxes):
+        # Draw GT bounding boxes in red (for reference when using proposals)
+        if self.use_props:
+            for x, y, bbox_w, bbox_h, track_id in gt_bboxes:
+                # Convert normalized coords to pixels
+                px = int(x * w)
+                py = int(y * h)
+                pw = int(bbox_w * w)
+                ph = int(bbox_h * h)
+
+                # Draw GT in red
+                cv2.rectangle(image, (px, py), (px + pw, py + ph), (0, 0, 255), 2)
+                cv2.putText(
+                    image,
+                    f"GT:{int(track_id)}",
+                    (px, py - 5),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.4,
+                    (0, 0, 255),
+                    1,
+                )
+
+        # Draw proposal bounding boxes (with attention if available)
+        for bbox_idx, (x, y, bbox_w, bbox_h, track_id) in enumerate(prop_bboxes):
             # Convert normalized coords to pixels
             px = int(x * w)
             py = int(y * h)
@@ -322,9 +346,12 @@ class ENROSMOTVisualizer:
                 attention_weights
             ):
                 att_val = attention_weights[bbox_idx + attention_offset]
+                label = f"{att_val[0]:.3f}"
+                if self.use_props:
+                    label = f"P:{label}"  # P for proposal
                 cv2.putText(
                     image,
-                    f"{att_val[0]:.3f}",
+                    label,
                     (px, py - 5),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.4,
@@ -332,9 +359,12 @@ class ENROSMOTVisualizer:
                     1,
                 )
             else:
+                label = f"ID:{int(track_id)}"
+                if self.use_props:
+                    label = f"P:{int(track_id)}"
                 cv2.putText(
                     image,
-                    f"ID:{int(track_id)}",
+                    label,
                     (px, py - 5),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.5,
@@ -531,13 +561,21 @@ class ENROSMOTVisualizer:
             num_samples += 1
 
             # Get bboxes for visualization (scaled to [0,1])
-            bboxes = self.dataset.gt_data[self.data_dir][frame_id]
-            scaled_bboxes = scale_bboxes(bboxes, (orig_w, orig_h))
+            gt_bboxes = self.dataset.gt_data[self.data_dir][frame_id]
+            scaled_gt_bboxes = scale_bboxes(gt_bboxes, (orig_w, orig_h))
+
+            # Get proposal bboxes if using proposals
+            if self.use_props:
+                prop_bboxes = self.dataset.props_data[self.data_dir][frame_id]
+                scaled_prop_bboxes = scale_bboxes(prop_bboxes, (orig_w, orig_h))
+            else:
+                scaled_prop_bboxes = scaled_gt_bboxes
 
             # Draw visualizations with attention weights
             frame = self._draw_predictions(
                 frame,
-                scaled_bboxes,
+                scaled_gt_bboxes,
+                scaled_prop_bboxes,
                 agent_pos.numpy(),
                 value.item(),
                 frame_id,
@@ -594,7 +632,6 @@ Examples:
     parser.add_argument(
         "--output_dir",
         type=str,
-        required=True,
         help="Directory to save output videos",
     )
 
@@ -669,11 +706,16 @@ Examples:
 
     args = parser.parse_args()
 
+    if args.output_dir is None:
+        output_dir = Path(args.checkpoint_dir) / Path(args.mot_dir).stem
+    else:
+        output_dir = Path(args.output_dir)
+
     # Create visualizer
     visualizer = ENROSMOTVisualizer(
         checkpoint_dir=Path(args.checkpoint_dir),
         mot_dir=Path(args.mot_dir),
-        output_dir=Path(args.output_dir),
+        output_dir=output_dir,
         device=args.device,
         fps=args.fps,
         agent_radius=args.agent_radius,
