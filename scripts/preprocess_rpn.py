@@ -164,7 +164,7 @@ def main():
     args = parser.parse_args()
 
     # Load model
-    obs_shape = (args.size[1], args.size[0], 3)  # (H, W, 3)
+    obs_shape = (args.size[0], args.size[1], 3)  # (H, W, 3)
     model = load_model_from_config(args.cfg, obs_shape, args.device)
 
     # Get input images
@@ -199,7 +199,8 @@ def main():
         frame_id = int(img_path.stem)
 
         # Preprocess image
-        input_tensor, _, orig_size = preprocess_image(str(img_path), tuple(args.size))
+        # PIL resize expects (W, H), so swap args.size which is [H, W]
+        input_tensor, _, orig_size = preprocess_image(str(img_path), (args.size[1], args.size[0]))
         orig_width, orig_height = orig_size
         target_height, target_width = args.size
 
