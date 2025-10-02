@@ -394,6 +394,7 @@ class RPNEncoder(EntityEncoder):
             frame = inputs[:, 3 * stack_idx : 3 * (stack_idx + 1)]  # (B, 3, H, W)
 
             # Extract features using RPN
+            # FIXME: not used:
             with torch.cuda.amp.autocast(enabled=False):
                 outputs = self._model.forward(frame, mode="tensor")
 

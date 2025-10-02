@@ -47,16 +47,7 @@ class RPNENROS(RPN):
             sampling_ratio=0,
         )
 
-        # Feature projection layer
-        roi_feature_size = 256 * roi_output_size * roi_output_size
-        self.feature_proj = nn.Linear(roi_feature_size, feature_dim)
-
-        # Initialize the projection layer
-        nn.init.xavier_uniform_(self.feature_proj.weight.data)
-        nn.init.constant_(self.feature_proj.bias.data, 0)
-
         freeze(self)
-        unfreeze(self.feature_proj)
 
         # Freeze/unfreeze based on config
         if unfreeze_backbone:
@@ -180,11 +171,10 @@ class RPNENROS(RPN):
             # Extract RoI features using P2 feature map (stride=4)
             pooled_features = self.roi_align(x[0], rois)  # (N, 256, roi_size, roi_size)
             pooled_features = pooled_features.flatten(1)  # (N, 256*roi_size*roi_size)
-            features = self.feature_proj(pooled_features)  # (N, feature_dim)
 
             # Store features and metadata
             n_proposals = min(bboxes.shape[0], max_proposals)
-            roi_features[batch_idx, :n_proposals] = features[:n_proposals]
+            roi_features[batch_idx, :n_proposals] = pooled_features[:n_proposals]
             all_bboxes[batch_idx, :n_proposals] = bboxes[:n_proposals]
             all_scores[batch_idx, :n_proposals] = scores[:n_proposals].unsqueeze(1)
 
