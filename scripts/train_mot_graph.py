@@ -45,6 +45,7 @@ def main(args):
         connect_threshold=args.connect_threshold,
         max_samples=args.max_samples,
         use_props=args.use_props,
+        prop_filename=args.prop_filename,
         include_agent_node=args.include_agent_node,
     )
 
@@ -58,6 +59,7 @@ def main(args):
         connect_threshold=args.connect_threshold,
         max_samples=args.max_samples,
         use_props=args.use_props,
+        prop_filename=args.prop_filename,
         include_agent_node=args.include_agent_node,
     )
 
@@ -396,6 +398,12 @@ if __name__ == "__main__":
         "--use-props",
         action="store_true",
         help="Use proposals for graph creation (always uses GT for rewards)",
+    )
+    parser.add_argument(
+        "--prop-filename",
+        type=str,
+        default="prop.csv",
+        help="Proposal filename to load (default: prop.csv)",
     )
     parser.add_argument("--no-bar", action="store_true")
     parser.add_argument("--max-samples", type=int, help="Max samples to load")

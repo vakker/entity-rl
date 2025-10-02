@@ -58,6 +58,7 @@ class ENROSMOTVisualizer:
         max_entities: int = 100,
         connect_threshold: float = 50.0,
         use_props: bool = False,
+        prop_filename: str = "prop.csv",
         include_agent_node: bool = False,
         task_type: str = 'regression',
     ):
@@ -74,6 +75,7 @@ class ENROSMOTVisualizer:
             max_entities: Maximum number of entities to process
             connect_threshold: Distance threshold for graph edges
             use_props: Whether to use proposals (False = use GT)
+            prop_filename: Proposal filename to load (default: "prop.csv")
             include_agent_node: Whether to include agent node in graph
             task_type: Task type ('regression' or 'classification')
         """
@@ -115,6 +117,7 @@ class ENROSMOTVisualizer:
             connect_threshold=connect_threshold,
             max_samples=None,
             use_props=use_props,
+            prop_filename=prop_filename,
             include_agent_node=include_agent_node,
         )
 
@@ -752,6 +755,13 @@ Examples:
     )
 
     parser.add_argument(
+        "--prop_filename",
+        type=str,
+        default="prop.csv",
+        help="Proposal filename to load (default: prop.csv)",
+    )
+
+    parser.add_argument(
         "--include_agent_node",
         action="store_true",
         help="Include agent as a node in the graph",
@@ -803,6 +813,7 @@ Examples:
         max_entities=args.max_entities,
         connect_threshold=args.connect_threshold,
         use_props=args.use_props,
+        prop_filename=args.prop_filename,
         include_agent_node=args.include_agent_node,
         task_type=args.task_type,
     )

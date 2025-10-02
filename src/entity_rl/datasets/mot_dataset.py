@@ -45,6 +45,7 @@ class MOTDataset(Dataset):
         connect_threshold: float = 50.0,
         include_agent_node: bool = True,
         use_props: bool = False,
+        prop_filename: str = "prop.csv",
     ):
         """
         Initialize unified MOT dataset.
@@ -61,6 +62,7 @@ class MOTDataset(Dataset):
             connect_threshold: [Graph mode] Distance threshold for graph edges
             include_agent_node: [Graph mode] Whether to include agent as graph node
             use_props: [Graph mode] Use proposals instead of GT for graph creation
+            prop_filename: [Graph mode] Proposal filename to load (default: "prop.csv")
         """
 
         if task_type not in ['regression', 'classification']:
@@ -92,7 +94,7 @@ class MOTDataset(Dataset):
         # Load proposals if using graph mode with props
         if use_props:
             self.props_data_loader = MOTDataLoader(
-                mot_data_dirs, use_gt=False, max_samples=max_samples
+                mot_data_dirs, use_gt=False, max_samples=max_samples, prop_filename=prop_filename
             )
             self.props_data = self.props_data_loader.mot_data()
 
