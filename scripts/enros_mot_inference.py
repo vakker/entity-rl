@@ -256,6 +256,10 @@ class ENROSMOTVisualizer:
 
             raw_attention = aggr_layer.attention_acts.numpy()
 
+            # Debug: Check graph data structure to verify node order
+            # The nodes should be ordered as: [agent (if included), bbox1, bbox2, ...]
+            num_graph_nodes = graph_data.x.shape[0]
+
             # Store statistics for debugging
             attention_stats = {
                 'raw_min': raw_attention.min(),
@@ -263,6 +267,7 @@ class ENROSMOTVisualizer:
                 'raw_mean': raw_attention.mean(),
                 'raw_std': raw_attention.std(),
                 'num_nodes': len(raw_attention),
+                'num_graph_nodes': num_graph_nodes,
             }
 
             # Normalize for visualization
@@ -602,24 +607,43 @@ class ENROSMOTVisualizer:
                       f"mean={attention_stats.get('raw_mean', 0):.4f}, "
                       f"std={attention_stats.get('raw_std', 0):.4f}")
                 print(f"  Num attention nodes: {attention_stats.get('num_nodes', 0)}")
+                print(f"  Num graph nodes: {attention_stats.get('num_graph_nodes', 0)}")
+
+                # Print graph node features to verify order
+                print(f"\n  Graph node features (first 2 columns = rel_x, rel_y):")
+                for node_idx in range(graph_data.x.shape[0]):
+                    node_feat = graph_data.x[node_idx].numpy()
+                    is_agent = node_feat[4] > 0.5  # Last feature is 1.0 for agent
+                    if is_agent:
+                        print(f"    Node {node_idx}: AGENT {node_feat[:4]}")
+                    else:
+                        # Convert relative position back to absolute for comparison
+                        abs_x = node_feat[0] + agent_x
+                        abs_y = node_feat[1] + agent_y
+                        dist = np.sqrt(node_feat[0]**2 + node_feat[1]**2)
+                        print(f"    Node {node_idx}: rel=({node_feat[0]:.3f}, {node_feat[1]:.3f}), "
+                              f"abs=({abs_x:.3f}, {abs_y:.3f}), dist={dist:.3f}")
 
                 # Calculate distances and show attention per bbox
                 attention_offset = 1 if self.include_agent_node else 0
                 print(f"\n  Entity details (offset={attention_offset}):")
                 for i, (x, y, w, h, track_id) in enumerate(scaled_prop_bboxes):
                     # Calculate distance from agent center to bbox center
-                    dist = np.sqrt((x + w/2 - agent_x)**2 + (y + h/2 - agent_y)**2)
+                    bbox_center_x = x + w/2
+                    bbox_center_y = y + h/2
+                    dist = np.sqrt((bbox_center_x - agent_x)**2 + (bbox_center_y - agent_y)**2)
+
                     att_idx = i + attention_offset
                     if att_idx < len(attention_weights):
                         att_val = attention_weights[att_idx][0]
                         raw_att_val = attention_stats.get('raw_min', 0) + att_val * (
                             attention_stats.get('raw_max', 0) - attention_stats.get('raw_min', 0)
                         )
-                        print(f"    Entity {i} (ID={int(track_id)}): dist={dist:.3f}, "
-                              f"attn_norm={att_val:.4f}, attn_raw={raw_att_val:.4f}")
+                        print(f"    Bbox {i} (ID={int(track_id)}): center=({bbox_center_x:.3f}, {bbox_center_y:.3f}), "
+                              f"dist={dist:.3f}, attn_norm={att_val:.4f}, attn_raw={raw_att_val:.4f}")
                     else:
-                        print(f"    Entity {i} (ID={int(track_id)}): dist={dist:.3f}, "
-                              f"attn=N/A (idx {att_idx} >= {len(attention_weights)})")
+                        print(f"    Bbox {i} (ID={int(track_id)}): center=({bbox_center_x:.3f}, {bbox_center_y:.3f}), "
+                              f"dist={dist:.3f}, attn=N/A (idx {att_idx} >= {len(attention_weights)})")
                 print(f"{'='*60}")
 
             # Draw visualizations with attention weights
