@@ -59,6 +59,7 @@ class ENROSMOTVisualizer:
         connect_threshold: float = 50.0,
         use_props: bool = False,
         include_agent_node: bool = False,
+        task_type: str = 'regression',
     ):
         """
         Initialize the ENROS MOT visualizer.
@@ -74,6 +75,7 @@ class ENROSMOTVisualizer:
             connect_threshold: Distance threshold for graph edges
             use_props: Whether to use proposals (False = use GT)
             include_agent_node: Whether to include agent node in graph
+            task_type: Task type ('regression' or 'classification')
         """
         self.checkpoint_dir = Path(checkpoint_dir)
         self.mot_dir = Path(mot_dir)
@@ -87,6 +89,7 @@ class ENROSMOTVisualizer:
         self.connect_threshold = connect_threshold
         self.use_props = use_props
         self.include_agent_node = include_agent_node
+        self.task_type = task_type
 
         # Auto-detect config and checkpoint
         self.config_path = self._find_config()
@@ -107,6 +110,7 @@ class ENROSMOTVisualizer:
             agent_radius=agent_radius,
             num_samples_per_epoch=1000,  # Not used for inference
             image_size=(100, 100),  # Not used for inference
+            task_type=task_type,
             max_entities=max_entities,
             connect_threshold=connect_threshold,
             max_samples=None,
@@ -520,14 +524,9 @@ class ENROSMOTVisualizer:
             # Run inference and extract attention weights
             value, attention_weights = self._run_inference(graph_data, agent_pos)
 
-            # Calculate accuracy (same as training/evaluation)
-            # Dataset returns: 0 (collision) or 1 (safe)
-            reward_class = reward_gt  # Already 0 or 1
-            # Get prediction class: value >= 0.5 -> safe (1), else collision (0)
-            # NOTE: threshold depends on reward range
-            pred_class = 1 if value.item() >= 0 else -1
-            # Track match
-            match = 1 if pred_class == reward_class else 0
+            # Calculate accuracy using dataset method
+            reward_tensor = torch.tensor([reward_gt])
+            match = self.dataset.calculate_accuracy(value.unsqueeze(0), reward_tensor)
             total_matches += match
             num_samples += 1
 
@@ -647,6 +646,14 @@ Examples:
     )
 
     parser.add_argument(
+        "--task_type",
+        type=str,
+        default="regression",
+        choices=["regression", "classification"],
+        help="Task type: 'regression' or 'classification' (default: regression)",
+    )
+
+    parser.add_argument(
         "--output_name",
         type=str,
         default="enros_mot_inference",
@@ -674,6 +681,7 @@ Examples:
         connect_threshold=args.connect_threshold,
         use_props=args.use_props,
         include_agent_node=args.include_agent_node,
+        task_type=args.task_type,
     )
 
     # Generate video

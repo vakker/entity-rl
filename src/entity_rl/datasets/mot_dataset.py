@@ -39,6 +39,7 @@ class MOTDataset(Dataset):
         num_samples_per_epoch: int = 1000,
         image_size: Tuple[int, int] = (100, 100),
         max_samples: Optional[int] = None,
+        task_type: str = 'regression',
         # Graph-specific parameters
         max_entities: int = 20,
         connect_threshold: float = 50.0,
@@ -55,12 +56,17 @@ class MOTDataset(Dataset):
             num_samples_per_epoch: Number of samples per epoch
             image_size: Target image size (width, height)
             max_samples: Maximum number of samples to load from data
+            task_type: Task type - 'regression' or 'classification' (default: 'regression')
             max_entities: [Graph mode] Maximum entities per sample
             connect_threshold: [Graph mode] Distance threshold for graph edges
             include_agent_node: [Graph mode] Whether to include agent as graph node
             use_props: [Graph mode] Use proposals instead of GT for graph creation
         """
 
+        if task_type not in ['regression', 'classification']:
+            raise ValueError(f"task_type must be 'regression' or 'classification', got '{task_type}'")
+
+        self.task_type = task_type
         self.return_image = return_image
 
         # Graph-specific parameters
@@ -186,22 +192,58 @@ class MOTDataset(Dataset):
 
         return agent_x, agent_y
 
-    def _compute_reward(self, scaled_bboxes, agent_x, agent_y) -> int:
-        """Compute reward based on agent collision with bounding boxes."""
+    def _compute_reward(self, scaled_bboxes, agent_x, agent_y) -> float:
+        """
+        Compute reward/label based on agent collision with bounding boxes.
+
+        Returns:
+            - Regression: -1.0 (collision) or 1.0 (safe)
+            - Classification: 0.0 (collision) or 1.0 (safe) for BCE loss
+        """
         if len(scaled_bboxes) > 0:
             has_collision = check_rectangle_overlap(
                 agent_x, agent_y, self.agent_radius, scaled_bboxes
             )
-            return 0 if has_collision else 1
+            if self.task_type == 'classification':
+                return 0.0 if has_collision else 1.0  # BCE targets (float)
+            else:  # regression
+                return -1.0 if has_collision else 1.0  # Regression targets
         else:
             # No entities, always safe
-            return 1
+            return 1.0
+
+    def calculate_accuracy(self, predictions: torch.Tensor, labels: torch.Tensor) -> int:
+        """
+        Calculate accuracy matches based on task type.
+
+        Args:
+            predictions: Model predictions
+                - Regression: raw values (B,)
+                - Classification: logits (B,) from BCEWithLogitsLoss
+            labels: Ground truth labels
+                - Regression: -1.0 or 1.0 (B,)
+                - Classification: 0.0 or 1.0 (B,)
+
+        Returns:
+            Number of correct predictions (int for summing across batches)
+        """
+        if self.task_type == 'classification':
+            # For classification with BCEWithLogitsLoss:
+            # logit >= 0 -> class 1 (safe), logit < 0 -> class 0 (collision)
+            preds = (predictions >= 0).float()
+            matches = (preds == labels).sum().item()
+        else:  # regression
+            # Threshold at 0: >= 0 is safe (1.0), < 0 is collision (-1.0)
+            preds = torch.where(predictions >= 0, 1.0, -1.0)
+            matches = (preds == labels).sum().item()
+
+        return int(matches)
 
     def __len__(self) -> int:
         """Return the number of samples per epoch."""
         return self.num_samples_per_epoch
 
-    def __getitem__(self, idx: int) -> Tuple[Dict[str, Any], int]:
+    def __getitem__(self, idx: int) -> Tuple[Dict[str, torch.Tensor], Union[int, float], torch.Tensor]:
         """
         Get a sample by index.
 
@@ -209,12 +251,33 @@ class MOTDataset(Dataset):
             idx: Sample index (ignored, samples are generated randomly)
 
         Returns:
-            Generated sample
+            Tuple of (obs_dict, label, agent_pos) where:
+            - obs_dict: Dict with "x" and "edge_index" for graph data
+            - label: Classification label (int) or regression target (float)
+            - agent_pos: Agent position tensor
         """
         self._timer.tic("generate_sample")
-        sample = self._generate_sample()
+        data_dict, reward = self._generate_sample()
         self._timer.toc("generate_sample")
-        return sample
+
+        # Extract graph and agent position
+        graph_data = data_dict["graph"]
+        agent_pos = data_dict["agent_pos"]
+
+        # Format observation dict for model
+        obs_dict = {
+            "x": graph_data.x,
+            "edge_index": graph_data.edge_index,
+            "batch": torch.zeros(graph_data.num_nodes, dtype=torch.long),
+        }
+
+        # Convert reward to appropriate type based on task
+        if self.task_type == 'classification':
+            label = int(reward)  # Already 0 or 1
+        else:  # regression
+            label = float(reward)  # Already -1.0 or 1.0
+
+        return obs_dict, label, agent_pos
 
     @property
     def total_frames(self) -> int:

@@ -14,46 +14,6 @@ from torch.utils.tensorboard import SummaryWriter
 from entity_rl.models.enros import ENROSPolicy
 
 
-class GNNDatasetAdapter(Dataset):
-    """Adapter for GNN dataset to provide correct observation format."""
-
-    def __init__(self, base_dataset):
-        """
-        Initialize adapter.
-
-        Args:
-            base_dataset: Base dataset to wrap
-        """
-        self.base_dataset = base_dataset
-        self.label_map = {-1: -1.0, 0: 0.0, 1: 1.0}
-        self.threshold = 0.0
-
-    def __len__(self):
-        return len(self.base_dataset)
-
-    def __getitem__(self, index):
-        result = self.base_dataset[index]
-
-        assert len(result) == 2
-        data_dict, reward = result
-
-        # Extract components
-        graph_data = data_dict["graph"]
-        agent_pos = data_dict["agent_pos"]
-
-        # Convert reward to class label
-        reward_class = self.label_map[reward]
-
-        # Format as dict observation expected by ENROS
-        obs_dict = {
-            "x": graph_data.x,
-            "edge_index": graph_data.edge_index,
-            "batch": torch.zeros(graph_data.num_nodes, dtype=torch.long),
-        }
-
-        return obs_dict, reward_class, agent_pos
-
-
 def create_timestamped_log_dir(base_output_dir: str, script_name: str) -> str:
     """
     Create timestamped log directory for experiment.
@@ -484,18 +444,23 @@ def create_optimizer(model: ENROSPolicy, learning_rate: float) -> torch.optim.Op
     return torch.optim.Adam(model.parameters(), lr=learning_rate)
 
 
-def create_loss_function(device: torch.device):
+def create_loss_function(device: torch.device, task_type: str = 'regression'):
     """
-    Create loss function for training.
+    Create loss function for training based on task type.
 
     Args:
         device: Device to place loss function on
+        task_type: 'regression' or 'classification'
 
     Returns:
-        CrossEntropyLoss function
+        MSELoss for regression, BCEWithLogitsLoss for classification
     """
-    return torch.nn.MSELoss().to(device)
-    # return torch.nn.CrossEntropyLoss().to(device)
+    if task_type == 'classification':
+        return torch.nn.BCEWithLogitsLoss().to(device)
+    elif task_type == 'regression':
+        return torch.nn.MSELoss().to(device)
+    else:
+        raise ValueError(f"task_type must be 'regression' or 'classification', got '{task_type}'")
 
 
 def setup_amp_scaler(model: ENROSPolicy) -> torch.cuda.amp.GradScaler:

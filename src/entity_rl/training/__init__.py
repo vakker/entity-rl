@@ -1,5 +1,4 @@
 from .mot_utils import (
-    GNNDatasetAdapter,
     add_bbox,
     create_loss_function,
     create_optimizer,
@@ -23,7 +22,6 @@ from .detection_metrics import (
 )
 
 __all__ = [
-    "GNNDatasetAdapter",
     "add_bbox",
     "log_gradients",
     "process_outputs",

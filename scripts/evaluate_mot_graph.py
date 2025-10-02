@@ -29,7 +29,6 @@ from entity_rl.datasets.graph_utils import (
 )
 from entity_rl.models.enros import ENROSPolicy
 from entity_rl.training import (
-    GNNDatasetAdapter,
     create_loss_function,
     evaluate_detection_batch,
     extract_detection_data_from_mot_sample,
@@ -77,7 +76,7 @@ def find_checkpoint(checkpoint_dir: Path) -> Path:
     raise FileNotFoundError(f"No checkpoint file (.pt) found in {checkpoint_dir}")
 
 
-def load_checkpoint(checkpoint_path: Path, config_path: Path, device: torch.device):
+def load_checkpoint(checkpoint_path: Path, config_path: Path, device: torch.device, task_type: str = 'regression'):
     """
     Load model from checkpoint.
 
@@ -85,6 +84,7 @@ def load_checkpoint(checkpoint_path: Path, config_path: Path, device: torch.devi
         checkpoint_path: Path to checkpoint file
         config_path: Path to config file
         device: Device to load model on
+        task_type: Task type ('regression' or 'classification')
 
     Returns:
         Loaded model in eval mode
@@ -142,7 +142,7 @@ def evaluate(args):
     print(f"Using device: {device}")
 
     # Load model
-    model = load_checkpoint(checkpoint_path, config_path, device)
+    model = load_checkpoint(checkpoint_path, config_path, device, args.task_type)
 
     # Create dataset
     print("Creating evaluation dataset...")
@@ -151,6 +151,7 @@ def evaluate(args):
         agent_radius=args.agent_radius,
         num_samples_per_epoch=args.num_samples,
         image_size=tuple(args.image_size),
+        task_type=args.task_type,
         max_entities=args.max_entities,
         connect_threshold=args.connect_threshold,
         max_samples=args.max_samples,
@@ -159,15 +160,13 @@ def evaluate(args):
     )
 
     print(f"Evaluation samples: {len(eval_dataset)}")
+    print(f"Task type: {args.task_type}")
 
-    # Wrap with adapter
-    eval_wrapped = GNNDatasetAdapter(eval_dataset)
-
-    batch_size = min(args.batch_size, len(eval_wrapped))
+    batch_size = min(args.batch_size, len(eval_dataset))
 
     # Create data loader
     eval_loader = DataLoader(
-        eval_wrapped,
+        eval_dataset,
         batch_size=batch_size,
         shuffle=False,
         drop_last=False,
@@ -176,7 +175,7 @@ def evaluate(args):
     )
 
     # Set up loss
-    loss_fn = create_loss_function(device)
+    loss_fn = create_loss_function(device, args.task_type)
 
     # Initialize metrics
     total_loss = 0
@@ -221,11 +220,8 @@ def evaluate(args):
             timer.toc("forward_pass")
             timer.tic("metrics")
 
-            # Classification metrics
-            preds = torch.zeros_like(reward_batch)
-            preds[reward_pred >= 0.5] = 1
-            preds[reward_pred < 0.5] = 0
-            match = (preds == reward_batch).float().sum().item()
+            # Calculate accuracy using dataset method
+            match = eval_dataset.calculate_accuracy(reward_pred, reward_batch)
 
             loss = loss_fn(reward_pred, reward_batch)
             total_loss += loss.item()
@@ -375,6 +371,13 @@ if __name__ == "__main__":
         "--include-agent-node",
         action="store_true",
         help="Include agent node in graph",
+    )
+    parser.add_argument(
+        "--task-type",
+        type=str,
+        default="regression",
+        choices=["regression", "classification"],
+        help="Task type: 'regression' or 'classification' (default: regression)",
     )
 
     # Detection metrics

@@ -13,7 +13,6 @@ from entity_rl.datasets.graph_utils import (
 )
 from entity_rl.models.enros import ENROSPolicy
 from entity_rl.training import (
-    GNNDatasetAdapter,
     create_loss_function,
     create_optimizer,
     evaluate_detection_batch,
@@ -41,6 +40,7 @@ def main(args):
         agent_radius=args.agent_radius,
         num_samples_per_epoch=args.num_samples,
         image_size=tuple(args.image_size),
+        task_type=args.task_type,
         max_entities=args.max_entities,
         connect_threshold=args.connect_threshold,
         max_samples=args.max_samples,
@@ -53,6 +53,7 @@ def main(args):
         agent_radius=args.agent_radius,
         num_samples_per_epoch=args.num_samples,
         image_size=tuple(args.image_size),
+        task_type=args.task_type,
         max_entities=args.max_entities,
         connect_threshold=args.connect_threshold,
         max_samples=args.max_samples,
@@ -61,16 +62,13 @@ def main(args):
     )
 
     print(f"Train samples: {len(train_dataset)}, Val samples: {len(val_dataset)}")
+    print(f"Task type: {args.task_type}")
 
-    # Wrap with adapter
-    train_wrapped = GNNDatasetAdapter(train_dataset)
-    val_wrapped = GNNDatasetAdapter(val_dataset)
-
-    batch_size = min(args.batch_size, len(train_wrapped))
+    batch_size = min(args.batch_size, len(train_dataset))
 
     # Create data loaders
     train_loader = DataLoader(
-        train_wrapped,
+        train_dataset,
         batch_size=batch_size,
         shuffle=True,
         drop_last=True,
@@ -79,7 +77,7 @@ def main(args):
     )
 
     val_loader = DataLoader(
-        val_wrapped,
+        val_dataset,
         batch_size=batch_size,
         shuffle=False,
         drop_last=True,
@@ -111,7 +109,7 @@ def main(args):
 
     model.to(device)
     optimizer = create_optimizer(model, args.lr)
-    loss_fn = create_loss_function(device)
+    loss_fn = create_loss_function(device, args.task_type)
 
     # Setup experiment logging with timestamped directory
     output_dir, writer = setup_experiment_logging(
@@ -175,11 +173,8 @@ def main(args):
             timer.toc("forward_pass")
             timer.tic("loss_compute")
 
-            # Get matches
-            preds = torch.zeros_like(reward_batch)
-            preds[reward_pred >= 0.5] = 1.0
-            preds[reward_pred < 0.5] = 0.0
-            match = (preds == reward_batch).float().mean().item()
+            # Calculate accuracy using dataset method
+            match = train_dataset.calculate_accuracy(reward_pred, reward_batch)
             matches += match
 
             # Backward pass
@@ -213,7 +208,7 @@ def main(args):
             timer.tic("data_loading")
 
         avg_tng_loss = tng_loss / num_batches
-        avg_tng_acc = matches / num_batches
+        avg_tng_acc = matches / (num_batches * batch_size)
 
         # Log training metrics
         writer.add_scalar("loss/train", avg_tng_loss, epoch)
@@ -271,15 +266,12 @@ def main(args):
                 timer.toc("val_forward_pass")
                 timer.tic("val_metrics")
 
-                # Classification metrics
-                preds = torch.zeros_like(reward_batch)
-                preds[reward_pred >= 0.5] = 1.0
-                preds[reward_pred < 0.5] = 0.0
-                match = (preds == reward_batch).float().mean().item()
+                # Calculate accuracy using dataset method
+                match = val_dataset.calculate_accuracy(reward_pred, reward_batch)
+                matches += match
 
                 loss = loss_fn(reward_pred, reward_batch)
                 val_loss += loss.item()
-                matches += match
                 num_batches += 1
 
                 timer.toc("val_metrics")
@@ -314,7 +306,7 @@ def main(args):
 
         # Calculate validation metrics
         avg_val_loss = val_loss / num_batches if num_batches > 0 else 0.0
-        avg_val_acc = matches / num_batches if num_batches > 0 else 0.0
+        avg_val_acc = matches / (num_batches * batch_size) if num_batches > 0 else 0.0
 
         # Calculate detection metrics if we have data
         detection_metrics = {}
@@ -410,6 +402,13 @@ if __name__ == "__main__":
 
     # Model arguments
     parser.add_argument("--cfg", required=True, help="Config file path")
+    parser.add_argument(
+        "--task-type",
+        type=str,
+        default="regression",
+        choices=["regression", "classification"],
+        help="Task type: 'regression' or 'classification' (default: regression)",
+    )
 
     # Training arguments
     parser.add_argument("--device", default="cuda:0", help="Device to train on")
