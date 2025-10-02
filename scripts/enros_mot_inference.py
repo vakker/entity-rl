@@ -680,35 +680,35 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s --checkpoint_dir experiments/mot_graph_20250101 \\
-           --mot_dir data/MOT16/train/MOT16-02 \\
-           --output_dir output_videos
+  %(prog)s --checkpoint-dir experiments/mot_graph_20250101 \\
+           --mot-dir data/MOT16/train/MOT16-02 \\
+           --output-dir output_videos
 
-  %(prog)s --checkpoint_dir path/to/experiment \\
-           --mot_dir path/to/MOT/sequence \\
-           --output_dir videos \\
+  %(prog)s --checkpoint-dir path/to/experiment \\
+           --mot-dir path/to/MOT/sequence \\
+           --output-dir videos \\
            --device cuda \\
            --fps 30 \\
-           --num_frames 100
+           --num-frames 100
         """,
     )
 
     parser.add_argument(
-        "--checkpoint_dir",
+        "--checkpoint-dir",
         type=str,
         required=True,
         help="Path to experiment directory (will auto-detect config and best model)",
     )
 
     parser.add_argument(
-        "--mot_dir",
+        "--mot-dir",
         type=str,
         required=True,
         help="Path to MOT sequence directory",
     )
 
     parser.add_argument(
-        "--output_dir",
+        "--output-dir",
         type=str,
         help="Directory to save output videos",
     )
@@ -728,47 +728,47 @@ Examples:
     )
 
     parser.add_argument(
-        "--agent_radius",
+        "--agent-radius",
         type=float,
         default=0.02,
         help="Agent radius for collision detection (default: 0.02)",
     )
 
     parser.add_argument(
-        "--max_entities",
+        "--max-entities",
         type=int,
         default=100,
         help="Maximum number of entities to process (default: 100)",
     )
 
     parser.add_argument(
-        "--connect_threshold",
+        "--connect-threshold",
         type=float,
         default=50.0,
         help="Distance threshold for graph edges (default: 50.0)",
     )
 
     parser.add_argument(
-        "--use_props",
+        "--use-props",
         action="store_true",
         help="Use proposals instead of ground truth",
     )
 
     parser.add_argument(
-        "--prop_filename",
+        "--prop-filename",
         type=str,
         default="prop.csv",
         help="Proposal filename to load (default: prop.csv)",
     )
 
     parser.add_argument(
-        "--include_agent_node",
+        "--include-agent-node",
         action="store_true",
         help="Include agent as a node in the graph",
     )
 
     parser.add_argument(
-        "--task_type",
+        "--task-type",
         type=str,
         default="regression",
         choices=["regression", "classification"],
@@ -776,14 +776,14 @@ Examples:
     )
 
     parser.add_argument(
-        "--output_name",
+        "--output-name",
         type=str,
         default="enros_mot_inference",
         help="Name for output video file (default: enros_mot_inference)",
     )
 
     parser.add_argument(
-        "--num_frames",
+        "--num-frames",
         type=int,
         default=None,
         help="Number of frames to process (default: all frames)",
