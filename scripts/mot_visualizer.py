@@ -220,6 +220,7 @@ class MOTVisualizer:
         display_time: bool = True,
         display_name: str = "mot_visualization",
         show_occluder: Optional[bool] = None,
+        max_frames: Optional[int] = None,
     ) -> str:
         """
         Generate video with MOT visualizations.
@@ -228,6 +229,7 @@ class MOTVisualizer:
             display_time: Whether to display frame timestamps
             display_name: Name for the output video file
             show_occluder: Override occluder display setting
+            max_frames: Maximum number of frames to process (None = all frames)
 
         Returns:
             Path to the generated video file
@@ -239,6 +241,10 @@ class MOTVisualizer:
         frame_paths = self._get_frame_paths()
         if not frame_paths:
             raise ValueError(f"No image files found in {self.image_dir}")
+
+        # Limit frames if max_frames is specified
+        if max_frames is not None and max_frames > 0:
+            frame_paths = frame_paths[:max_frames]
 
         # Create output directory
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -397,6 +403,13 @@ Examples:
         help="Don't display frame timestamps",
     )
 
+    parser.add_argument(
+        "--max_frames",
+        type=int,
+        default=None,
+        help="Maximum number of frames to process (default: all frames)",
+    )
+
     args = parser.parse_args()
 
     try:
@@ -415,6 +428,7 @@ Examples:
         output_path = visualizer.generate_video(
             display_time=args.display_time,
             display_name=args.display_name,
+            max_frames=args.max_frames,
         )
 
         print(f"Success! Video saved to: {output_path}")
