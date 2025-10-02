@@ -210,16 +210,18 @@ class ENROSMOTVisualizer:
 
     def _run_inference(
         self, graph_data, agent_pos: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, np.ndarray]:
         """
-        Run model inference.
+        Run model inference and extract attention weights.
 
         Args:
             graph_data: Graph data from dataset
             agent_pos: Agent position tensor [x, y, w, h]
 
         Returns:
-            Tuple of (action_logits, value_prediction)
+            Tuple of (value_prediction, attention_weights)
+            - value_prediction: Tensor with predicted value
+            - attention_weights: numpy array of attention weights per node (or None)
         """
         # Prepare observation (same as training)
         batch = Batch.from_data_list([graph_data])
@@ -237,7 +239,21 @@ class ENROSMOTVisualizer:
             _ = self.model(model_input)
             value = self.model.value_function()
 
-        return value.cpu()
+        # Extract attention weights from pooling layer if available
+        attention_weights = None
+        try:
+            # Navigate to GNN encoder's aggregation layer
+            encoder = self.model._encoder
+            attention_weights = (
+                encoder._stages[1]._encoder[0]._aggr.attention_acts.numpy()
+            )
+            attention_weights = attention_weights - attention_weights.min()
+            attention_weights = attention_weights / attention_weights.max()
+            # print(attention_weights.min(), attention_weights.max())
+        except Exception as e:
+            print(f"Warning: Could not extract attention weights: {e}")
+
+        return value.cpu(), attention_weights
 
     def _draw_predictions(
         self,
@@ -246,6 +262,7 @@ class ENROSMOTVisualizer:
         agent_pos: Tuple[float, float, float, float],
         value_pred: float,
         frame_id: int,
+        attention_weights: np.ndarray = None,
     ) -> np.ndarray:
         """
         Draw bounding boxes, agent, and predictions on image.
@@ -256,6 +273,7 @@ class ENROSMOTVisualizer:
             agent_pos: Agent position (x, y, radius_x, radius_y) in normalized coords
             value_pred: Predicted value (classification: 0=collision, 1=safe)
             frame_id: Frame number
+            attention_weights: Optional attention weights per node
 
         Returns:
             Image with visualizations
@@ -263,26 +281,62 @@ class ENROSMOTVisualizer:
         h, w = image.shape[:2]
         agent_x, agent_y, agent_w, agent_h = agent_pos
 
+        # Determine offset for attention weights
+        # If include_agent_node is True, first node is agent, rest are bboxes
+        attention_offset = 1 if self.include_agent_node else 0
+
         # Draw bounding boxes
-        for x, y, bbox_w, bbox_h, track_id in bboxes:
+        for bbox_idx, (x, y, bbox_w, bbox_h, track_id) in enumerate(bboxes):
             # Convert normalized coords to pixels
             px = int(x * w)
             py = int(y * h)
             pw = int(bbox_w * w)
             ph = int(bbox_h * h)
 
-            color = (200, 200, 200)  # Gray
+            # Color based on attention weight if available
+            if attention_weights is not None and bbox_idx + attention_offset < len(
+                attention_weights
+            ):
+                att_val = attention_weights[bbox_idx + attention_offset]
+                # Map attention to color: low attention = blue (cold), high = red (hot)
+                # Use matplotlib colormap for hot (0=black, 1=red)
+                intensity = np.clip(att_val, 0, 1)
+                # Hot colormap: interpolate from dark blue (low) to bright red (high)
+                color = (
+                    int(intensity * 255),  # Blue channel
+                    int(intensity * 255),  # Green channel
+                    int(intensity * 255),  # Red channel
+                )
+            else:
+                color = (200, 200, 200)  # Gray (default)
 
-            cv2.rectangle(image, (px, py), (px + pw, py + ph), color, 2)
-            cv2.putText(
-                image,
-                f"ID:{int(track_id)}",
-                (px, py - 5),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
-                color,
-                1,
-            )
+            thickness = 3 if attention_weights is not None else 2
+            cv2.rectangle(image, (px, py), (px + pw, py + ph), color, thickness)
+
+            # Draw attention value if available
+            if attention_weights is not None and bbox_idx + attention_offset < len(
+                attention_weights
+            ):
+                att_val = attention_weights[bbox_idx + attention_offset]
+                cv2.putText(
+                    image,
+                    f"{att_val[0]:.3f}",
+                    (px, py - 5),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.4,
+                    color,
+                    1,
+                )
+            else:
+                cv2.putText(
+                    image,
+                    f"ID:{int(track_id)}",
+                    (px, py - 5),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    color,
+                    1,
+                )
 
         # Draw agent
         agent_px = int(agent_x * w)
@@ -323,6 +377,73 @@ class ENROSMOTVisualizer:
             (255, 255, 255),
             2,
         )
+
+        # Draw attention colorbar legend if attention weights are available
+        if attention_weights is not None:
+            # Draw colorbar in bottom-right corner
+            bar_width = 200
+            bar_height = 20
+            bar_x = w - bar_width - 20
+            bar_y = h - bar_height - 60
+
+            # Draw gradient bar
+            for i in range(bar_width):
+                intensity = i / bar_width
+                color = (
+                    int(intensity * 255),  # Blue
+                    int(intensity * 128),  # Green
+                    int(255 * intensity),  # Red
+                )
+                cv2.line(
+                    image, (bar_x + i, bar_y), (bar_x + i, bar_y + bar_height), color, 1
+                )
+
+            # Draw border
+            cv2.rectangle(
+                image,
+                (bar_x, bar_y),
+                (bar_x + bar_width, bar_y + bar_height),
+                (255, 255, 255),
+                1,
+            )
+
+            # Labels
+            cv2.putText(
+                image,
+                "0.0",
+                (bar_x - 5, bar_y + bar_height + 15),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.4,
+                (255, 255, 255),
+                1,
+            )
+            cv2.putText(
+                image,
+                "0.5",
+                (bar_x + bar_width // 2 - 10, bar_y + bar_height + 15),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.4,
+                (255, 255, 255),
+                1,
+            )
+            cv2.putText(
+                image,
+                "1.0",
+                (bar_x + bar_width - 15, bar_y + bar_height + 15),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.4,
+                (255, 255, 255),
+                1,
+            )
+            cv2.putText(
+                image,
+                "Attention",
+                (bar_x + bar_width // 2 - 30, bar_y - 5),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (255, 255, 255),
+                1,
+            )
 
         return image
 
@@ -396,14 +517,15 @@ class ENROSMOTVisualizer:
             graph_data = data_dict["graph"]
             agent_pos = data_dict["agent_pos"]
 
-            # Run inference (same as training)
-            value = self._run_inference(graph_data, agent_pos)
+            # Run inference and extract attention weights
+            value, attention_weights = self._run_inference(graph_data, agent_pos)
 
             # Calculate accuracy (same as training/evaluation)
             # Dataset returns: 0 (collision) or 1 (safe)
             reward_class = reward_gt  # Already 0 or 1
             # Get prediction class: value >= 0.5 -> safe (1), else collision (0)
-            pred_class = 1 if value.item() >= 0.5 else 0
+            # NOTE: threshold depends on reward range
+            pred_class = 1 if value.item() >= 0 else -1
             # Track match
             match = 1 if pred_class == reward_class else 0
             total_matches += match
@@ -413,13 +535,14 @@ class ENROSMOTVisualizer:
             bboxes = self.dataset.gt_data[self.data_dir][frame_id]
             scaled_bboxes = scale_bboxes(bboxes, (orig_w, orig_h))
 
-            # Draw visualizations
+            # Draw visualizations with attention weights
             frame = self._draw_predictions(
                 frame,
                 scaled_bboxes,
                 agent_pos.numpy(),
                 value.item(),
                 frame_id,
+                attention_weights,
             )
 
             video_writer.write(frame)
