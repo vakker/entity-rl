@@ -70,8 +70,8 @@ def preprocess_image(image_path, target_size=(210, 160)):
     return img_tensor, img_array, (orig_width, orig_height)
 
 
-def extract_rpn_proposals(model, input_tensor, device):
-    """Extract RPN proposals from the model."""
+def extract_rpn_proposals_and_features(model, input_tensor, device):
+    """Extract RPN proposals and features from the model."""
     input_tensor = input_tensor.to(device)
 
     with torch.no_grad():
@@ -90,8 +90,9 @@ def extract_rpn_proposals(model, input_tensor, device):
                 "No RPN outputs found. Make sure you're using RPNEncoder."
             )
 
-        # Extract proposals from the stored outputs
+        # Extract proposals and features from the stored outputs
         proposals = entity_encoder.rpn_outputs["proposals"]
+        features = entity_encoder.rpn_outputs["features"]
 
         # Get the first batch item
         if len(proposals) > 0:
@@ -99,9 +100,13 @@ def extract_rpn_proposals(model, input_tensor, device):
             bboxes = batch_proposals.bboxes.cpu().numpy()  # (N, 4) in xyxy format
             scores = batch_proposals.scores.cpu().numpy()  # (N,)
 
-            return bboxes, scores
+            # Get features for the first batch item (shape: (N, feature_dim))
+            batch_features = features[0].cpu().numpy()  # (N, feature_dim)
+            batch_features = batch_features.squeeze()
+
+            return bboxes, scores, batch_features
         else:
-            return np.empty((0, 4)), np.empty((0,))
+            return np.empty((0, 4)), np.empty((0,)), np.empty((0, 0))
 
 
 def save_proposals_to_csv(output_path, all_proposals):
@@ -135,9 +140,16 @@ def save_proposals_to_csv(output_path, all_proposals):
                 writer.writerow([frame_id, -1, x, y, width, height, score, 1, 1.0])
 
 
+def save_features_to_npz(output_path, all_features):
+    """Save RPN features to NPZ file."""
+    # Convert dict of arrays to a format suitable for np.savez (keys must be strings)
+    features_dict = {f"frame_{frame_id}": features for frame_id, features in all_features.items()}
+    np.savez_compressed(output_path, **features_dict)
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Preprocess data using RPN entity encoder"
+        description="Preprocess data using RPN entity encoder (saves proposals and features)"
     )
     parser.add_argument(
         "--cfg",
@@ -148,7 +160,7 @@ def main():
         "--input-dir", required=True, help="Directory containing input images"
     )
     parser.add_argument(
-        "--output", required=True, help="Path to save preprocessed data (CSV)"
+        "--output", required=True, help="Path to save preprocessed proposals (CSV) and features (NPZ)"
     )
     parser.add_argument("--device", default="cuda", help="Device to run on")
     parser.add_argument(
@@ -192,6 +204,7 @@ def main():
 
     # Process images
     all_proposals = {}
+    all_features = {}
     failed_frames = []
 
     for i, img_path in enumerate(tqdm(image_files, desc="Processing images")):
@@ -204,14 +217,15 @@ def main():
         orig_width, orig_height = orig_size
         target_height, target_width = args.size
 
-        # Extract proposals
-        bboxes, scores = extract_rpn_proposals(model, input_tensor, args.device)
+        # Extract proposals and features
+        bboxes, scores, features = extract_rpn_proposals_and_features(model, input_tensor, args.device)
 
         # Filter by score threshold
         if args.score_threshold > 0:
             valid_mask = scores > args.score_threshold
             bboxes = bboxes[valid_mask]
             scores = scores[valid_mask]
+            features = features[valid_mask]
 
         # Scale bounding boxes back to original image size
         if len(bboxes) > 0:
@@ -222,10 +236,16 @@ def main():
             bboxes[:, [1, 3]] *= scale_y  # y1, y2
 
         all_proposals[frame_id] = (bboxes, scores)
+        all_features[frame_id] = features
 
     # Save results
     save_proposals_to_csv(args.output, all_proposals)
     print(f"Saved {len(all_proposals)} frames to {args.output}")
+
+    # Save features
+    features_output = args.output.replace('.csv', '_features.npz')
+    save_features_to_npz(features_output, all_features)
+    print(f"Saved features to {features_output}")
 
     if failed_frames:
         print(f"Failed to process {len(failed_frames)} frames")
@@ -234,6 +254,13 @@ def main():
     total_proposals = sum(len(bboxes) for bboxes, _ in all_proposals.values())
     print(f"Total proposals extracted: {total_proposals}")
     print(f"Average proposals per frame: {total_proposals / len(all_proposals):.2f}")
+
+    # Print feature statistics
+    if all_features:
+        sample_features = next(iter(all_features.values()))
+        if len(sample_features) > 0:
+            print(f"Feature dimension per proposal: {sample_features.shape[1]}")
+            print(f"Total features saved: {sum(f.shape[0] for f in all_features.values())}")
 
 
 if __name__ == "__main__":
