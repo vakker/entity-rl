@@ -93,7 +93,11 @@ def main(args):
     assert len(train_loader)
 
     # Set up model with graph observation space
-    obs_space = create_graph_observation_space(node_feature_dim=5)
+    input_dim = 5
+    if args.use_precomputed_features:
+        input_dim += 12550
+
+    obs_space = create_graph_observation_space(node_feature_dim=input_dim)
     action_space = gym.spaces.MultiDiscrete([3, 3])
 
     # Load and modify config for GNN training
@@ -417,8 +421,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--feature-filename",
         type=str,
-        default="features.npz",
-        help="Precomputed features filename to load (default: features.npz)",
+        help="Precomputed features filename to load (default: None)",
     )
     parser.add_argument("--no-bar", action="store_true")
     parser.add_argument("--max-samples", type=int, help="Max samples to load")

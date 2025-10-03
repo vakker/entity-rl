@@ -39,7 +39,7 @@ class MOTDataset(Dataset):
         num_samples_per_epoch: int = 1000,
         image_size: Tuple[int, int] = (100, 100),
         max_samples: Optional[int] = None,
-        task_type: str = 'regression',
+        task_type: str = "regression",
         # Graph-specific parameters
         max_entities: int = 20,
         connect_threshold: float = 50.0,
@@ -47,7 +47,7 @@ class MOTDataset(Dataset):
         use_props: bool = False,
         prop_filename: str = "prop.csv",
         use_precomputed_features: bool = False,
-        feature_filename: str = "features.npz",
+        feature_filename: Optional[str] = None,
     ):
         """
         Initialize unified MOT dataset.
@@ -67,8 +67,10 @@ class MOTDataset(Dataset):
             prop_filename: [Graph mode] Proposal filename to load (default: "prop.csv")
         """
 
-        if task_type not in ['regression', 'classification']:
-            raise ValueError(f"task_type must be 'regression' or 'classification', got '{task_type}'")
+        if task_type not in ["regression", "classification"]:
+            raise ValueError(
+                f"task_type must be 'regression' or 'classification', got '{task_type}'"
+            )
 
         self.task_type = task_type
         self.return_image = return_image
@@ -95,10 +97,19 @@ class MOTDataset(Dataset):
         )
 
         # Load proposals if using graph mode with props
-        if use_props or use_precomputed_features:
+        if use_props:
+            if use_precomputed_features:
+                if feature_filename is None:
+                    feature_filename = prop_filename.replace(".csv", "_features.npz")
+            else:
+                feature_filename = None
+
             self.props_data_loader = MOTDataLoader(
-                mot_data_dirs, use_gt=False, max_samples=max_samples, prop_filename=prop_filename,
-                feature_filename=feature_filename if use_precomputed_features else None
+                mot_data_dirs,
+                use_gt=False,
+                max_samples=max_samples,
+                prop_filename=prop_filename,
+                feature_filename=feature_filename,
             )
             self.props_data = self.props_data_loader.mot_data()
 
@@ -210,7 +221,7 @@ class MOTDataset(Dataset):
             has_collision = check_rectangle_overlap(
                 agent_x, agent_y, self.agent_radius, scaled_bboxes
             )
-            if self.task_type == 'classification':
+            if self.task_type == "classification":
                 return 0.0 if has_collision else 1.0  # BCE targets (float)
             else:  # regression
                 return -1.0 if has_collision else 1.0  # Regression targets
@@ -218,7 +229,9 @@ class MOTDataset(Dataset):
             # No entities, always safe
             return 1.0
 
-    def calculate_accuracy(self, predictions: torch.Tensor, labels: torch.Tensor) -> int:
+    def calculate_accuracy(
+        self, predictions: torch.Tensor, labels: torch.Tensor
+    ) -> int:
         """
         Calculate accuracy matches based on task type.
 
@@ -233,7 +246,7 @@ class MOTDataset(Dataset):
         Returns:
             Number of correct predictions (int for summing across batches)
         """
-        if self.task_type == 'classification':
+        if self.task_type == "classification":
             # For classification with BCEWithLogitsLoss:
             # logit >= 0 -> class 1 (safe), logit < 0 -> class 0 (collision)
             preds = (predictions >= 0).float()
@@ -249,7 +262,9 @@ class MOTDataset(Dataset):
         """Return the number of samples per epoch."""
         return self.num_samples_per_epoch
 
-    def __getitem__(self, idx: int) -> Tuple[Dict[str, torch.Tensor], Union[int, float], torch.Tensor]:
+    def __getitem__(
+        self, idx: int
+    ) -> Tuple[Dict[str, torch.Tensor], Union[int, float], torch.Tensor]:
         """
         Get a sample by index.
 
@@ -278,7 +293,7 @@ class MOTDataset(Dataset):
         }
 
         # Convert reward to appropriate type based on task
-        if self.task_type == 'classification':
+        if self.task_type == "classification":
             label = int(reward)  # Already 0 or 1
         else:  # regression
             label = float(reward)  # Already -1.0 or 1.0
@@ -329,8 +344,17 @@ class MOTDataset(Dataset):
         reward = self._compute_reward(gt_bboxes, agent_x, agent_y)
         self._timer.toc("compute_reward")
 
+        if self.use_precomputed_features and self.props_data_loader:
+            precomputed_features = self.props_data_loader.get_features(
+                data_dir, frame_id
+            )
+        else:
+            precomputed_features = None
+
         data: Dict[str, Any] = {
-            "graph": self._create_graph(props_bboxes, agent_x, agent_y),
+            "graph": self._create_graph(
+                props_bboxes, agent_x, agent_y, precomputed_features
+            ),
             "agent_pos": torch.tensor(
                 [agent_x, agent_y, self.agent_radius, self.agent_radius],
                 dtype=torch.float32,
@@ -354,6 +378,7 @@ class MOTDataset(Dataset):
         scaled_bboxes: List[Tuple],
         agent_x: float,
         agent_y: float,
+        precomputed_features: np.ndarray | None = None,
     ) -> Data:
         """
         Create graph representation for GNN.
@@ -362,6 +387,7 @@ class MOTDataset(Dataset):
             scaled_bboxes: List of scaled bounding boxes (x, y, w, h, track_id)
             agent_x: Agent x position (normalized)
             agent_y: Agent y position (normalized)
+            precomputed_features: Precomputed features
 
         Returns:
             PyTorch Geometric Data object
@@ -374,8 +400,7 @@ class MOTDataset(Dataset):
             agent_y,
             self.agent_radius,
             self.include_agent_node,
-            data_dir,
-            frame_id,
+            precomputed_features=precomputed_features,
         )
         self._timer.toc("create_relative_node_features")
 
@@ -398,8 +423,7 @@ class MOTDataset(Dataset):
         agent_y: float,
         agent_radius: float,
         include_agent_node: bool,
-        data_dir: str = "",
-        frame_id: int = 0,
+        precomputed_features: np.ndarray | None = None,
     ) -> torch.Tensor:
         """
         Create node features relative to agent position.
@@ -419,20 +443,6 @@ class MOTDataset(Dataset):
             Node feature tensor (num_nodes, feature_dim)
         """
         features = []
-
-        # Load precomputed features if available
-        precomputed_features = None
-        if self.use_precomputed_features and self.props_data_loader:
-            precomputed_features = self.props_data_loader.get_features(data_dir, frame_id)
-            if precomputed_features is not None:
-                # Adjust bbox part to be relative
-                precomputed_features = precomputed_features.copy()
-                x1, y1, x2, y2 = precomputed_features[:, -6:-2].T
-                center_x = (x1 + x2) / 2 - agent_x
-                center_y = (y1 + y2) / 2 - agent_y
-                w = x2 - x1
-                h = y2 - y1
-                precomputed_features[:, -6:-2] = np.column_stack([center_x, center_y, w, h])
 
         # Add agent node if requested
         if include_agent_node:

@@ -40,7 +40,7 @@ class MOTDataLoader:
         self._load_all_metadata()
 
         self._mot_data = self.load_mot_data(max_rows=max_samples)
-        self._feature_data = self.load_feature_data() if self.feature_filename else None
+        self._feature_data = self.load_feature_data()
 
     def mot_data(self):
         return self._mot_data
@@ -62,17 +62,19 @@ class MOTDataLoader:
         for data_dir in self.mot_data_dirs:
             data_path = Path(data_dir)
             feature_file = data_path / self.feature_filename
-            if feature_file.exists():
-                loaded = np.load(feature_file)
-                frame_features = {}
-                for key in loaded.keys():
-                    if key.startswith('frame_'):
-                        frame_id = int(key.split('_')[1])
-                        frame_features[frame_id] = loaded[key]
-                feature_data[str(data_path)] = frame_features
-                print(f"Loaded features for {len(frame_features)} frames from {feature_file}")
-            else:
-                print(f"Warning: Feature file not found: {feature_file}")
+            if not feature_file.exists():
+                raise ValueError(f"Feature file not found: {feature_file}")
+
+            loaded = np.load(feature_file)
+            frame_features = {}
+            for key in loaded.keys():
+                if key.startswith("frame_"):
+                    frame_id = int(key.split("_")[1])
+                    frame_features[frame_id] = loaded[key]
+            feature_data[str(data_path)] = frame_features
+            print(
+                f"Loaded features for {len(frame_features)} frames from {feature_file}"
+            )
 
         return feature_data
 
