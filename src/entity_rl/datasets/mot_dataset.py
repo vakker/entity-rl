@@ -46,6 +46,8 @@ class MOTDataset(Dataset):
         include_agent_node: bool = True,
         use_props: bool = False,
         prop_filename: str = "prop.csv",
+        use_precomputed_features: bool = False,
+        feature_filename: str = "features.npz",
     ):
         """
         Initialize unified MOT dataset.
@@ -76,6 +78,7 @@ class MOTDataset(Dataset):
         self.connect_threshold = connect_threshold
         self.include_agent_node = include_agent_node
         self.use_props = use_props
+        self.use_precomputed_features = use_precomputed_features
 
         # Always load GT data for reward calculation
         self.gt_data_loader = MOTDataLoader(
@@ -92,9 +95,10 @@ class MOTDataset(Dataset):
         )
 
         # Load proposals if using graph mode with props
-        if use_props:
+        if use_props or use_precomputed_features:
             self.props_data_loader = MOTDataLoader(
-                mot_data_dirs, use_gt=False, max_samples=max_samples, prop_filename=prop_filename
+                mot_data_dirs, use_gt=False, max_samples=max_samples, prop_filename=prop_filename,
+                feature_filename=feature_filename if use_precomputed_features else None
             )
             self.props_data = self.props_data_loader.mot_data()
 
@@ -291,7 +295,7 @@ class MOTDataset(Dataset):
         data_dir: str | None = None,
         frame_id: int | None = None,
         agent_pos: Tuple[float, float, float, float] | None = None,
-    ) -> Tuple[Dict[str, Any], int]:
+    ) -> Tuple[Dict[str, Any], float]:
         """
         Generate a single sample.
 
@@ -341,11 +345,8 @@ class MOTDataset(Dataset):
         return data, reward
 
     def get_sample(
-        self,
-        data_dir: str,
-        frame_id: int,
-        agent_pos: Tuple[float, float, float, float],
-    ) -> Tuple[Dict[str, Any], int]:
+        self, data_dir: str, frame_id: int, agent_pos: Tuple[float, float, float, float]
+    ) -> Tuple[Dict[str, Any], float]:
         return self._generate_sample(data_dir, frame_id, agent_pos)
 
     def _create_graph(
@@ -373,6 +374,8 @@ class MOTDataset(Dataset):
             agent_y,
             self.agent_radius,
             self.include_agent_node,
+            data_dir,
+            frame_id,
         )
         self._timer.toc("create_relative_node_features")
 
@@ -395,13 +398,13 @@ class MOTDataset(Dataset):
         agent_y: float,
         agent_radius: float,
         include_agent_node: bool,
+        data_dir: str = "",
+        frame_id: int = 0,
     ) -> torch.Tensor:
         """
         Create node features relative to agent position.
 
-        Node features format:
-        - Agent node: [0, 0, agent_radius, agent_radius, 1.0]
-        - Obstacle nodes: [rel_x, rel_y, w, h, 0.0]
+        Node features format: [rel_x, rel_y, w, h, is_agent] + precomputed_features (if available)
 
         Args:
             scaled_bboxes: Scaled bounding boxes
@@ -409,29 +412,51 @@ class MOTDataset(Dataset):
             agent_y: Agent y position
             agent_radius: Agent radius
             include_agent_node: Whether to include agent node
+            data_dir: Data directory for loading features
+            frame_id: Frame ID for loading features
 
         Returns:
-            Node feature tensor (num_nodes, 5)
+            Node feature tensor (num_nodes, feature_dim)
         """
         features = []
+
+        # Load precomputed features if available
+        precomputed_features = None
+        if self.use_precomputed_features and self.props_data_loader:
+            precomputed_features = self.props_data_loader.get_features(data_dir, frame_id)
+            if precomputed_features is not None:
+                # Adjust bbox part to be relative
+                precomputed_features = precomputed_features.copy()
+                x1, y1, x2, y2 = precomputed_features[:, -6:-2].T
+                center_x = (x1 + x2) / 2 - agent_x
+                center_y = (y1 + y2) / 2 - agent_y
+                w = x2 - x1
+                h = y2 - y1
+                precomputed_features[:, -6:-2] = np.column_stack([center_x, center_y, w, h])
 
         # Add agent node if requested
         if include_agent_node:
             agent_feature = [0.0, 0.0, agent_radius, agent_radius, 1.0]
+            if precomputed_features is not None:
+                # Append zeros for precomputed features (agent has no precomputed)
+                agent_feature.extend([0.0] * precomputed_features.shape[1])
             features.append(agent_feature)
 
-        # Add obstacle nodes relative to agent position
-        for x, y, w, h, _ in scaled_bboxes:
-            # Calculate obstacle center
+        # Add obstacle nodes
+        for i, (x, y, w, h, _) in enumerate(scaled_bboxes):
+            # Calculate relative position
             obs_center_x = x + w / 2
             obs_center_y = y + h / 2
-
-            # Calculate relative position from agent to obstacle center
             rel_x = obs_center_x - agent_x
             rel_y = obs_center_y - agent_y
 
-            # Obstacle feature: [rel_x, rel_y, w, h, is_agent=0]
+            # Base feature: [rel_x, rel_y, w, h, is_agent=0]
             obstacle_feature = [rel_x, rel_y, w, h, 0.0]
+
+            # Append precomputed features if available
+            if precomputed_features is not None and i < len(precomputed_features):
+                obstacle_feature.extend(precomputed_features[i])
+
             features.append(obstacle_feature)
 
         return torch.tensor(features, dtype=torch.float32)
@@ -442,7 +467,8 @@ class MOTDataset(Dataset):
         """Create PyTorch Geometric Data object."""
         # Handle empty graph case
         if len(node_features) == 0:
-            return create_empty_graph(node_feature_dim=5)
+            node_feature_dim = 5 + (12550 if self.use_precomputed_features else 0)
+            return create_empty_graph(node_feature_dim=node_feature_dim)
 
         return Data(
             x=node_features,

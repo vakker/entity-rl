@@ -24,17 +24,18 @@ class RPNENROS(RPN):
 
     def __init__(
         self,
-        feature_dim: int = 128,
         roi_output_size: int = 7,
         roi_spatial_scale: float = 0.25,  # 1/4 for P2 feature level
         unfreeze_backbone: bool = False,
         *args,
         **kwargs,
     ) -> None:
-        self.feature_dim = feature_dim
         self.roi_output_size = roi_output_size
         self.roi_spatial_scale = roi_spatial_scale
         self.unfreeze_backbone = unfreeze_backbone
+
+        # Calculate actual feature dimension: 256 channels * roi_size * roi_size
+        self.feature_dim = 256 * roi_output_size * roi_output_size
 
         super().__init__(*args, **kwargs)
 
@@ -185,4 +186,3 @@ class RPNENROS(RPN):
             "scores": all_scores,
             "backbone_features": x,
         }
-

@@ -61,6 +61,8 @@ class ENROSMOTVisualizer:
         prop_filename: str = "prop.csv",
         include_agent_node: bool = False,
         task_type: str = 'regression',
+        use_precomputed_features: bool = False,
+        feature_filename: str = "features.npz",
     ):
         """
         Initialize the ENROS MOT visualizer.
@@ -78,6 +80,8 @@ class ENROSMOTVisualizer:
             prop_filename: Proposal filename to load (default: "prop.csv")
             include_agent_node: Whether to include agent node in graph
             task_type: Task type ('regression' or 'classification')
+            use_precomputed_features: Whether to use precomputed RPN features
+            feature_filename: Precomputed features filename (default: "features.npz")
         """
         self.checkpoint_dir = Path(checkpoint_dir)
         self.mot_dir = Path(mot_dir)
@@ -92,6 +96,8 @@ class ENROSMOTVisualizer:
         self.use_props = use_props
         self.include_agent_node = include_agent_node
         self.task_type = task_type
+        self.use_precomputed_features = use_precomputed_features
+        self.feature_filename = feature_filename
 
         # Auto-detect config and checkpoint
         self.config_path = self._find_config()
@@ -119,6 +125,8 @@ class ENROSMOTVisualizer:
             use_props=use_props,
             prop_filename=prop_filename,
             include_agent_node=include_agent_node,
+            use_precomputed_features=use_precomputed_features,
+            feature_filename=feature_filename,
         )
 
         # Get frame info
@@ -776,6 +784,19 @@ Examples:
     )
 
     parser.add_argument(
+        "--use-precomputed-features",
+        action="store_true",
+        help="Use precomputed RPN features for node features",
+    )
+
+    parser.add_argument(
+        "--feature-filename",
+        type=str,
+        default="features.npz",
+        help="Precomputed features filename to load (default: features.npz)",
+    )
+
+    parser.add_argument(
         "--output-name",
         type=str,
         default="enros_mot_inference",
@@ -816,6 +837,8 @@ Examples:
         prop_filename=args.prop_filename,
         include_agent_node=args.include_agent_node,
         task_type=args.task_type,
+        use_precomputed_features=args.use_precomputed_features,
+        feature_filename=args.feature_filename,
     )
 
     # Generate video

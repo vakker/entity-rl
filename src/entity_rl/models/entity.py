@@ -29,7 +29,7 @@ class EntityEncoder(BaseModule):
 
     @property
     @abstractmethod
-    def out_channels(self):
+    def out_channels(self) -> dict:
         pass
 
 
@@ -306,8 +306,6 @@ class RPNEncoder(EntityEncoder):
         # Override config parameters
         if "max_per_image" in model_config:
             rpn_config["test_cfg"]["rpn"]["max_per_img"] = model_config["max_per_image"]
-        if "feature_dim" in model_config:
-            rpn_config["feature_dim"] = model_config["feature_dim"]
         if "unfreeze_backbone" in model_config:
             rpn_config["unfreeze_backbone"] = model_config["unfreeze_backbone"]
 
@@ -352,10 +350,12 @@ class RPNEncoder(EntityEncoder):
     @property
     def out_channels(self):
         # [roi_features, bbox (4), objectness_score (1), frame_id (1)]
-        feature_dim = self._model_config.get("feature_dim", 128)
+        # roi_features are now full pooled features: 256 * roi_output_size * roi_output_size
+        roi_output_size = self._model_config.get("roi_output_size", 7)
+        feature_dim = 256 * roi_output_size * roi_output_size
         x_shape = feature_dim + 4 + 1 + 1
         return {
-            "node_features": [x_shape],
+            "node_features": (x_shape,),
             "edge_features": None,
             "global_features": None,
         }

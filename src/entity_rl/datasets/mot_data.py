@@ -17,6 +17,7 @@ class MOTDataLoader:
         use_gt: bool = True,
         max_samples: Optional[int] = None,
         prop_filename: str = "prop.csv",
+        feature_filename: Optional[str] = None,
     ):
         """
         Initialize MOT data loader.
@@ -26,20 +27,69 @@ class MOTDataLoader:
             use_gt: Whether to use ground truth (gt.txt) or detections (det.txt)
             max_samples: Maximum number of samples to load
             prop_filename: Filename for proposal data (default: "prop.csv")
+            feature_filename: Filename for precomputed features (default: None)
         """
         self.mot_data_dirs = mot_data_dirs
         print(f"Loaded MOT data from {len(self.mot_data_dirs)} directories")
         self.use_gt = use_gt
         self.prop_filename = prop_filename
+        self.feature_filename = feature_filename
 
         # Cache for image dimensions (per directory)
         self._dimension_cache: Dict[str, Tuple[int, int]] = {}
         self._load_all_metadata()
 
         self._mot_data = self.load_mot_data(max_rows=max_samples)
+        self._feature_data = self.load_feature_data() if self.feature_filename else None
 
     def mot_data(self):
         return self._mot_data
+
+    def feature_data(self):
+        return self._feature_data
+
+    def load_feature_data(self) -> Optional[Dict[str, Dict[int, np.ndarray]]]:
+        """
+        Load precomputed features from NPZ files.
+
+        Returns:
+            Dictionary mapping data_dir -> {frame_id: features_array}
+        """
+        if not self.feature_filename:
+            return None
+
+        feature_data = {}
+        for data_dir in self.mot_data_dirs:
+            data_path = Path(data_dir)
+            feature_file = data_path / self.feature_filename
+            if feature_file.exists():
+                loaded = np.load(feature_file)
+                frame_features = {}
+                for key in loaded.keys():
+                    if key.startswith('frame_'):
+                        frame_id = int(key.split('_')[1])
+                        frame_features[frame_id] = loaded[key]
+                feature_data[str(data_path)] = frame_features
+                print(f"Loaded features for {len(frame_features)} frames from {feature_file}")
+            else:
+                print(f"Warning: Feature file not found: {feature_file}")
+
+        return feature_data
+
+    def get_features(self, data_dir: str, frame_id: int) -> Optional[np.ndarray]:
+        """
+        Get precomputed features for a specific frame.
+
+        Args:
+            data_dir: Data directory
+            frame_id: Frame ID
+
+        Returns:
+            Features array (N, feature_dim) or None if not available
+        """
+        if self._feature_data and data_dir in self._feature_data:
+            return self._feature_data[data_dir].get(frame_id)
+        return None
 
     def get_total_frames(self):
         all_frames = []
@@ -163,7 +213,7 @@ class MOTDataLoader:
         return mot_data
 
     def _parse_mot_annotations(
-        self, ann_file: Path, max_rows: None
+        self, ann_file: Path, max_rows: Optional[int]
     ) -> Dict[int, List[Tuple[float, float, float, float, int]]]:
         """
         Parse MOT annotation file.

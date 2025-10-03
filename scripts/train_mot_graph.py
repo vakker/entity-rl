@@ -47,6 +47,8 @@ def main(args):
         use_props=args.use_props,
         prop_filename=args.prop_filename,
         include_agent_node=args.include_agent_node,
+        use_precomputed_features=args.use_precomputed_features,
+        feature_filename=args.feature_filename,
     )
 
     val_dataset = MOTDataset(
@@ -61,6 +63,8 @@ def main(args):
         use_props=args.use_props,
         prop_filename=args.prop_filename,
         include_agent_node=args.include_agent_node,
+        use_precomputed_features=args.use_precomputed_features,
+        feature_filename=args.feature_filename,
     )
 
     print(f"Train samples: {len(train_dataset)}, Val samples: {len(val_dataset)}")
@@ -404,6 +408,17 @@ if __name__ == "__main__":
         type=str,
         default="prop.csv",
         help="Proposal filename to load (default: prop.csv)",
+    )
+    parser.add_argument(
+        "--use-precomputed-features",
+        action="store_true",
+        help="Use precomputed RPN features for node features",
+    )
+    parser.add_argument(
+        "--feature-filename",
+        type=str,
+        default="features.npz",
+        help="Precomputed features filename to load (default: features.npz)",
     )
     parser.add_argument("--no-bar", action="store_true")
     parser.add_argument("--max-samples", type=int, help="Max samples to load")
