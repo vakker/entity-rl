@@ -224,6 +224,14 @@ class GNNEncoder(BaseModule):
 
         self._n_input_size = in_channels
 
+        # Add projection layer if configured
+        projection_dim = model_config.get("projection_dim", None)
+        if projection_dim:
+            self.projection = nn.Linear(in_channels, projection_dim)
+            in_channels = projection_dim
+        else:
+            self.projection = None
+
         # Add pooling layer if configured
         pooling_config = model_config.get("pooling", None)
         if pooling_config:
@@ -245,6 +253,12 @@ class GNNEncoder(BaseModule):
 
         x, edge_index, batch = inputs.x, inputs.edge_index, inputs.batch
         timer = TicToc(enabled=False)
+
+        # Apply projection if configured
+        if self.projection:
+            timer.tic("projection")
+            x = self.projection(x)
+            timer.toc("projection")
 
         # Apply pooling before conv layers if configured
         if self.pooling:
