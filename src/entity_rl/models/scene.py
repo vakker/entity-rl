@@ -227,7 +227,10 @@ class GNNEncoder(BaseModule):
         # Add projection layer if configured
         projection_dim = model_config.get("projection_dim", None)
         if projection_dim:
-            self.projection = nn.Linear(in_channels, projection_dim)
+            self.projection = nn.Sequential(
+                nn.Linear(in_channels, projection_dim),
+                nn.LeakyReLU()
+            )
             in_channels = projection_dim
         else:
             self.projection = None
