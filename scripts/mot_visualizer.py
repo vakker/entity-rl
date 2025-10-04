@@ -179,7 +179,7 @@ class MOTVisualizer:
             conf_level = int((confidence / max_conf) * 5)
 
             # Get class label
-            label = int(detection[7]) if len(detection) > 7 else 1
+            class_id = int(detection[7]) if len(detection) > 7 else 1
 
             # Select color based on track ID
             color = self.colors[track_id % len(self.colors)]
@@ -189,7 +189,7 @@ class MOTVisualizer:
             pt2 = (x + width, y + height)
 
             # Handle occluders (special case for ground truth)
-            if self.mode == "gt" and self.show_occluder and label in [9, 10, 11, 13]:
+            if self.mode == "gt" and self.show_occluder and class_id in [9, 10, 11, 13]:
                 # Draw semi-transparent overlay for occluded objects
                 overlay = image.copy()
                 alpha = 0.7
@@ -200,18 +200,23 @@ class MOTVisualizer:
                 # Draw bounding box
                 cv2.rectangle(image, pt1, pt2, color, 2)
 
-                # Draw track ID (not for detections)
-                if self.mode != "det":
-                    track_id_str = str(track_id)
-                    cv2.putText(
-                        image,
-                        track_id_str,
-                        pt1,
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        1,
-                        color,
-                        2,
-                    )
+                # Draw label (track ID + class for GT, class + confidence for detections)
+                if self.mode == "gt":
+                    # Ground truth: show track_id (class_id)
+                    label_text = f"{track_id} (C{class_id})"
+                else:
+                    # Detections: show class_id (confidence)
+                    label_text = f"C{class_id} ({confidence:.2f})"
+
+                cv2.putText(
+                    image,
+                    label_text,
+                    pt1,
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6,
+                    color,
+                    2,
+                )
 
         return image
 
