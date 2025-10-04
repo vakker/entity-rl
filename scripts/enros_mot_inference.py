@@ -191,14 +191,7 @@ class ENROSMOTVisualizer:
         else:
             model_config = config["model"]
 
-        # Determine node feature dimension based on config
-        entity_config = (
-            model_config.get("custom_model_config", {})
-            .get("encoder", {})
-            .get("entity", {})
-            .get("config", {})
-        )
-        use_precomputed_features = entity_config.get("use_precomputed_features", False)
+        use_precomputed_features = self.use_precomputed_features
         node_feature_dim = 256 + 5 if use_precomputed_features else 5
 
         # Create observation space for graph data
@@ -824,7 +817,6 @@ Examples:
     parser.add_argument(
         "--feature-filename",
         type=str,
-        default="features.npz",
         help="Precomputed features filename to load (default: features.npz)",
     )
 
