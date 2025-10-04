@@ -352,7 +352,8 @@ class RPNEncoder(EntityEncoder):
         # [roi_features, bbox (4), objectness_score (1), frame_id (1)]
         # roi_features are now full pooled features: 256 * roi_output_size * roi_output_size
         roi_output_size = self._model_config.get("roi_output_size", 7)
-        feature_dim = 256 * roi_output_size * roi_output_size
+        # NOTE: using pooled features
+        feature_dim = 256  # * roi_output_size * roi_output_size
         x_shape = feature_dim + 4 + 1 + 1
         return {
             "node_features": (x_shape,),
@@ -398,7 +399,7 @@ class RPNEncoder(EntityEncoder):
             with torch.cuda.amp.autocast(enabled=False):
                 outputs = self._model.forward(frame, mode="tensor")
 
-            roi_features = outputs["roi_features"]  # (B, max_proposals, feature_dim)
+            features = outputs["features"]  # (B, max_proposals, feature_dim)
             bboxes = outputs["bboxes"]  # (B, max_proposals, 4)
             scores = outputs["scores"]  # (B, max_proposals, 1)
             proposals = outputs["proposals"]
@@ -411,22 +412,23 @@ class RPNEncoder(EntityEncoder):
 
             # Add frame indices
             frame_ids = torch.full(
-                (batch_size, roi_features.shape[1], 1),
+                (batch_size, features.shape[1], 1),
                 stack_idx,
                 device=inputs.device,
                 dtype=torch.float32,
             )
 
             # Combine all features: [roi_features, norm_bboxes, scores, frame_ids]
-            node_features = torch.cat(
-                [
-                    roi_features,  # (B, N, feature_dim)
-                    norm_bboxes,  # (B, N, 4)
-                    scores,  # (B, N, 1)
-                    frame_ids,  # (B, N, 1)
-                ],
-                dim=2,
-            )  # (B, N, feature_dim + 6)
+            node_features = features
+            # node_features = torch.cat(
+            #     [
+            #         features,  # (B, N, feature_dim)
+            #         norm_bboxes,  # (B, N, 4)
+            #         scores,  # (B, N, 1)
+            #         frame_ids,  # (B, N, 1)
+            #     ],
+            #     dim=2,
+            # )  # (B, N, feature_dim + 6)
 
             all_node_features.append(node_features)
             all_proposals.extend(proposals)

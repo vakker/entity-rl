@@ -95,7 +95,7 @@ def main(args):
     # Set up model with graph observation space
     input_dim = 5
     if args.use_precomputed_features:
-        input_dim += 12550
+        input_dim += 256
 
     obs_space = create_graph_observation_space(node_feature_dim=input_dim)
     action_space = gym.spaces.MultiDiscrete([3, 3])

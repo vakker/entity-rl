@@ -35,6 +35,7 @@ class RPNENROS(RPN):
         self.unfreeze_backbone = unfreeze_backbone
 
         # Calculate actual feature dimension: 256 channels * roi_size * roi_size
+        self.pooled_dim = 256
         self.feature_dim = 256 * roi_output_size * roi_output_size
 
         super().__init__(*args, **kwargs)
@@ -126,10 +127,10 @@ class RPNENROS(RPN):
         )
 
         # Prepare output tensors
-        roi_features = torch.zeros(
+        all_features = torch.zeros(
             batch_size,
             max_proposals,
-            self.feature_dim,
+            self.pooled_dim,
             device=batch_inputs.device,
             dtype=batch_inputs.dtype,
         )
@@ -171,17 +172,21 @@ class RPNENROS(RPN):
 
             # Extract RoI features using P2 feature map (stride=4)
             pooled_features = self.roi_align(x[0], rois)  # (N, 256, roi_size, roi_size)
+            pooled_features = nn.functional.max_pool2d(
+                pooled_features,
+                kernel_size=[pooled_features.shape[2], pooled_features.shape[3]],
+            )
             pooled_features = pooled_features.flatten(1)  # (N, 256*roi_size*roi_size)
 
             # Store features and metadata
             n_proposals = min(bboxes.shape[0], max_proposals)
-            roi_features[batch_idx, :n_proposals] = pooled_features[:n_proposals]
+            all_features[batch_idx, :n_proposals] = pooled_features[:n_proposals]
             all_bboxes[batch_idx, :n_proposals] = bboxes[:n_proposals]
             all_scores[batch_idx, :n_proposals] = scores[:n_proposals].unsqueeze(1)
 
         return {
             "proposals": proposals_list,
-            "roi_features": roi_features,
+            "features": all_features,
             "bboxes": all_bboxes,
             "scores": all_scores,
             "backbone_features": x,
