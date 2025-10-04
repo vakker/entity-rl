@@ -60,7 +60,7 @@ class ENROSMOTVisualizer:
         use_props: bool = False,
         prop_filename: str = "prop.csv",
         include_agent_node: bool = False,
-        task_type: str = 'regression',
+        task_type: str = "regression",
         use_precomputed_features: bool = False,
         feature_filename: str = "features.npz",
     ):
@@ -191,8 +191,18 @@ class ENROSMOTVisualizer:
         else:
             model_config = config["model"]
 
+        # Determine node feature dimension based on config
+        entity_config = (
+            model_config.get("custom_model_config", {})
+            .get("encoder", {})
+            .get("entity", {})
+            .get("config", {})
+        )
+        use_precomputed_features = entity_config.get("use_precomputed_features", False)
+        node_feature_dim = 256 + 5 if use_precomputed_features else 5
+
         # Create observation space for graph data
-        obs_space = create_graph_observation_space(node_feature_dim=5)
+        obs_space = create_graph_observation_space(node_feature_dim=node_feature_dim)
         action_space = gym.spaces.MultiDiscrete([3, 3])
 
         # Create model
@@ -263,7 +273,9 @@ class ENROSMOTVisualizer:
             encoder = self.model._encoder
             gnn_encoder = encoder._stages[1]  # Scene encoder (GNNEncoder)
             gat_features = gnn_encoder._encoder[0]  # Conv layer (GATFeatures)
-            aggr_layer = gat_features._aggr  # Aggregation layer (CustomAttentionalAggregation)
+            aggr_layer = (
+                gat_features._aggr
+            )  # Aggregation layer (CustomAttentionalAggregation)
 
             raw_attention = aggr_layer.attention_acts.numpy()
 
@@ -273,12 +285,12 @@ class ENROSMOTVisualizer:
 
             # Store statistics for debugging
             attention_stats = {
-                'raw_min': raw_attention.min(),
-                'raw_max': raw_attention.max(),
-                'raw_mean': raw_attention.mean(),
-                'raw_std': raw_attention.std(),
-                'num_nodes': len(raw_attention),
-                'num_graph_nodes': num_graph_nodes,
+                "raw_min": raw_attention.min(),
+                "raw_max": raw_attention.max(),
+                "raw_mean": raw_attention.mean(),
+                "raw_std": raw_attention.std(),
+                "num_nodes": len(raw_attention),
+                "num_graph_nodes": num_graph_nodes,
             }
 
             # Normalize for visualization
@@ -515,7 +527,10 @@ class ENROSMOTVisualizer:
         return image
 
     def generate_video(
-        self, output_name: str = "enros_mot_inference", num_frames: int = None, verbose: bool = False
+        self,
+        output_name: str = "enros_mot_inference",
+        num_frames: int = None,
+        verbose: bool = False,
     ) -> str:
         """
         Generate video with ENROS predictions.
@@ -586,7 +601,9 @@ class ENROSMOTVisualizer:
             agent_pos = data_dict["agent_pos"]
 
             # Run inference and extract attention weights
-            value, attention_weights, attention_stats = self._run_inference(graph_data, agent_pos)
+            value, attention_weights, attention_stats = self._run_inference(
+                graph_data, agent_pos
+            )
 
             # Calculate accuracy using dataset method
             reward_tensor = torch.tensor([reward_gt])
@@ -609,14 +626,20 @@ class ENROSMOTVisualizer:
             if verbose and attention_weights is not None:
                 print(f"\n{'='*60}")
                 print(f"Frame {frame_id}:")
-                print(f"  Value prediction: {value.item():.4f} ({'COLLISION' if value.item() < 0 else 'SAFE'})")
-                print(f"  Ground truth: {reward_gt} ({'COLLISION' if reward_gt == 0.0 or reward_gt == -1.0 else 'SAFE'})")
+                print(
+                    f"  Value prediction: {value.item():.4f} ({'COLLISION' if value.item() < 0 else 'SAFE'})"
+                )
+                print(
+                    f"  Ground truth: {reward_gt} ({'COLLISION' if reward_gt == 0.0 or reward_gt == -1.0 else 'SAFE'})"
+                )
                 print(f"  Agent pos: ({agent_x:.3f}, {agent_y:.3f})")
                 print(f"  Num entities: {len(scaled_prop_bboxes)}")
-                print(f"  Attention stats: min={attention_stats.get('raw_min', 0):.4f}, "
-                      f"max={attention_stats.get('raw_max', 0):.4f}, "
-                      f"mean={attention_stats.get('raw_mean', 0):.4f}, "
-                      f"std={attention_stats.get('raw_std', 0):.4f}")
+                print(
+                    f"  Attention stats: min={attention_stats.get('raw_min', 0):.4f}, "
+                    f"max={attention_stats.get('raw_max', 0):.4f}, "
+                    f"mean={attention_stats.get('raw_mean', 0):.4f}, "
+                    f"std={attention_stats.get('raw_std', 0):.4f}"
+                )
                 print(f"  Num attention nodes: {attention_stats.get('num_nodes', 0)}")
                 print(f"  Num graph nodes: {attention_stats.get('num_graph_nodes', 0)}")
 
@@ -631,30 +654,39 @@ class ENROSMOTVisualizer:
                         # Convert relative position back to absolute for comparison
                         abs_x = node_feat[0] + agent_x
                         abs_y = node_feat[1] + agent_y
-                        dist = np.sqrt(node_feat[0]**2 + node_feat[1]**2)
-                        print(f"    Node {node_idx}: rel=({node_feat[0]:.3f}, {node_feat[1]:.3f}), "
-                              f"abs=({abs_x:.3f}, {abs_y:.3f}), dist={dist:.3f}")
+                        dist = np.sqrt(node_feat[0] ** 2 + node_feat[1] ** 2)
+                        print(
+                            f"    Node {node_idx}: rel=({node_feat[0]:.3f}, {node_feat[1]:.3f}), "
+                            f"abs=({abs_x:.3f}, {abs_y:.3f}), dist={dist:.3f}"
+                        )
 
                 # Calculate distances and show attention per bbox
                 attention_offset = 1 if self.include_agent_node else 0
                 print(f"\n  Entity details (offset={attention_offset}):")
                 for i, (x, y, w, h, track_id) in enumerate(scaled_prop_bboxes):
                     # Calculate distance from agent center to bbox center
-                    bbox_center_x = x + w/2
-                    bbox_center_y = y + h/2
-                    dist = np.sqrt((bbox_center_x - agent_x)**2 + (bbox_center_y - agent_y)**2)
+                    bbox_center_x = x + w / 2
+                    bbox_center_y = y + h / 2
+                    dist = np.sqrt(
+                        (bbox_center_x - agent_x) ** 2 + (bbox_center_y - agent_y) ** 2
+                    )
 
                     att_idx = i + attention_offset
                     if att_idx < len(attention_weights):
                         att_val = attention_weights[att_idx][0]
-                        raw_att_val = attention_stats.get('raw_min', 0) + att_val * (
-                            attention_stats.get('raw_max', 0) - attention_stats.get('raw_min', 0)
+                        raw_att_val = attention_stats.get("raw_min", 0) + att_val * (
+                            attention_stats.get("raw_max", 0)
+                            - attention_stats.get("raw_min", 0)
                         )
-                        print(f"    Bbox {i} (ID={int(track_id)}): center=({bbox_center_x:.3f}, {bbox_center_y:.3f}), "
-                              f"dist={dist:.3f}, attn_norm={att_val:.4f}, attn_raw={raw_att_val:.4f}")
+                        print(
+                            f"    Bbox {i} (ID={int(track_id)}): center=({bbox_center_x:.3f}, {bbox_center_y:.3f}), "
+                            f"dist={dist:.3f}, attn_norm={att_val:.4f}, attn_raw={raw_att_val:.4f}"
+                        )
                     else:
-                        print(f"    Bbox {i} (ID={int(track_id)}): center=({bbox_center_x:.3f}, {bbox_center_y:.3f}), "
-                              f"dist={dist:.3f}, attn=N/A (idx {att_idx} >= {len(attention_weights)})")
+                        print(
+                            f"    Bbox {i} (ID={int(track_id)}): center=({bbox_center_x:.3f}, {bbox_center_y:.3f}), "
+                            f"dist={dist:.3f}, attn=N/A (idx {att_idx} >= {len(attention_weights)})"
+                        )
                 print(f"{'='*60}")
 
             # Draw visualizations with attention weights
