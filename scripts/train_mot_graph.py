@@ -44,7 +44,6 @@ def main(args):
         max_entities=args.max_entities,
         connect_threshold=args.connect_threshold,
         max_samples=args.max_samples,
-        ann_source=args.ann_source,
         visible_ann_filename=args.ann_filename,
         include_agent_node=args.include_agent_node,
         use_precomputed_features=args.use_precomputed_features,
@@ -60,7 +59,6 @@ def main(args):
         max_entities=args.max_entities,
         connect_threshold=args.connect_threshold,
         max_samples=args.max_samples,
-        ann_source=args.ann_source,
         visible_ann_filename=args.ann_filename,
         include_agent_node=args.include_agent_node,
         use_precomputed_features=args.use_precomputed_features,
@@ -403,17 +401,10 @@ if __name__ == "__main__":
         "--mot-dirs", nargs="+", required=True, help="MOT data directories"
     )
     parser.add_argument(
-        "--ann-source",
-        type=str,
-        choices=["gt", "prop", "det"],
-        default="gt",
-        help="Which annotations are visible to the agent graph: gt, prop, or det (default: gt)",
-    )
-    parser.add_argument(
         "--ann-filename",
         type=str,
         default=None,
-        help="Visible annotation filename relative to sequence; defaults per source",
+        help="Visible annotation filename relative to sequence (None or 'gt/gt.txt' means GT)",
     )
     parser.add_argument(
         "--use-precomputed-features",

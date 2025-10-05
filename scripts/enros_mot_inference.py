@@ -57,7 +57,6 @@ class ENROSMOTVisualizer:
         agent_radius: float = 0.02,
         max_entities: int = 100,
         connect_threshold: float = 50.0,
-        ann_source: str = "gt",
         ann_filename: Optional[str] = None,
         include_agent_node: bool = False,
         task_type: str = "regression",
@@ -76,8 +75,7 @@ class ENROSMOTVisualizer:
             agent_radius: Radius of synthetic agent
             max_entities: Maximum number of entities to process
             connect_threshold: Distance threshold for graph edges
-            ann_source: Which annotations are visible to the agent graph ('gt','prop','det')
-            ann_filename: Visible annotation filename relative to sequence (optional)
+            ann_filename: Visible annotation filename relative to sequence (None or 'gt/gt.txt' means GT)
             include_agent_node: Whether to include agent node in graph
             task_type: Task type ('regression' or 'classification')
             use_precomputed_features: Whether to use precomputed RPN features
@@ -93,7 +91,7 @@ class ENROSMOTVisualizer:
         self.agent_radius = agent_radius
         self.max_entities = max_entities
         self.connect_threshold = connect_threshold
-        self.ann_source = ann_source
+        self.ann_filename = ann_filename
         self.include_agent_node = include_agent_node
         self.task_type = task_type
         self.use_precomputed_features = use_precomputed_features
@@ -122,7 +120,6 @@ class ENROSMOTVisualizer:
             max_entities=max_entities,
             connect_threshold=connect_threshold,
             max_samples=None,
-            ann_source=ann_source,
             visible_ann_filename=ann_filename,
             include_agent_node=include_agent_node,
             use_precomputed_features=use_precomputed_features,
@@ -331,7 +328,8 @@ class ENROSMOTVisualizer:
         attention_offset = 1 if self.include_agent_node else 0
 
         # Draw GT bounding boxes in red (for reference when using non-GT sources)
-        if self.ann_source in ("prop", "det"):
+        is_gt_visible = self.ann_filename is None or self.ann_filename in ("gt/gt.txt", "gt.txt")
+        if not is_gt_visible:
             for x, y, bbox_w, bbox_h, track_id in gt_bboxes:
                 # Convert normalized coords to pixels
                 px = int(x * w)
@@ -385,10 +383,12 @@ class ENROSMOTVisualizer:
             ):
                 att_val = attention_weights[bbox_idx + attention_offset]
                 label = f"{att_val[0]:.3f}"
-                if self.ann_source == "prop":
-                    label = f"P:{label}"
-                elif self.ann_source == "det":
-                    label = f"D:{label}"
+                # Heuristic labels based on filename
+                mode = "P" if (self.ann_filename and (self.ann_filename.endswith('.csv') or 'prop' in self.ann_filename)) else (
+                    "D" if (self.ann_filename and 'det' in self.ann_filename) else "V"
+                )
+                if not is_gt_visible:
+                    label = f"{mode}:{label}"
                 cv2.putText(
                     image,
                     label,
@@ -400,10 +400,11 @@ class ENROSMOTVisualizer:
                 )
             else:
                 label = f"ID:{int(track_id)}"
-                if self.ann_source == "prop":
-                    label = f"P:{int(track_id)}"
-                elif self.ann_source == "det":
-                    label = f"D:{int(track_id)}"
+                mode = "P" if (self.ann_filename and (self.ann_filename.endswith('.csv') or 'prop' in self.ann_filename)) else (
+                    "D" if (self.ann_filename and 'det' in self.ann_filename) else "V"
+                )
+                if not is_gt_visible:
+                    label = f"{mode}:{int(track_id)}"
                 cv2.putText(
                     image,
                     label,
@@ -613,7 +614,7 @@ class ENROSMOTVisualizer:
             scaled_gt_bboxes = scale_bboxes(gt_bboxes, (orig_w, orig_h))
 
             # Get visible bboxes per selected source
-            if self.ann_source == "gt":
+            if self.dataset.visible_data_loader is None:
                 scaled_visible_bboxes = scaled_gt_bboxes
             else:
                 visible_bboxes = self.dataset.visible_data[self.data_dir][frame_id]
@@ -786,18 +787,10 @@ Examples:
     )
 
     parser.add_argument(
-        "--ann-source",
-        type=str,
-        choices=["gt", "prop", "det"],
-        default="gt",
-        help="Which annotations are visible to the agent graph: gt, prop, or det (default: gt)",
-    )
-
-    parser.add_argument(
         "--ann-filename",
         type=str,
         default=None,
-        help="Visible annotation filename relative to sequence; defaults per source",
+        help="Visible annotation filename relative to sequence (None or 'gt/gt.txt' means GT)",
     )
 
     parser.add_argument(
@@ -863,7 +856,6 @@ Examples:
         agent_radius=args.agent_radius,
         max_entities=args.max_entities,
         connect_threshold=args.connect_threshold,
-        ann_source=args.ann_source,
         ann_filename=args.ann_filename,
         include_agent_node=args.include_agent_node,
         task_type=args.task_type,

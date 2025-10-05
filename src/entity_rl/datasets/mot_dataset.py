@@ -44,7 +44,6 @@ class MOTDataset(Dataset):
         max_entities: int = 20,
         connect_threshold: float = 50.0,
         include_agent_node: bool = True,
-        ann_source: str = "gt",
         visible_ann_filename: Optional[str] = None,
         use_precomputed_features: bool = False,
         feature_filename: Optional[str] = None,
@@ -63,13 +62,9 @@ class MOTDataset(Dataset):
             max_entities: [Graph mode] Maximum entities per sample
             connect_threshold: [Graph mode] Distance threshold for graph edges
             include_agent_node: [Graph mode] Whether to include agent as graph node
-            ann_source: Which annotations are visible to the agent graph
-                one of {'gt','prop','det'} (default: 'gt')
             visible_ann_filename: Visible annotation filename relative to sequence
-                directory; if None, uses defaults per source:
-                - gt: 'gt/gt.txt'
-                - prop: 'prop.csv'
-                - det: 'det/det.txt'
+                directory. If None or 'gt/gt.txt', GT is visible; otherwise the
+                specified file is used.
         """
 
         if task_type not in ["regression", "classification"]:
@@ -84,7 +79,6 @@ class MOTDataset(Dataset):
         self.max_entities = max_entities
         self.connect_threshold = connect_threshold
         self.include_agent_node = include_agent_node
-        self.ann_source = ann_source
         self.use_precomputed_features = use_precomputed_features
 
         # Always load GT data for reward calculation
@@ -104,31 +98,25 @@ class MOTDataset(Dataset):
         # Determine visible annotations for graph
         self.visible_data_loader = None
         self.visible_data = None
-        if self.ann_source not in {"gt", "prop", "det"}:
-            raise ValueError(
-                f"ann_source must be one of 'gt','prop','det', got '{self.ann_source}'"
-            )
+        is_gt_visible = (
+            visible_ann_filename is None
+            or visible_ann_filename == "gt/gt.txt"
+            or visible_ann_filename == "gt.txt"
+        )
 
-        if self.ann_source == "gt":
+        if is_gt_visible:
             self.visible_data_loader = None
             self.visible_data = self.gt_data
             print("#### Visible: GT")
         else:
-            # Select default filenames per source
-            if visible_ann_filename is None:
-                if self.ann_source == "prop":
-                    visible_ann_filename = "prop.csv"
-                elif self.ann_source == "det":
-                    visible_ann_filename = "det/det.txt"
-
-            # Precomputed features: only applicable for proposals by default
-            if use_precomputed_features and self.ann_source == "prop":
-                if feature_filename is None and visible_ann_filename.endswith(".csv"):
+            # Derive default features filename for CSV visible annotations when requested
+            if use_precomputed_features and feature_filename is None:
+                if isinstance(visible_ann_filename, str) and visible_ann_filename.endswith(
+                    ".csv"
+                ):
                     feature_filename = visible_ann_filename.replace(
                         ".csv", "_features.npz"
                     )
-            else:
-                feature_filename = None
 
             self.visible_data_loader = MOTDataLoader(
                 mot_data_dirs,
@@ -139,7 +127,7 @@ class MOTDataset(Dataset):
             self.visible_data = self.visible_data_loader.mot_data()
 
             entities_visible = self.visible_data_loader.get_entities()
-            print(f"#### Visible: {self.ann_source}")
+            print("#### Visible: Custom")
             print(
                 f"Max detections: {max(entities_visible)}, "
                 f"Min detections: {min(entities_visible)}, "
@@ -207,11 +195,11 @@ class MOTDataset(Dataset):
         orig_w, orig_h = self.gt_data_loader.get_image_dimensions(data_dir, frame_id)
         scaled_gt_bboxes = scale_bboxes(gt_bboxes, (orig_w, orig_h))
 
-        if self.ann_source == "gt":
+        # Use GT when visible annotations are GT; otherwise use loaded visible annotations
+        if self.visible_data is self.gt_data or self.visible_data_loader is None:
             visible_bboxes = gt_bboxes
             scaled_visible_bboxes = scaled_gt_bboxes
         else:
-            assert self.visible_data is not None
             visible_bboxes = self.visible_data[data_dir][frame_id]
             scaled_visible_bboxes = scale_bboxes(visible_bboxes, (orig_w, orig_h))
 
@@ -364,7 +352,7 @@ class MOTDataset(Dataset):
         reward = self._compute_reward(gt_bboxes, agent_x, agent_y)
         self._timer.toc("compute_reward")
 
-        if self.use_precomputed_features and self.visible_data_loader and self.ann_source == "prop":
+        if self.use_precomputed_features and self.visible_data_loader:
             precomputed_features = self.visible_data_loader.get_features(data_dir, frame_id)
         else:
             precomputed_features = None
