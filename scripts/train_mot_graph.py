@@ -2,10 +2,13 @@ import argparse
 
 import gymnasium as gym
 import torch
+from omegaconf import OmegaConf
 from torch.utils.data import DataLoader
 from tqdm import tqdm, trange
 
+from entity_rl import config as cfg_utils
 from entity_rl import utils
+from entity_rl.config import MOTGraphTrainingConfig
 from entity_rl.datasets import MOTDataset
 from entity_rl.datasets.graph_utils import (
     collate_graph_batch,
@@ -24,7 +27,13 @@ from entity_rl.utils import TicToc
 
 
 def main(args):
-    """Main training function."""
+    """Main training function.
+
+    Args:
+        args: OmegaConf structured
+    """
+    # Convert to regular dict for attribute access
+
     print(f"Using MOT directories: {args.mot_dirs}")
     print(f"Output directory: {args.output_dir}")
 
@@ -99,7 +108,7 @@ def main(args):
     action_space = gym.spaces.MultiDiscrete([3, 3])
 
     # Load and modify config for GNN training
-    conf = utils.load_dict(args.cfg)["base"]
+    conf = args.base
 
     model = ENROSPolicy(
         obs_space,
@@ -120,9 +129,7 @@ def main(args):
     loss_fn = create_loss_function(device, args.task_type)
 
     # Setup experiment logging with timestamped directory
-    output_dir, writer = setup_experiment_logging(
-        args.output_dir, "mot_graph", args, args.cfg
-    )
+    output_dir, writer = setup_experiment_logging(args.output_dir, "mot_graph", cfg)
 
     # Training loop
     global_step = 0
@@ -393,82 +400,68 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Train GNN component of ENROS on MOT ground truth"
+        description="Train GNN component of ENROS on MOT ground truth",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Basic training with config
+  python scripts/train_mot_graph.py --cfg configs/mot-gnn.yaml --output-dir experiments/mot_001
+
+  # With CLI overrides
+  python scripts/train_mot_graph.py --cfg configs/mot-gnn.yaml --output-dir experiments/mot_001 \\
+      lr=0.001 batch_size=64 epochs=50
+
+  # Use precomputed features
+  python scripts/train_mot_graph.py --cfg configs/mot-gnn.yaml --output-dir experiments/mot_001 \\
+      use_precomputed_features=true feature_filename=rpn_features.npz
+        """,
     )
 
-    # Data arguments
+    # Required arguments
     parser.add_argument(
-        "--mot-dirs", nargs="+", required=True, help="MOT data directories"
+        "--cfg",
+        required=True,
+        help="Base config file path (YAML)",
     )
     parser.add_argument(
-        "--ann-filename",
-        type=str,
-        default=None,
-        help="Visible annotation filename relative to sequence (None or 'gt.txt' means GT)",
-    )
-    parser.add_argument(
-        "--use-precomputed-features",
-        action="store_true",
-        help="Use precomputed RPN features for node features",
-    )
-    parser.add_argument(
-        "--feature-filename",
-        type=str,
-        help="Precomputed features filename to load (default: None)",
-    )
-    parser.add_argument("--no-bar", action="store_true")
-    parser.add_argument("--max-samples", type=int, help="Max samples to load")
-
-    # Model arguments
-    parser.add_argument("--cfg", required=True, help="Config file path")
-    parser.add_argument(
-        "--task-type",
-        type=str,
-        default="regression",
-        choices=["regression", "classification"],
-        help="Task type: 'regression' or 'classification' (default: regression)",
+        "--output-dir",
+        required=True,
+        help="Output directory for experiments",
     )
 
-    # Training arguments
-    parser.add_argument("--device", default="cuda:0", help="Device to train on")
-    parser.add_argument("--output-dir", required=True, help="Output directory")
-    parser.add_argument("--epochs", type=int, default=20, help="Number of epochs")
-    parser.add_argument("--lr", type=float, required=True, help="Learning rate")
-    parser.add_argument("--batch-size", type=int, default=32, help="Batch size")
+    # Optional overrides
     parser.add_argument(
-        "--num-samples", type=int, default=2000, help="Samples per epoch"
-    )
-    parser.add_argument(
-        "--grad-clip", type=float, default=1.0, help="Gradient clipping"
-    )
-    parser.add_argument("--log-interval", type=int, default=50, help="Logging interval")
-
-    # Dataset arguments
-    parser.add_argument("--agent-radius", type=float, default=0.02, help="Agent radius")
-    parser.add_argument(
-        "--max-entities", type=int, default=100, help="Max entities per sample"
+        "overrides",
+        nargs="*",
+        help="Config overrides in dotlist format (e.g., lr=0.001 batch_size=64)",
     )
 
-    parser.add_argument("--val-int", type=int, default=10, help="Validation interval")
-    parser.add_argument("--num-workers", type=int, default=10)
-    parser.add_argument(
-        "--connect-threshold",
-        type=float,
-        default=50.0,
-        help="Edge connection threshold",
-    )
-    parser.add_argument(
-        "--image-size", nargs=2, type=int, default=[500, 500], help="Image size"
-    )
-    parser.add_argument(
-        "--include-agent-node",
-        action="store_true",
-        help="Include agent as a node in the graph (default: False)",
-    )
-    parser.add_argument(
-        "--benchmark",
-        action="store_true",
-        help="Enable detailed timing benchmarks for each training component",
-    )
+    args = parser.parse_args()
 
-    main(parser.parse_args())
+    # Load structured config with type safety and validation
+    # Required fields (mot_dirs, cfg, output_dir) must be provided via config or overrides
+    try:
+        args.overrides.append(f"output_dir={args.output_dir}")
+        cfg = cfg_utils.load_structured_config(
+            MOTGraphTrainingConfig,
+            config_path=args.cfg,
+            overrides=args.overrides,
+        )
+    except Exception as e:
+        print(f"\n❌ Configuration Error: {e}\n")
+        print("Required parameters:")
+        print("  - mot_dirs: List of MOT data directories")
+        print("  - cfg: Model config file path")
+        print("  - output_dir: Output directory for experiments")
+        print("\nProvide these via config file or CLI overrides:")
+        print(
+            "  Example: mot_dirs=[data/MOT16/train/MOT16-02,data/MOT16/train/MOT16-04]"
+        )
+        raise
+
+    # Save merged config to output directory
+    cfg_utils.save_config(cfg, cfg.output_dir)
+
+    # Print config
+    cfg_utils.print_config(cfg, "MOT Graph Training Configuration")
+    main(cfg)

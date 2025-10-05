@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional
 
 import numpy as np
 import torch
+from omegaconf import MISSING, DictConfig, OmegaConf
 from torch.utils.data import Dataset
 from torch.utils.tensorboard import SummaryWriter
 
@@ -155,7 +156,9 @@ def save_experiment_metadata(output_dir: str) -> None:
 
 
 def setup_experiment_logging(
-    base_output_dir: str, script_name: str, args: Any, config_path: str = None
+    base_output_dir: str,
+    script_name: str,
+    cfg: DictConfig,
 ) -> tuple[str, SummaryWriter]:
     """
     Set up complete experiment logging infrastructure.
@@ -176,11 +179,8 @@ def setup_experiment_logging(
     writer = setup_tensorboard(log_dir)
 
     # Save all experiment metadata
-    save_training_config(log_dir, args)
     save_experiment_metadata(log_dir)
-
-    if config_path and os.path.exists(config_path):
-        copy_config_file(config_path, log_dir)
+    OmegaConf.save(cfg, f"{log_dir}/config.yaml")
 
     print(f"Experiment log directory: {log_dir}")
     return log_dir, writer
@@ -444,7 +444,7 @@ def create_optimizer(model: ENROSPolicy, learning_rate: float) -> torch.optim.Op
     return torch.optim.Adam(model.parameters(), lr=learning_rate)
 
 
-def create_loss_function(device: torch.device, task_type: str = 'regression'):
+def create_loss_function(device: torch.device, task_type: str = "regression"):
     """
     Create loss function for training based on task type.
 
@@ -455,12 +455,14 @@ def create_loss_function(device: torch.device, task_type: str = 'regression'):
     Returns:
         MSELoss for regression, BCEWithLogitsLoss for classification
     """
-    if task_type == 'classification':
+    if task_type == "classification":
         return torch.nn.BCEWithLogitsLoss().to(device)
-    elif task_type == 'regression':
+    elif task_type == "regression":
         return torch.nn.MSELoss().to(device)
     else:
-        raise ValueError(f"task_type must be 'regression' or 'classification', got '{task_type}'")
+        raise ValueError(
+            f"task_type must be 'regression' or 'classification', got '{task_type}'"
+        )
 
 
 def setup_amp_scaler(model: ENROSPolicy) -> torch.cuda.amp.GradScaler:
