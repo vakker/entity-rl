@@ -17,7 +17,7 @@ import argparse
 import random
 import sys
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 import cv2
 import gymnasium as gym
@@ -57,8 +57,8 @@ class ENROSMOTVisualizer:
         agent_radius: float = 0.02,
         max_entities: int = 100,
         connect_threshold: float = 50.0,
-        use_props: bool = False,
-        prop_filename: str = "prop.csv",
+        ann_source: str = "gt",
+        ann_filename: Optional[str] = None,
         include_agent_node: bool = False,
         task_type: str = "regression",
         use_precomputed_features: bool = False,
@@ -76,8 +76,8 @@ class ENROSMOTVisualizer:
             agent_radius: Radius of synthetic agent
             max_entities: Maximum number of entities to process
             connect_threshold: Distance threshold for graph edges
-            use_props: Whether to use proposals (False = use GT)
-            prop_filename: Proposal filename to load (default: "prop.csv")
+            ann_source: Which annotations are visible to the agent graph ('gt','prop','det')
+            ann_filename: Visible annotation filename relative to sequence (optional)
             include_agent_node: Whether to include agent node in graph
             task_type: Task type ('regression' or 'classification')
             use_precomputed_features: Whether to use precomputed RPN features
@@ -93,7 +93,7 @@ class ENROSMOTVisualizer:
         self.agent_radius = agent_radius
         self.max_entities = max_entities
         self.connect_threshold = connect_threshold
-        self.use_props = use_props
+        self.ann_source = ann_source
         self.include_agent_node = include_agent_node
         self.task_type = task_type
         self.use_precomputed_features = use_precomputed_features
@@ -122,8 +122,8 @@ class ENROSMOTVisualizer:
             max_entities=max_entities,
             connect_threshold=connect_threshold,
             max_samples=None,
-            use_props=use_props,
-            prop_filename=prop_filename,
+            ann_source=ann_source,
+            visible_ann_filename=ann_filename,
             include_agent_node=include_agent_node,
             use_precomputed_features=use_precomputed_features,
             feature_filename=feature_filename,
@@ -301,7 +301,7 @@ class ENROSMOTVisualizer:
         self,
         image: np.ndarray,
         gt_bboxes: List[Tuple],
-        prop_bboxes: List[Tuple],
+        visible_bboxes: List[Tuple],
         agent_pos: Tuple[float, float, float, float],
         value_pred: float,
         frame_id: int,
@@ -330,8 +330,8 @@ class ENROSMOTVisualizer:
         # If include_agent_node is True, first node is agent, rest are bboxes
         attention_offset = 1 if self.include_agent_node else 0
 
-        # Draw GT bounding boxes in red (for reference when using proposals)
-        if self.use_props:
+        # Draw GT bounding boxes in red (for reference when using non-GT sources)
+        if self.ann_source in ("prop", "det"):
             for x, y, bbox_w, bbox_h, track_id in gt_bboxes:
                 # Convert normalized coords to pixels
                 px = int(x * w)
@@ -351,8 +351,8 @@ class ENROSMOTVisualizer:
                     1,
                 )
 
-        # Draw proposal bounding boxes (with attention if available)
-        for bbox_idx, (x, y, bbox_w, bbox_h, track_id) in enumerate(prop_bboxes):
+        # Draw visible bounding boxes (with attention if available)
+        for bbox_idx, (x, y, bbox_w, bbox_h, track_id) in enumerate(visible_bboxes):
             # Convert normalized coords to pixels
             px = int(x * w)
             py = int(y * h)
@@ -385,8 +385,10 @@ class ENROSMOTVisualizer:
             ):
                 att_val = attention_weights[bbox_idx + attention_offset]
                 label = f"{att_val[0]:.3f}"
-                if self.use_props:
-                    label = f"P:{label}"  # P for proposal
+                if self.ann_source == "prop":
+                    label = f"P:{label}"
+                elif self.ann_source == "det":
+                    label = f"D:{label}"
                 cv2.putText(
                     image,
                     label,
@@ -398,8 +400,10 @@ class ENROSMOTVisualizer:
                 )
             else:
                 label = f"ID:{int(track_id)}"
-                if self.use_props:
+                if self.ann_source == "prop":
                     label = f"P:{int(track_id)}"
+                elif self.ann_source == "det":
+                    label = f"D:{int(track_id)}"
                 cv2.putText(
                     image,
                     label,
@@ -608,12 +612,12 @@ class ENROSMOTVisualizer:
             gt_bboxes = self.dataset.gt_data[self.data_dir][frame_id]
             scaled_gt_bboxes = scale_bboxes(gt_bboxes, (orig_w, orig_h))
 
-            # Get proposal bboxes if using proposals
-            if self.use_props:
-                prop_bboxes = self.dataset.props_data[self.data_dir][frame_id]
-                scaled_prop_bboxes = scale_bboxes(prop_bboxes, (orig_w, orig_h))
+            # Get visible bboxes per selected source
+            if self.ann_source == "gt":
+                scaled_visible_bboxes = scaled_gt_bboxes
             else:
-                scaled_prop_bboxes = scaled_gt_bboxes
+                visible_bboxes = self.dataset.visible_data[self.data_dir][frame_id]
+                scaled_visible_bboxes = scale_bboxes(visible_bboxes, (orig_w, orig_h))
 
             # Print attention diagnostics if verbose
             if verbose and attention_weights is not None:
@@ -626,7 +630,7 @@ class ENROSMOTVisualizer:
                     f"  Ground truth: {reward_gt} ({'COLLISION' if reward_gt == 0.0 or reward_gt == -1.0 else 'SAFE'})"
                 )
                 print(f"  Agent pos: ({agent_x:.3f}, {agent_y:.3f})")
-                print(f"  Num entities: {len(scaled_prop_bboxes)}")
+                print(f"  Num entities: {len(scaled_visible_bboxes)}")
                 print(
                     f"  Attention stats: min={attention_stats.get('raw_min', 0):.4f}, "
                     f"max={attention_stats.get('raw_max', 0):.4f}, "
@@ -656,7 +660,7 @@ class ENROSMOTVisualizer:
                 # Calculate distances and show attention per bbox
                 attention_offset = 1 if self.include_agent_node else 0
                 print(f"\n  Entity details (offset={attention_offset}):")
-                for i, (x, y, w, h, track_id) in enumerate(scaled_prop_bboxes):
+                for i, (x, y, w, h, track_id) in enumerate(scaled_visible_bboxes):
                     # Calculate distance from agent center to bbox center
                     bbox_center_x = x + w / 2
                     bbox_center_y = y + h / 2
@@ -686,7 +690,7 @@ class ENROSMOTVisualizer:
             frame = self._draw_predictions(
                 frame,
                 scaled_gt_bboxes,
-                scaled_prop_bboxes,
+                scaled_visible_bboxes,
                 agent_pos.numpy(),
                 value.item(),
                 frame_id,
@@ -782,16 +786,18 @@ Examples:
     )
 
     parser.add_argument(
-        "--use-props",
-        action="store_true",
-        help="Use proposals instead of ground truth",
+        "--ann-source",
+        type=str,
+        choices=["gt", "prop", "det"],
+        default="gt",
+        help="Which annotations are visible to the agent graph: gt, prop, or det (default: gt)",
     )
 
     parser.add_argument(
-        "--prop-filename",
+        "--ann-filename",
         type=str,
-        default="prop.csv",
-        help="Proposal filename to load (default: prop.csv)",
+        default=None,
+        help="Visible annotation filename relative to sequence; defaults per source",
     )
 
     parser.add_argument(
@@ -857,8 +863,8 @@ Examples:
         agent_radius=args.agent_radius,
         max_entities=args.max_entities,
         connect_threshold=args.connect_threshold,
-        use_props=args.use_props,
-        prop_filename=args.prop_filename,
+        ann_source=args.ann_source,
+        ann_filename=args.ann_filename,
         include_agent_node=args.include_agent_node,
         task_type=args.task_type,
         use_precomputed_features=args.use_precomputed_features,

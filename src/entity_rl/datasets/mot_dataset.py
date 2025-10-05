@@ -44,8 +44,8 @@ class MOTDataset(Dataset):
         max_entities: int = 20,
         connect_threshold: float = 50.0,
         include_agent_node: bool = True,
-        use_props: bool = False,
-        prop_filename: str = "prop.csv",
+        ann_source: str = "gt",
+        visible_ann_filename: Optional[str] = None,
         use_precomputed_features: bool = False,
         feature_filename: Optional[str] = None,
     ):
@@ -63,8 +63,13 @@ class MOTDataset(Dataset):
             max_entities: [Graph mode] Maximum entities per sample
             connect_threshold: [Graph mode] Distance threshold for graph edges
             include_agent_node: [Graph mode] Whether to include agent as graph node
-            use_props: [Graph mode] Use proposals instead of GT for graph creation
-            prop_filename: [Graph mode] Proposal filename to load (default: "prop.csv")
+            ann_source: Which annotations are visible to the agent graph
+                one of {'gt','prop','det'} (default: 'gt')
+            visible_ann_filename: Visible annotation filename relative to sequence
+                directory; if None, uses defaults per source:
+                - gt: 'gt/gt.txt'
+                - prop: 'prop.csv'
+                - det: 'det/det.txt'
         """
 
         if task_type not in ["regression", "classification"]:
@@ -79,12 +84,12 @@ class MOTDataset(Dataset):
         self.max_entities = max_entities
         self.connect_threshold = connect_threshold
         self.include_agent_node = include_agent_node
-        self.use_props = use_props
+        self.ann_source = ann_source
         self.use_precomputed_features = use_precomputed_features
 
         # Always load GT data for reward calculation
         self.gt_data_loader = MOTDataLoader(
-            mot_data_dirs, use_gt=True, max_samples=max_samples
+            mot_data_dirs, ann_filename="gt/gt.txt", max_samples=max_samples
         )
         self.gt_data = self.gt_data_loader.mot_data()
 
@@ -96,35 +101,50 @@ class MOTDataset(Dataset):
             f"Avg detections: {sum(entities_gt) / len(entities_gt):.1f}"
         )
 
-        # Load proposals if using graph mode with props
-        if use_props:
-            if use_precomputed_features:
-                if feature_filename is None:
-                    feature_filename = prop_filename.replace(".csv", "_features.npz")
+        # Determine visible annotations for graph
+        self.visible_data_loader = None
+        self.visible_data = None
+        if self.ann_source not in {"gt", "prop", "det"}:
+            raise ValueError(
+                f"ann_source must be one of 'gt','prop','det', got '{self.ann_source}'"
+            )
+
+        if self.ann_source == "gt":
+            self.visible_data_loader = None
+            self.visible_data = self.gt_data
+            print("#### Visible: GT")
+        else:
+            # Select default filenames per source
+            if visible_ann_filename is None:
+                if self.ann_source == "prop":
+                    visible_ann_filename = "prop.csv"
+                elif self.ann_source == "det":
+                    visible_ann_filename = "det/det.txt"
+
+            # Precomputed features: only applicable for proposals by default
+            if use_precomputed_features and self.ann_source == "prop":
+                if feature_filename is None and visible_ann_filename.endswith(".csv"):
+                    feature_filename = visible_ann_filename.replace(
+                        ".csv", "_features.npz"
+                    )
             else:
                 feature_filename = None
 
-            self.props_data_loader = MOTDataLoader(
+            self.visible_data_loader = MOTDataLoader(
                 mot_data_dirs,
-                use_gt=False,
+                ann_filename=visible_ann_filename,
                 max_samples=max_samples,
-                prop_filename=prop_filename,
                 feature_filename=feature_filename,
             )
-            self.props_data = self.props_data_loader.mot_data()
+            self.visible_data = self.visible_data_loader.mot_data()
 
-            entities_props = self.props_data_loader.get_entities()
-            print("#### Props")
+            entities_visible = self.visible_data_loader.get_entities()
+            print(f"#### Visible: {self.ann_source}")
             print(
-                f"Max detections: {max(entities_props)}, "
-                f"Min detections: {min(entities_props)}, "
-                f"Avg detections: {sum(entities_props) / len(entities_props):.1f}"
+                f"Max detections: {max(entities_visible)}, "
+                f"Min detections: {min(entities_visible)}, "
+                f"Avg detections: {sum(entities_visible) / len(entities_visible):.1f}"
             )
-        else:
-            self.props_data_loader = None
-            self.props_data = None
-
-            print("#### Props - none")
 
         # Store parameters
         self.mot_data_dirs = mot_data_dirs
@@ -187,15 +207,15 @@ class MOTDataset(Dataset):
         orig_w, orig_h = self.gt_data_loader.get_image_dimensions(data_dir, frame_id)
         scaled_gt_bboxes = scale_bboxes(gt_bboxes, (orig_w, orig_h))
 
-        if self.use_props:
-            assert self.props_data
-            props_bboxes = self.props_data[data_dir][frame_id]
-            scaled_props_bboxes = scale_bboxes(props_bboxes, (orig_w, orig_h))
+        if self.ann_source == "gt":
+            visible_bboxes = gt_bboxes
+            scaled_visible_bboxes = scaled_gt_bboxes
         else:
-            props_bboxes = gt_bboxes
-            scaled_props_bboxes = scaled_gt_bboxes
+            assert self.visible_data is not None
+            visible_bboxes = self.visible_data[data_dir][frame_id]
+            scaled_visible_bboxes = scale_bboxes(visible_bboxes, (orig_w, orig_h))
 
-        return data_dir, frame_id, scaled_props_bboxes, scaled_gt_bboxes
+        return data_dir, frame_id, scaled_visible_bboxes, scaled_gt_bboxes
 
     def generate_agent_position(self) -> Tuple[float, float]:
         """
@@ -321,15 +341,15 @@ class MOTDataset(Dataset):
             - agent_pos: Tensor [agent_x, agent_y, agent_radius, agent_radius]
         """
         self._timer.tic("select_random_frame")
-        data_dir, frame_id, props_bboxes, gt_bboxes = self.select_random_frame(
+        data_dir, frame_id, visible_bboxes, gt_bboxes = self.select_random_frame(
             data_dir=data_dir,
             frame_id=frame_id,
         )
         self._timer.toc("select_random_frame")
 
         # Limit entities for graph mode
-        if len(props_bboxes) > self.max_entities:
-            props_bboxes = random.sample(props_bboxes, self.max_entities)
+        if len(visible_bboxes) > self.max_entities:
+            visible_bboxes = random.sample(visible_bboxes, self.max_entities)
 
         if agent_pos is not None:
             agent_x, agent_y = agent_pos[0], agent_pos[1]
@@ -344,16 +364,14 @@ class MOTDataset(Dataset):
         reward = self._compute_reward(gt_bboxes, agent_x, agent_y)
         self._timer.toc("compute_reward")
 
-        if self.use_precomputed_features and self.props_data_loader:
-            precomputed_features = self.props_data_loader.get_features(
-                data_dir, frame_id
-            )
+        if self.use_precomputed_features and self.visible_data_loader and self.ann_source == "prop":
+            precomputed_features = self.visible_data_loader.get_features(data_dir, frame_id)
         else:
             precomputed_features = None
 
         data: Dict[str, Any] = {
             "graph": self._create_graph(
-                props_bboxes, agent_x, agent_y, precomputed_features
+                visible_bboxes, agent_x, agent_y, precomputed_features
             ),
             "agent_pos": torch.tensor(
                 [agent_x, agent_y, self.agent_radius, self.agent_radius],

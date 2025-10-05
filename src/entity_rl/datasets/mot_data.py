@@ -14,9 +14,8 @@ class MOTDataLoader:
     def __init__(
         self,
         mot_data_dirs: List[str],
-        use_gt: bool = True,
+        ann_filename: str = "gt/gt.txt",
         max_samples: Optional[int] = None,
-        prop_filename: str = "prop.csv",
         feature_filename: Optional[str] = None,
     ):
         """
@@ -24,15 +23,17 @@ class MOTDataLoader:
 
         Args:
             mot_data_dirs: List of MOT data directories
-            use_gt: Whether to use ground truth (gt.txt) or detections (det.txt)
+            ann_filename: Annotation file path relative to sequence directory.
+                Examples:
+                - 'gt/gt.txt' for ground-truth annotations (default)
+                - 'det/det.txt' for MOT detections
+                - 'prop.csv' for custom proposals
             max_samples: Maximum number of samples to load
-            prop_filename: Filename for proposal data (default: "prop.csv")
             feature_filename: Filename for precomputed features (default: None)
         """
         self.mot_data_dirs = mot_data_dirs
         print(f"Loaded MOT data from {len(self.mot_data_dirs)} directories")
-        self.use_gt = use_gt
-        self.prop_filename = prop_filename
+        self.ann_filename = ann_filename
         self.feature_filename = feature_filename
 
         # Cache for image dimensions (per directory)
@@ -187,10 +188,7 @@ class MOTDataLoader:
             data_path = Path(data_dir)
 
             # Determine annotation file path
-            if self.use_gt:
-                ann_file = data_path / "gt" / "gt.txt"
-            else:
-                ann_file = data_path / self.prop_filename
+            ann_file = data_path / self.ann_filename
 
             img_dir = data_path / "img1"
 
