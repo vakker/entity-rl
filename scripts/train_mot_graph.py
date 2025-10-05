@@ -1,6 +1,7 @@
 import argparse
 
 import gymnasium as gym
+import numpy as np
 import torch
 from omegaconf import OmegaConf
 from torch.utils.data import DataLoader
@@ -43,9 +44,17 @@ def main(args):
     assert len(tng_dirs) > 0
     assert len(val_dirs) > 0
 
+    # Determine if we need image output based on encoder type
+    conf = args.base
+    encoder_config = conf["model"]["custom_model_config"]["encoder"]
+    use_image_mode = "entity" in encoder_config  # RPN/Faster R-CNN need images
+
+    print(f"Dataset mode: {'image' if use_image_mode else 'graph'}")
+
     # Create datasets
     train_dataset = MOTDataset(
         mot_data_dirs=tng_dirs,
+        return_image=use_image_mode,
         agent_radius=args.agent_radius,
         num_samples_per_epoch=args.num_samples,
         image_size=tuple(args.image_size),
@@ -61,6 +70,7 @@ def main(args):
 
     val_dataset = MOTDataset(
         mot_data_dirs=val_dirs,
+        return_image=use_image_mode,
         agent_radius=args.agent_radius,
         num_samples_per_epoch=args.num_samples,
         image_size=tuple(args.image_size),
@@ -79,6 +89,7 @@ def main(args):
 
     batch_size = min(args.batch_size, len(train_dataset))
 
+    # Always use graph collate - it handles both image+graph and graph-only modes
     # Create data loaders
     train_loader = DataLoader(
         train_dataset,
@@ -99,16 +110,33 @@ def main(args):
     )
     assert len(train_loader)
 
-    # Set up model with graph observation space
-    input_dim = 5
-    if args.use_precomputed_features:
-        input_dim += 256
-
-    obs_space = create_graph_observation_space(node_feature_dim=input_dim)
-    action_space = gym.spaces.MultiDiscrete([3, 3])
-
-    # Load and modify config for GNN training
+    # Determine observation space based on encoder type
     conf = args.base
+    encoder_config = conf["model"]["custom_model_config"]["encoder"]
+
+    # Check if using entity encoder (RPN/Faster R-CNN) or graph encoder
+    if "entity" in encoder_config:
+        # Entity encoder (RPN/Faster R-CNN) expects Box space (images)
+        encoder_name = encoder_config["entity"]["name"]
+        print(f"Using entity encoder: {encoder_name}")
+
+        # Create Box observation space for images
+        img_h, img_w = tuple(args.image_size)
+        obs_space = gym.spaces.Box(
+            low=0, high=255, shape=(3, img_h, img_w), dtype=np.uint8
+        )
+        print(f"Observation space: Box({obs_space.shape})")
+    else:
+        # Graph encoder expects Dict space with node features
+        print("Using graph encoder")
+        input_dim = 5
+        if args.use_precomputed_features:
+            input_dim += 256
+
+        obs_space = create_graph_observation_space(node_feature_dim=input_dim)
+        print(f"Observation space: Dict (graph) with node_dim={input_dim}")
+
+    action_space = gym.spaces.MultiDiscrete([3, 3])
 
     model = ENROSPolicy(
         obs_space,
@@ -168,20 +196,23 @@ def main(args):
 
             agent_pos = agent_pos.to(device)
 
-            # Move to device
+            # Move to device - obs_batch is always a dict
+            # In image mode, it contains {"image": tensor, "x": ..., "edge_index": ...}
+            # In graph mode, it contains {"x": ..., "edge_index": ..., "batch": ...}
             obs_batch = {k: v.to(device) for k, v in obs_batch.items()}
-            # Count each individual reward
-            # unique_values, counts = torch.unique(reward_batch, return_counts=True)
-            # tqdm.write(
-            #     f"Reward targ stats: {unique_values}, {counts/len(reward_batch)}"
-            # )
             reward_batch = reward_batch.to(device)
 
             timer.toc("data_to_gpu")
             timer.tic("forward_pass")
 
             # Forward pass
-            model_input = {"obs": obs_batch, "agent_pos": agent_pos}
+            if use_image_mode:
+                # Image mode: extract image from obs_batch
+                model_input = {"obs": obs_batch["image"]}
+            else:
+                # Graph mode: use entire obs_batch with agent position
+                model_input = {"obs": obs_batch, "agent_pos": agent_pos}
+
             _ = model(model_input)
             reward_pred = model.value_function()
 
@@ -267,6 +298,7 @@ def main(args):
 
                 agent_pos = agent_pos.to(device)
 
+                # Move to device - obs_batch is always a dict
                 obs_batch = {k: v.to(device) for k, v in obs_batch.items()}
                 reward_batch = reward_batch.to(device)
 
@@ -274,7 +306,13 @@ def main(args):
                 timer.tic("val_forward_pass")
 
                 # Forward pass
-                model_input = {"obs": obs_batch, "agent_pos": agent_pos}
+                if use_image_mode:
+                    # Image mode: extract image from obs_batch
+                    model_input = {"obs": obs_batch["image"]}
+                else:
+                    # Graph mode: use entire obs_batch with agent position
+                    model_input = {"obs": obs_batch, "agent_pos": agent_pos}
+
                 _ = model(model_input)
                 reward_pred = model.value_function()
 

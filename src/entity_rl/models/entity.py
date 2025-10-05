@@ -291,7 +291,7 @@ class RPNEncoder(EntityEncoder):
         super().__init__(model_config, obs_space)
 
         self._model_config = model_config
-        self.use_precomputed_features = model_config.get("use_precomputed_features", False)
+
         current_dir = osp.dirname(osp.abspath(__file__))
         rpn_cfg_file = osp.join(current_dir, model_config["rpn_cfg"])
         assert osp.exists(rpn_cfg_file)
@@ -350,12 +350,7 @@ class RPNEncoder(EntityEncoder):
 
     @property
     def out_channels(self):
-        if self.use_precomputed_features:
-            # Precomputed features: 261 dims (256 + 5)
-            x_shape = 256 + 5
-        else:
-            # Simple features: 5 dims (rel_x, rel_y, w, h, is_agent)
-            x_shape = 5
+        x_shape = 256 * 7 * 7
         return {
             "node_features": (x_shape,),
             "edge_features": None,

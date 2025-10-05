@@ -293,11 +293,21 @@ class MOTDataset(Dataset):
         agent_pos = data_dict["agent_pos"]
 
         # Format observation dict for model
-        obs_dict = {
-            "x": graph_data.x,
-            "edge_index": graph_data.edge_index,
-            "batch": torch.zeros(graph_data.num_nodes, dtype=torch.long),
-        }
+        if self.return_image:
+            # Image mode: return image as main observation
+            obs_dict = {
+                "image": data_dict["image"],
+                "x": graph_data.x,
+                "edge_index": graph_data.edge_index,
+                "batch": torch.zeros(graph_data.num_nodes, dtype=torch.long),
+            }
+        else:
+            # Graph mode: return only graph data
+            obs_dict = {
+                "x": graph_data.x,
+                "edge_index": graph_data.edge_index,
+                "batch": torch.zeros(graph_data.num_nodes, dtype=torch.long),
+            }
 
         # Convert reward to appropriate type based on task
         if self.task_type == "classification":

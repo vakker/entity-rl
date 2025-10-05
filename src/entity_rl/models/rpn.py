@@ -35,7 +35,7 @@ class RPNENROS(RPN):
         self.unfreeze_backbone = unfreeze_backbone
 
         # Calculate actual feature dimension: 256 channels * roi_size * roi_size
-        self.pooled_dim = 256
+        # self.pooled_dim = 256
         self.feature_dim = 256 * roi_output_size * roi_output_size
 
         super().__init__(*args, **kwargs)
@@ -130,7 +130,7 @@ class RPNENROS(RPN):
         all_features = torch.zeros(
             batch_size,
             max_proposals,
-            self.pooled_dim,
+            self.feature_dim,
             device=batch_inputs.device,
             dtype=batch_inputs.dtype,
         )
@@ -172,10 +172,10 @@ class RPNENROS(RPN):
 
             # Extract RoI features using P2 feature map (stride=4)
             pooled_features = self.roi_align(x[0], rois)  # (N, 256, roi_size, roi_size)
-            pooled_features = nn.functional.max_pool2d(
-                pooled_features,
-                kernel_size=[pooled_features.shape[2], pooled_features.shape[3]],
-            )
+            # pooled_features = nn.functional.max_pool2d(
+            #     pooled_features,
+            #     kernel_size=[pooled_features.shape[2], pooled_features.shape[3]],
+            # )
             pooled_features = pooled_features.flatten(1)  # (N, 256*roi_size*roi_size)
 
             # Store features and metadata

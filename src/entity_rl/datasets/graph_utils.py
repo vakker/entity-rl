@@ -96,17 +96,24 @@ def create_edges(
 
 def collate_graph_batch(batch):
     """
-    Custom collate function for graph data.
+    Custom collate function for graph data and optional image data.
+
+    Supports both:
+    - Graph-only mode: obs_dict contains {x, edge_index, batch}
+    - Image+Graph mode: obs_dict contains {image, x, edge_index, batch}
 
     Args:
-        batch: List of (obs_dict, reward) tuples where obs_dict contains graph data
+        batch: List of (obs_dict, reward, agent_pos) tuples
 
     Returns:
-        Tuple of (batched_obs_dict, reward_tensor)
+        Tuple of (batched_obs_dict, reward_tensor, agent_pos_tensor)
     """
     obs_list, rewards, agent_pos = zip(*batch)
 
-    # Create list of Data objects for batching
+    # Check if we have image data
+    has_images = "image" in obs_list[0]
+
+    # Create list of Data objects for batching graphs
     data_list = []
 
     for obs in obs_list:
@@ -122,6 +129,12 @@ def collate_graph_batch(batch):
         "edge_index": batched_graphs.edge_index,
         "batch": batched_graphs.batch,
     }
+
+    # If we have images, batch them as well
+    if has_images:
+        # Stack images into batch: (B, C, H, W)
+        images = [obs["image"] for obs in obs_list]
+        batched_obs["image"] = torch.stack(images)
 
     # Convert rewards to tensor
     reward_tensor = torch.tensor(rewards, dtype=torch.float32)
