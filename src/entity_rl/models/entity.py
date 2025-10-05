@@ -397,8 +397,8 @@ class RPNEncoder(EntityEncoder):
 
             # Extract features using RPN
             # FIXME: not used:
-            with torch.cuda.amp.autocast(enabled=False):
-                outputs = self._model.forward(frame, mode="tensor")
+            # with torch.cuda.amp.autocast(enabled=False):
+            outputs = self._model.forward(frame, mode="tensor")
 
             features = outputs["features"]  # (B, max_proposals, feature_dim)
             bboxes = outputs["bboxes"]  # (B, max_proposals, 4)
