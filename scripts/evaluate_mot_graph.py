@@ -18,10 +18,13 @@ from pathlib import Path
 
 import gymnasium as gym
 import torch
+from omegaconf import OmegaConf
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+from entity_rl import config as cfg_utils
 from entity_rl import utils
+from entity_rl.config import MOTGraphEvaluationConfig
 from entity_rl.datasets import MOTDataset
 from entity_rl.datasets.graph_utils import (
     collate_graph_batch,
@@ -76,7 +79,12 @@ def find_checkpoint(checkpoint_dir: Path) -> Path:
     raise FileNotFoundError(f"No checkpoint file (.pt) found in {checkpoint_dir}")
 
 
-def load_checkpoint(checkpoint_path: Path, config_path: Path, device: torch.device, task_type: str = 'regression'):
+def load_checkpoint(
+    checkpoint_path: Path,
+    config_path: Path,
+    device: torch.device,
+    task_type: str = "regression",
+):
     """
     Load model from checkpoint.
 
@@ -126,45 +134,44 @@ def load_checkpoint(checkpoint_path: Path, config_path: Path, device: torch.devi
     return model
 
 
-def evaluate(args):
-    """Main evaluation function."""
-    print(f"Evaluating on MOT directories: {args.mot_dirs}")
-    print(f"Checkpoint directory: {args.checkpoint_dir}")
+def evaluate(cfg):
+    print(f"Evaluating on MOT directories: {cfg.mot_dirs}")
+    print(f"Checkpoint directory: {cfg.checkpoint_dir}")
 
-    checkpoint_dir = Path(args.checkpoint_dir)
+    checkpoint_dir = Path(cfg.checkpoint_dir)
 
     # Auto-detect config and checkpoint
     config_path = find_config(checkpoint_dir)
     checkpoint_path = find_checkpoint(checkpoint_dir)
 
     # Set up device
-    device = torch.device(args.device)
+    device = torch.device(cfg.device)
     print(f"Using device: {device}")
 
     # Load model
-    model = load_checkpoint(checkpoint_path, config_path, device, args.task_type)
+    model = load_checkpoint(checkpoint_path, config_path, device, cfg.task_type)
 
     # Create dataset
     print("Creating evaluation dataset...")
     eval_dataset = MOTDataset(
-        mot_data_dirs=args.mot_dirs,
-        agent_radius=args.agent_radius,
-        num_samples_per_epoch=args.num_samples,
-        image_size=tuple(args.image_size),
-        task_type=args.task_type,
-        max_entities=args.max_entities,
-        connect_threshold=args.connect_threshold,
-        max_samples=args.max_samples,
-        visible_ann_filename=args.ann_filename,
-        include_agent_node=args.include_agent_node,
-        use_precomputed_features=args.use_precomputed_features,
-        feature_filename=args.feature_filename,
+        mot_data_dirs=cfg.mot_dirs,
+        agent_radius=cfg.agent_radius,
+        num_samples_per_epoch=cfg.num_samples,
+        image_size=tuple(cfg.image_size),
+        task_type=cfg.task_type,
+        max_entities=cfg.max_entities,
+        connect_threshold=cfg.connect_threshold,
+        max_samples=cfg.max_samples,
+        visible_ann_filename=cfg.ann_filename,
+        include_agent_node=cfg.include_agent_node,
+        use_precomputed_features=cfg.use_precomputed_features,
+        feature_filename=cfg.feature_filename,
     )
 
     print(f"Evaluation samples: {len(eval_dataset)}")
-    print(f"Task type: {args.task_type}")
+    print(f"Task type: {cfg.task_type}")
 
-    batch_size = min(args.batch_size, len(eval_dataset))
+    batch_size = min(cfg.batch_size, len(eval_dataset))
 
     # Create data loader
     eval_loader = DataLoader(
@@ -172,12 +179,12 @@ def evaluate(args):
         batch_size=batch_size,
         shuffle=False,
         drop_last=False,
-        num_workers=args.num_workers,
+        num_workers=cfg.num_workers,
         collate_fn=collate_graph_batch,
     )
 
     # Set up loss
-    loss_fn = create_loss_function(device, args.task_type)
+    loss_fn = create_loss_function(device, cfg.task_type)
 
     # Initialize metrics
     total_loss = 0
@@ -191,14 +198,14 @@ def evaluate(args):
     gt_boxes_batch = []
 
     # Initialize timer
-    timer = TicToc(enabled=args.benchmark)
+    timer = TicToc(enabled=cfg.benchmark)
 
     print("\nRunning evaluation...")
 
     # Evaluation loop
     with torch.no_grad():
         for batch_idx, batch_data in enumerate(
-            tqdm(eval_loader, desc="Evaluating", disable=args.no_bar)
+            tqdm(eval_loader, desc="Evaluating", disable=cfg.no_bar)
         ):
             timer.tic("data_to_gpu")
 
@@ -265,13 +272,13 @@ def evaluate(args):
 
     # Calculate detection metrics if we have data
     detection_metrics = {}
-    if args.compute_detection_metrics and len(pred_boxes_batch) > 0:
+    if cfg.compute_detection_metrics and len(pred_boxes_batch) > 0:
         try:
             detection_metrics = evaluate_detection_batch(
                 pred_boxes_batch,
                 pred_scores_batch,
                 gt_boxes_batch,
-                iou_threshold=args.iou_threshold,
+                iou_threshold=cfg.iou_threshold,
             )
         except Exception as e:
             print(f"Warning: Could not calculate detection metrics: {e}")
@@ -294,12 +301,12 @@ def evaluate(args):
     print("=" * 60)
 
     # Print timing if benchmark enabled
-    if args.benchmark:
+    if cfg.benchmark:
         timer.print_stats(title="Evaluation Timing")
 
     # Save results if output path provided
-    if args.output:
-        output_path = Path(args.output)
+    if cfg.output:
+        output_path = Path(cfg.output)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         results = {
@@ -322,108 +329,72 @@ def evaluate(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Evaluate trained ENROS model on MOT graph data"
+        description="Evaluate trained ENROS model on MOT graph data",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Basic evaluation
+  python scripts/evaluate_mot_graph.py --checkpoint-dir experiments/mot_001 \\
+      --mot-dirs data/MOT16/train/MOT16-02 data/MOT16/train/MOT16-04
+
+  # With CLI overrides
+  python scripts/evaluate_mot_graph.py --checkpoint-dir experiments/mot_001 \\
+      --mot-dirs data/MOT16/train/MOT16-02 \\
+      batch_size=64 device=cuda:1
+
+  # Compute detection metrics and save results
+  python scripts/evaluate_mot_graph.py --checkpoint-dir experiments/mot_001 \\
+      --mot-dirs data/MOT16/train/MOT16-02 \\
+      compute_detection_metrics=true output=results.json
+        """,
     )
 
-    # Checkpoint arguments
+    # Required arguments
     parser.add_argument(
-        "--checkpoint_dir",
+        "--checkpoint-dir",
         required=True,
         help="Path to experiment directory (will auto-detect config and best checkpoint)",
     )
-
-    # Data arguments
     parser.add_argument(
         "--mot-dirs",
         nargs="+",
         required=True,
         help="MOT data directories to evaluate on",
     )
-    parser.add_argument(
-        "--ann-filename",
-        type=str,
-        default=None,
-        help="Visible annotation filename relative to sequence (None or 'gt.txt' means GT)",
-    )
-    parser.add_argument(
-        "--use-precomputed-features",
-        action="store_true",
-        help="Use precomputed RPN features for node features",
-    )
-    parser.add_argument(
-        "--feature-filename",
-        type=str,
-        default="features.npz",
-        help="Precomputed features filename to load (default: features.npz)",
-    )
-    parser.add_argument("--no-bar", action="store_true", help="Disable progress bar")
-    parser.add_argument("--max-samples", type=int, help="Max samples to load")
 
-    # Evaluation arguments
-    parser.add_argument("--device", default="cuda:0", help="Device to evaluate on")
-    parser.add_argument("--batch-size", type=int, default=32, help="Batch size")
-    parser.add_argument("--num-workers", type=int, default=4, help="DataLoader workers")
+    # Optional overrides
     parser.add_argument(
-        "--num-samples", type=int, default=5000, help="Number of samples to evaluate"
-    )
-
-    # Dataset parameters
-    parser.add_argument("--agent-radius", type=float, default=0.02, help="Agent radius")
-    parser.add_argument(
-        "--max-entities", type=int, default=100, help="Max entities per sample"
-    )
-    parser.add_argument(
-        "--connect-threshold",
-        type=float,
-        default=50.0,
-        help="Edge connection threshold",
-    )
-    parser.add_argument(
-        "--image-size", nargs=2, type=int, default=[500, 500], help="Image size"
-    )
-    parser.add_argument(
-        "--include-agent-node",
-        action="store_true",
-        help="Include agent node in graph",
-    )
-    parser.add_argument(
-        "--task-type",
-        type=str,
-        default="regression",
-        choices=["regression", "classification"],
-        help="Task type: 'regression' or 'classification' (default: regression)",
-    )
-
-    # Detection metrics
-    parser.add_argument(
-        "--compute-detection-metrics",
-        action="store_true",
-        help="Compute detection metrics (precision, recall, mAP)",
-    )
-    parser.add_argument(
-        "--max-detection-batches",
-        type=int,
-        default=5,
-        help="Max batches to use for detection metrics",
-    )
-    parser.add_argument(
-        "--iou-threshold",
-        type=float,
-        default=0.5,
-        help="IoU threshold for detection metrics",
-    )
-
-    # Output
-    parser.add_argument(
-        "--output",
-        help="Path to save evaluation results JSON",
-    )
-    parser.add_argument(
-        "--benchmark",
-        action="store_true",
-        help="Enable timing benchmarks",
+        "overrides",
+        nargs="*",
+        help="Config overrides in dotlist format (e.g., batch_size=64 device=cuda:1)",
     )
 
     args = parser.parse_args()
 
-    evaluate(args)
+    # Load structured config with type safety and validation
+    # Required fields (checkpoint_dir, mot_dirs) are set from CLI args
+    try:
+        # Initialize overrides list
+        if args.overrides is None:
+            args.overrides = []
+
+        # Add required CLI arguments to overrides
+        args.overrides.append(f"checkpoint_dir={args.checkpoint_dir}")
+        args.overrides.append(f"mot_dirs={args.mot_dirs}")
+
+        cfg = cfg_utils.load_structured_config(
+            MOTGraphEvaluationConfig,
+            config_path=None,  # No config file for evaluation
+            overrides=args.overrides,
+        )
+    except Exception as e:
+        print(f"\n❌ Configuration Error: {e}\n")
+        print("Required parameters:")
+        print("  - checkpoint_dir: Path to experiment directory")
+        print("  - mot_dirs: List of MOT data directories")
+        raise
+
+    # Print config
+    cfg_utils.print_config(cfg, "MOT Graph Evaluation Configuration")
+
+    evaluate(cfg)
