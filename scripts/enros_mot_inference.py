@@ -27,7 +27,9 @@ import yaml
 from torch_geometric.data import Batch
 from tqdm import tqdm
 
+from entity_rl import config as cfg_utils
 from entity_rl import utils
+from entity_rl.config import MOTInferenceConfig
 from entity_rl.datasets import MOTDataset
 from entity_rl.datasets.graph_utils import create_graph_observation_space
 from entity_rl.datasets.mot_data import MOTDataLoader, scale_bboxes
@@ -718,159 +720,99 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s --checkpoint-dir experiments/mot_graph_20250101 \\
-           --mot-dir data/MOT16/train/MOT16-02 \\
-           --output-dir output_videos
+  # Basic inference
+  python scripts/enros_mot_inference.py \\
+      --checkpoint-dir experiments/mot_001 \\
+      --mot-dir data/MOT16/train/MOT16-02 \\
+      --output-dir output_videos
 
-  %(prog)s --checkpoint-dir path/to/experiment \\
-           --mot-dir path/to/MOT/sequence \\
-           --output-dir videos \\
-           --device cuda \\
-           --fps 30 \\
-           --num-frames 100
+  # With CLI overrides
+  python scripts/enros_mot_inference.py \\
+      --checkpoint-dir experiments/mot_001 \\
+      --mot-dir data/MOT16/train/MOT16-02 \\
+      --output-dir videos \\
+      fps=30 max_frames=100 show_edges=true
         """,
     )
 
+    # Required arguments
     parser.add_argument(
         "--checkpoint-dir",
-        type=str,
         required=True,
         help="Path to experiment directory (will auto-detect config and best model)",
     )
-
     parser.add_argument(
         "--mot-dir",
-        type=str,
         required=True,
         help="Path to MOT sequence directory",
     )
-
     parser.add_argument(
         "--output-dir",
-        type=str,
+        required=True,
         help="Directory to save output videos",
     )
 
+    # Optional overrides
     parser.add_argument(
-        "--device",
-        type=str,
-        default="cuda" if torch.cuda.is_available() else "cpu",
-        help="Device for inference (default: cuda if available)",
-    )
-
-    parser.add_argument(
-        "--fps",
-        type=int,
-        default=25,
-        help="Frames per second for output video (default: 25)",
-    )
-
-    parser.add_argument(
-        "--agent-radius",
-        type=float,
-        default=0.02,
-        help="Agent radius for collision detection (default: 0.02)",
-    )
-
-    parser.add_argument(
-        "--max-entities",
-        type=int,
-        default=100,
-        help="Maximum number of entities to process (default: 100)",
-    )
-
-    parser.add_argument(
-        "--connect-threshold",
-        type=float,
-        default=50.0,
-        help="Distance threshold for graph edges (default: 50.0)",
-    )
-
-    parser.add_argument(
-        "--ann-filename",
-        type=str,
-        default=None,
-        help="Visible annotation filename relative to sequence (None or 'gt.txt' means GT)",
-    )
-
-    parser.add_argument(
-        "--include-agent-node",
-        action="store_true",
-        help="Include agent as a node in the graph",
-    )
-
-    parser.add_argument(
-        "--task-type",
-        type=str,
-        default="regression",
-        choices=["regression", "classification"],
-        help="Task type: 'regression' or 'classification' (default: regression)",
-    )
-
-    parser.add_argument(
-        "--use-precomputed-features",
-        action="store_true",
-        help="Use precomputed RPN features for node features",
-    )
-
-    parser.add_argument(
-        "--feature-filename",
-        type=str,
-        help="Precomputed features filename to load (default: features.npz)",
-    )
-
-    parser.add_argument(
-        "--output-name",
-        type=str,
-        default="enros_mot_inference",
-        help="Name for output video file (default: enros_mot_inference)",
-    )
-
-    parser.add_argument(
-        "--num-frames",
-        type=int,
-        default=None,
-        help="Number of frames to process (default: all frames)",
-    )
-
-    parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Print detailed attention diagnostics",
+        "overrides",
+        nargs="*",
+        help="Config overrides in dotlist format (e.g., fps=30 device=cuda:1)",
     )
 
     args = parser.parse_args()
 
-    if args.output_dir is None:
-        output_dir = Path(args.checkpoint_dir) / Path(args.mot_dir).stem
-    else:
-        output_dir = Path(args.output_dir)
+    # Load structured config with type safety and validation
+    try:
+        # Initialize overrides list
+        if args.overrides is None:
+            args.overrides = []
 
-    # Create visualizer
+        # Add required CLI arguments to overrides
+        args.overrides.append(f"checkpoint_dir={args.checkpoint_dir}")
+        args.overrides.append(f"mot_dir={args.mot_dir}")
+        args.overrides.append(f"output_dir={args.output_dir}")
+
+        cfg = cfg_utils.load_structured_config(
+            MOTInferenceConfig,
+            config_path=None,  # No config file for inference
+            overrides=args.overrides,
+        )
+    except Exception as e:
+        print(f"\n❌ Configuration Error: {e}\n")
+        print("Required parameters:")
+        print("  - checkpoint_dir: Path to experiment directory")
+        print("  - mot_dir: Path to MOT sequence directory")
+        print("  - output_dir: Output directory for videos")
+        raise
+
+    # Print config
+    cfg_utils.print_config(cfg, "MOT Inference Configuration")
+
+    # Create visualizer using structured config
     visualizer = ENROSMOTVisualizer(
-        checkpoint_dir=Path(args.checkpoint_dir),
-        mot_dir=Path(args.mot_dir),
-        output_dir=output_dir,
-        device=args.device,
-        fps=args.fps,
-        agent_radius=args.agent_radius,
-        max_entities=args.max_entities,
-        connect_threshold=args.connect_threshold,
-        ann_filename=args.ann_filename,
-        include_agent_node=args.include_agent_node,
-        task_type=args.task_type,
-        use_precomputed_features=args.use_precomputed_features,
-        feature_filename=args.feature_filename,
+        checkpoint_dir=Path(cfg.checkpoint_dir),
+        mot_dir=Path(cfg.mot_dir),
+        output_dir=Path(cfg.output_dir),
+        device=cfg.device,
+        fps=cfg.fps,
+        agent_radius=cfg.agent_radius,
+        max_entities=cfg.max_entities,
+        connect_threshold=cfg.connect_threshold,
+        ann_filename=cfg.ann_filename,
+        include_agent_node=cfg.include_agent_node,
+        task_type=cfg.task_type,
+        use_precomputed_features=cfg.use_precomputed_features,
+        feature_filename=cfg.feature_filename,
     )
 
     # Generate video
     output_path = visualizer.generate_video(
-        output_name=args.output_name,
-        num_frames=args.num_frames,
-        verbose=args.verbose,
+        output_name="enros_mot_inference",  # Can add to config if needed
+        num_frames=cfg.max_frames,
+        verbose=False,  # Can add to config if needed
     )
 
-    print(f"Success! Video saved to: {output_path}")
+    print(f"✅ Success! Video saved to: {output_path}")
 
     return 0
 
