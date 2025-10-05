@@ -63,7 +63,7 @@ class MOTDataset(Dataset):
             connect_threshold: [Graph mode] Distance threshold for graph edges
             include_agent_node: [Graph mode] Whether to include agent as graph node
             visible_ann_filename: Visible annotation filename relative to sequence
-                directory. If None or 'gt/gt.txt', GT is visible; otherwise the
+                directory. If None or 'gt.txt', GT is visible; otherwise the
                 specified file is used.
         """
 
@@ -83,7 +83,7 @@ class MOTDataset(Dataset):
 
         # Always load GT data for reward calculation
         self.gt_data_loader = MOTDataLoader(
-            mot_data_dirs, ann_filename="gt/gt.txt", max_samples=max_samples
+            mot_data_dirs, ann_filename="gt.txt", max_samples=max_samples
         )
         self.gt_data = self.gt_data_loader.mot_data()
 
@@ -100,7 +100,6 @@ class MOTDataset(Dataset):
         self.visible_data = None
         is_gt_visible = (
             visible_ann_filename is None
-            or visible_ann_filename == "gt/gt.txt"
             or visible_ann_filename == "gt.txt"
         )
 

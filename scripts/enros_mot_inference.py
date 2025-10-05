@@ -75,7 +75,7 @@ class ENROSMOTVisualizer:
             agent_radius: Radius of synthetic agent
             max_entities: Maximum number of entities to process
             connect_threshold: Distance threshold for graph edges
-            ann_filename: Visible annotation filename relative to sequence (None or 'gt/gt.txt' means GT)
+            ann_filename: Visible annotation filename relative to sequence (None or 'gt.txt' means GT)
             include_agent_node: Whether to include agent node in graph
             task_type: Task type ('regression' or 'classification')
             use_precomputed_features: Whether to use precomputed RPN features
@@ -328,7 +328,7 @@ class ENROSMOTVisualizer:
         attention_offset = 1 if self.include_agent_node else 0
 
         # Draw GT bounding boxes in red (for reference when using non-GT sources)
-        is_gt_visible = self.ann_filename is None or self.ann_filename in ("gt/gt.txt", "gt.txt")
+        is_gt_visible = self.ann_filename is None or self.ann_filename == "gt.txt"
         if not is_gt_visible:
             for x, y, bbox_w, bbox_h, track_id in gt_bboxes:
                 # Convert normalized coords to pixels
@@ -790,7 +790,7 @@ Examples:
         "--ann-filename",
         type=str,
         default=None,
-        help="Visible annotation filename relative to sequence (None or 'gt/gt.txt' means GT)",
+        help="Visible annotation filename relative to sequence (None or 'gt.txt' means GT)",
     )
 
     parser.add_argument(

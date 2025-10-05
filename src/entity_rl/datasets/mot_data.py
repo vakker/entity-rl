@@ -14,7 +14,7 @@ class MOTDataLoader:
     def __init__(
         self,
         mot_data_dirs: List[str],
-        ann_filename: str = "gt/gt.txt",
+        ann_filename: str = "gt.txt",
         max_samples: Optional[int] = None,
         feature_filename: Optional[str] = None,
     ):
@@ -25,8 +25,8 @@ class MOTDataLoader:
             mot_data_dirs: List of MOT data directories
             ann_filename: Annotation file path relative to sequence directory.
                 Examples:
-                - 'gt/gt.txt' for ground-truth annotations (default)
-                - 'det/det.txt' for MOT detections
+                - 'gt.txt' for ground-truth annotations (default)
+                - 'det.txt' for MOT detections
                 - 'prop.csv' for custom proposals
             max_samples: Maximum number of samples to load
             feature_filename: Filename for precomputed features (default: None)

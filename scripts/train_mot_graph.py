@@ -404,7 +404,7 @@ if __name__ == "__main__":
         "--ann-filename",
         type=str,
         default=None,
-        help="Visible annotation filename relative to sequence (None or 'gt/gt.txt' means GT)",
+        help="Visible annotation filename relative to sequence (None or 'gt.txt' means GT)",
     )
     parser.add_argument(
         "--use-precomputed-features",
