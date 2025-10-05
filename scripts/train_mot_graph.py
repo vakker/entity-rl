@@ -66,6 +66,7 @@ def main(args):
         include_agent_node=args.include_agent_node,
         use_precomputed_features=args.use_precomputed_features,
         feature_filename=args.feature_filename,
+        image_cache_size=args.image_cache_size,
     )
 
     val_dataset = MOTDataset(
@@ -82,6 +83,7 @@ def main(args):
         include_agent_node=args.include_agent_node,
         use_precomputed_features=args.use_precomputed_features,
         feature_filename=args.feature_filename,
+        image_cache_size=args.image_cache_size,
     )
 
     print(f"Train samples: {len(train_dataset)}, Val samples: {len(val_dataset)}")
@@ -98,6 +100,7 @@ def main(args):
         drop_last=True,
         num_workers=args.num_workers,
         collate_fn=collate_graph_batch,
+        pin_memory=True,
     )
 
     val_loader = DataLoader(
@@ -107,6 +110,7 @@ def main(args):
         drop_last=True,
         num_workers=args.num_workers,
         collate_fn=collate_graph_batch,
+        pin_memory=True,
     )
     assert len(train_loader)
 
@@ -434,6 +438,13 @@ def main(args):
 
     writer.close()
     print("Training completed!")
+
+    # Print cache statistics if using images
+    if use_image_mode:
+        print("\n=== Training Dataset Cache Stats ===")
+        train_dataset.print_cache_stats()
+        print("\n=== Validation Dataset Cache Stats ===")
+        val_dataset.print_cache_stats()
 
 
 if __name__ == "__main__":

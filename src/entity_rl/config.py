@@ -243,6 +243,7 @@ class MOTGraphTrainingConfig:
     connect_threshold: float = 50.0  # Edge connection threshold
     image_size: list[int] = field(default_factory=lambda: [500, 500])  # Image size
     include_agent_node: bool = False  # Include agent as graph node
+    image_cache_size: int = 2000  # Image cache size (LRU cache for faster loading)
 
     # ===== System =====
     benchmark: bool = False  # Enable timing benchmarks

@@ -1,4 +1,5 @@
 import random
+from collections import OrderedDict
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
@@ -47,6 +48,8 @@ class MOTDataset(Dataset):
         visible_ann_filename: Optional[str] = None,
         use_precomputed_features: bool = False,
         feature_filename: Optional[str] = None,
+        # Prefetching parameters
+        image_cache_size: int = 500,
     ):
         """
         Initialize unified MOT dataset.
@@ -149,6 +152,12 @@ class MOTDataset(Dataset):
 
         # Initialize timer
         self._timer = TicToc()
+
+        # Initialize image cache (LRU cache using OrderedDict)
+        self.image_cache_size = image_cache_size if return_image else 0
+        self._image_cache: OrderedDict[Tuple[str, int], np.ndarray] = OrderedDict()
+        self._cache_hits = 0
+        self._cache_misses = 0
 
     def _validate_parameters(self) -> None:
         """Validate initialization parameters."""
@@ -321,6 +330,34 @@ class MOTDataset(Dataset):
     def total_frames(self) -> int:
         """Get total number of frames across all datasets."""
         return self.gt_data_loader.get_total_frames()
+
+    def get_cache_stats(self) -> Dict[str, Union[int, float]]:
+        """
+        Get image cache statistics.
+
+        Returns:
+            Dictionary with cache stats (hits, misses, size, hit_rate)
+        """
+        total_requests = self._cache_hits + self._cache_misses
+        hit_rate = self._cache_hits / total_requests if total_requests > 0 else 0.0
+
+        return {
+            "cache_hits": self._cache_hits,
+            "cache_misses": self._cache_misses,
+            "cache_size": len(self._image_cache),
+            "cache_capacity": self.image_cache_size,
+            "hit_rate": hit_rate,
+        }
+
+    def print_cache_stats(self) -> None:
+        """Print cache statistics."""
+        stats = self.get_cache_stats()
+        print(f"\n=== Image Cache Statistics ===")
+        print(f"Hits: {stats['cache_hits']}")
+        print(f"Misses: {stats['cache_misses']}")
+        print(f"Hit Rate: {stats['hit_rate']:.2%}")
+        print(f"Cache Size: {stats['cache_size']}/{stats['cache_capacity']}")
+        print("=" * 30)
 
     def _generate_sample(
         self,
@@ -501,11 +538,54 @@ class MOTDataset(Dataset):
             num_nodes=len(node_features),
         )
 
+    def _get_cached_image(self, data_dir: str, frame_id: int) -> Optional[np.ndarray]:
+        """
+        Get image from cache if available (LRU).
+
+        Args:
+            data_dir: MOT data directory
+            frame_id: Frame ID
+
+        Returns:
+            Cached image or None if not in cache
+        """
+        cache_key = (data_dir, frame_id)
+
+        if cache_key in self._image_cache:
+            # Move to end (most recently used)
+            self._image_cache.move_to_end(cache_key)
+            self._cache_hits += 1
+            return self._image_cache[cache_key]
+
+        self._cache_misses += 1
+        return None
+
+    def _cache_image(self, data_dir: str, frame_id: int, img: np.ndarray) -> None:
+        """
+        Add image to cache, evicting oldest if full (LRU).
+
+        Args:
+            data_dir: MOT data directory
+            frame_id: Frame ID
+            img: Image to cache
+        """
+        if self.image_cache_size == 0:
+            return
+
+        cache_key = (data_dir, frame_id)
+
+        # Remove oldest if cache is full
+        if len(self._image_cache) >= self.image_cache_size:
+            self._image_cache.popitem(last=False)  # Remove oldest (first item)
+
+        # Add new image
+        self._image_cache[cache_key] = img
+
     def _create_image(
         self, data_dir: str, frame_id: int, agent_x: float, agent_y: float
     ) -> torch.Tensor:
         """
-        Create image with agent drawn.
+        Create image with agent drawn, using cache when available.
 
         Args:
             data_dir: MOT data directory
@@ -516,15 +596,22 @@ class MOTDataset(Dataset):
         Returns:
             Image tensor (H, W, 3) with agent drawn
         """
-        # Load and resize image
-        self._timer.tic("load_and_resize_image")
-        img = load_and_resize_image(data_dir, frame_id, self.image_size)
-        self._timer.toc("load_and_resize_image")
+        # Try to get from cache first
+        img = self._get_cached_image(data_dir, frame_id)
 
         if img is None:
-            raise RuntimeError(f"Failed to load image: {data_dir}/{frame_id}")
+            # Load and resize image
+            self._timer.tic("load_and_resize_image")
+            img = load_and_resize_image(data_dir, frame_id, self.image_size)
+            self._timer.toc("load_and_resize_image")
 
-        # Draw agent on image
+            if img is None:
+                raise RuntimeError(f"Failed to load image: {data_dir}/{frame_id}")
+
+            # Cache the loaded image
+            self._cache_image(data_dir, frame_id, img)
+
+        # Draw agent on image (always need a copy since we modify it)
         self._timer.tic("draw_agent")
         agent_image = self._draw_agent(img.copy(), agent_x, agent_y)
         self._timer.toc("draw_agent")
