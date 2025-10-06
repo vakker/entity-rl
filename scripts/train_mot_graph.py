@@ -1,4 +1,5 @@
 import argparse
+import os
 
 import gymnasium as gym
 import numpy as np
@@ -26,6 +27,8 @@ from entity_rl.training import (
 )
 from entity_rl.utils import TicToc
 
+TIMERS_ENABLED = False
+
 
 def main(args):
     """Main training function.
@@ -47,7 +50,10 @@ def main(args):
     # Determine if we need image output based on encoder type
     conf = args.base
     encoder_config = conf["model"]["custom_model_config"]["encoder"]
-    use_image_mode = "entity" in encoder_config  # RPN/Faster R-CNN need images
+    use_image_mode = (
+        "entity" in encoder_config
+        and encoder_config["entity"]["name"] != "EntityPassThrough"
+    )
 
     print(f"Dataset mode: {'image' if use_image_mode else 'graph'}")
 
@@ -119,7 +125,7 @@ def main(args):
     encoder_config = conf["model"]["custom_model_config"]["encoder"]
 
     # Check if using entity encoder (RPN/Faster R-CNN) or graph encoder
-    if "entity" in encoder_config:
+    if use_image_mode:
         # Entity encoder (RPN/Faster R-CNN) expects Box space (images)
         encoder_name = encoder_config["entity"]["name"]
         print(f"Using entity encoder: {encoder_name}")
@@ -135,7 +141,7 @@ def main(args):
         print("Using graph encoder")
         input_dim = 5
         if args.use_precomputed_features:
-            input_dim += 256
+            input_dim += 256 * 7 * 7
 
         obs_space = create_graph_observation_space(node_feature_dim=input_dim)
         print(f"Observation space: Dict (graph) with node_dim={input_dim}")
@@ -167,8 +173,7 @@ def main(args):
     global_step = 0
     best_metrics = {}
 
-    # Initialize timer (enabled/disabled based on --benchmark flag)
-    timer = TicToc(enabled=args.benchmark)
+    timer = TicToc(enabled=TIMERS_ENABLED)
 
     for epoch in trange(args.epochs, desc="Training epochs", disable=args.no_bar):
         timer.reset()

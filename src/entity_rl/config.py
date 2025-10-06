@@ -214,7 +214,7 @@ class MOTGraphTrainingConfig:
             "data-sync/MOT17/train-unified/MOT17-09",
             "data-sync/MOT17/train-unified/MOT17-10",
             "data-sync/MOT17/train-unified/MOT17-11",
-            "data-sync/MOT17/train-unified/MOT17-13",
+            # "data-sync/MOT17/train-unified/MOT17-13",
         ]
     )
     ann_filename: Optional[str] = None  # Annotation filename (None = GT)
@@ -244,9 +244,6 @@ class MOTGraphTrainingConfig:
     image_size: list[int] = field(default_factory=lambda: [500, 500])  # Image size
     include_agent_node: bool = False  # Include agent as graph node
     image_cache_size: int = 2000  # Image cache size (LRU cache for faster loading)
-
-    # ===== System =====
-    benchmark: bool = False  # Enable timing benchmarks
 
     # ===== Experiment Settings =====
     # There are a few more, commented out for now
@@ -296,7 +293,6 @@ class MOTGraphEvaluationConfig:
 
     # ===== Output =====
     output: Optional[str] = None  # Path to save results JSON
-    benchmark: bool = False  # Enable timing benchmarks
 
 
 @dataclass

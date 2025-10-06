@@ -1,3 +1,4 @@
+import os
 import random
 from collections import OrderedDict
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -16,6 +17,8 @@ from .mot_data import (
     load_and_resize_image,
     scale_bboxes,
 )
+
+TIMERS_ENABLED = False
 
 
 class MOTDataset(Dataset):
@@ -101,10 +104,7 @@ class MOTDataset(Dataset):
         # Determine visible annotations for graph
         self.visible_data_loader = None
         self.visible_data = None
-        is_gt_visible = (
-            visible_ann_filename is None
-            or visible_ann_filename == "gt.txt"
-        )
+        is_gt_visible = visible_ann_filename is None or visible_ann_filename == "gt.txt"
 
         if is_gt_visible:
             self.visible_data_loader = None
@@ -113,9 +113,9 @@ class MOTDataset(Dataset):
         else:
             # Derive default features filename for CSV visible annotations when requested
             if use_precomputed_features and feature_filename is None:
-                if isinstance(visible_ann_filename, str) and visible_ann_filename.endswith(
-                    ".csv"
-                ):
+                if isinstance(
+                    visible_ann_filename, str
+                ) and visible_ann_filename.endswith(".csv"):
                     feature_filename = visible_ann_filename.replace(
                         ".csv", "_features.npz"
                     )
@@ -151,7 +151,7 @@ class MOTDataset(Dataset):
         self._validate_parameters()
 
         # Initialize timer
-        self._timer = TicToc()
+        self._timer = TicToc(enabled=TIMERS_ENABLED)
 
         # Initialize image cache (LRU cache using OrderedDict)
         self.image_cache_size = image_cache_size if return_image else 0
@@ -293,6 +293,7 @@ class MOTDataset(Dataset):
             - label: Classification label (int) or regression target (float)
             - agent_pos: Agent position tensor
         """
+        self._timer.reset()
         self._timer.tic("generate_sample")
         data_dict, reward = self._generate_sample()
         self._timer.toc("generate_sample")
@@ -324,6 +325,7 @@ class MOTDataset(Dataset):
         else:  # regression
             label = float(reward)  # Already -1.0 or 1.0
 
+        self._timer.print_stats(title="generate_sample")
         return obs_dict, label, agent_pos
 
     @property
@@ -399,7 +401,11 @@ class MOTDataset(Dataset):
         self._timer.toc("compute_reward")
 
         if self.use_precomputed_features and self.visible_data_loader:
-            precomputed_features = self.visible_data_loader.get_features(data_dir, frame_id)
+            self._timer.tic("get_features")
+            precomputed_features = self.visible_data_loader.get_features(
+                data_dir, frame_id
+            )
+            self._timer.toc("get_features")
         else:
             precomputed_features = None
 
@@ -430,7 +436,7 @@ class MOTDataset(Dataset):
         scaled_bboxes: List[Tuple],
         agent_x: float,
         agent_y: float,
-        precomputed_features: np.ndarray | None = None,
+        precomputed_features: torch.Tensor | None = None,
     ) -> Data:
         """
         Create graph representation for GNN.
@@ -439,7 +445,7 @@ class MOTDataset(Dataset):
             scaled_bboxes: List of scaled bounding boxes (x, y, w, h, track_id)
             agent_x: Agent x position (normalized)
             agent_y: Agent y position (normalized)
-            precomputed_features: Precomputed features
+            precomputed_features: Precomputed features (torch tensor)
 
         Returns:
             PyTorch Geometric Data object
@@ -475,10 +481,10 @@ class MOTDataset(Dataset):
         agent_y: float,
         agent_radius: float,
         include_agent_node: bool,
-        precomputed_features: np.ndarray | None = None,
+        precomputed_features: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
-        Create node features relative to agent position.
+        Create node features relative to agent position (vectorized).
 
         Node features format: [rel_x, rel_y, w, h, is_agent] + precomputed_features (if available)
 
@@ -488,40 +494,80 @@ class MOTDataset(Dataset):
             agent_y: Agent y position
             agent_radius: Agent radius
             include_agent_node: Whether to include agent node
-            data_dir: Data directory for loading features
-            frame_id: Frame ID for loading features
+            precomputed_features: Optional precomputed features tensor (already on device)
 
         Returns:
             Node feature tensor (num_nodes, feature_dim)
+
+        Raises:
+            ValueError: If precomputed_features length doesn't match scaled_bboxes
         """
-        features = []
+        num_obstacles = len(scaled_bboxes)
 
-        # Add agent node if requested
+        # Validate precomputed features if provided
+        if (
+            precomputed_features is not None
+            and len(precomputed_features) != num_obstacles
+        ):
+            raise ValueError(
+                f"Precomputed features length ({len(precomputed_features)}) "
+                f"doesn't match bboxes length ({num_obstacles})"
+            )
+
+        # Determine dimensions upfront
+        base_dim = 5
+        feature_dim = base_dim
+        if precomputed_features is not None:
+            feature_dim += precomputed_features.shape[1]
+
+        num_nodes = num_obstacles + (1 if include_agent_node else 0)
+
+        # Pre-allocate full tensor
+        self._timer.tic("allocate_tensor")
+        all_features = torch.zeros(num_nodes, feature_dim, dtype=torch.float32)
+        self._timer.toc("allocate_tensor")
+
+        # Handle agent node first (if requested)
+        start_idx = 0
         if include_agent_node:
-            agent_feature = [0.0, 0.0, agent_radius, agent_radius, 1.0]
-            if precomputed_features is not None:
-                # Append zeros for precomputed features (agent has no precomputed)
-                agent_feature.extend([0.0] * precomputed_features.shape[1])
-            features.append(agent_feature)
+            all_features[0, 2] = agent_radius  # w
+            all_features[0, 3] = agent_radius  # h
+            all_features[0, 4] = 1.0  # is_agent
+            start_idx = 1
 
-        # Add obstacle nodes
-        for i, (x, y, w, h, _) in enumerate(scaled_bboxes):
-            # Calculate relative position
+        # Fill obstacle nodes (if any)
+        if num_obstacles > 0:
+            self._timer.tic("process_bboxes")
+            # Vectorize bbox processing
+            bboxes_array = np.array(scaled_bboxes, dtype=np.float32)  # (N, 5)
+            x, y, w, h = (
+                bboxes_array[:, 0],
+                bboxes_array[:, 1],
+                bboxes_array[:, 2],
+                bboxes_array[:, 3],
+            )
+
+            # Calculate centers and relative positions (vectorized)
             obs_center_x = x + w / 2
             obs_center_y = y + h / 2
             rel_x = obs_center_x - agent_x
             rel_y = obs_center_y - agent_y
 
-            # Base feature: [rel_x, rel_y, w, h, is_agent=0]
-            obstacle_feature = [rel_x, rel_y, w, h, 0.0]
+            # Assign base features directly to preallocated tensor
+            all_features[start_idx:, 0] = torch.from_numpy(rel_x)
+            all_features[start_idx:, 1] = torch.from_numpy(rel_y)
+            all_features[start_idx:, 2] = torch.from_numpy(w)
+            all_features[start_idx:, 3] = torch.from_numpy(h)
+            # is_agent=0 already set by zeros initialization
+            self._timer.toc("process_bboxes")
 
-            # Append precomputed features if available
-            if precomputed_features is not None and i < len(precomputed_features):
-                obstacle_feature.extend(precomputed_features[i])
+            # Copy precomputed features if available
+            if precomputed_features is not None:
+                self._timer.tic("copy_precomputed")
+                all_features[start_idx:, base_dim:] = precomputed_features
+                self._timer.toc("copy_precomputed")
 
-            features.append(obstacle_feature)
-
-        return torch.tensor(features, dtype=torch.float32)
+        return all_features
 
     def _create_graph_data(
         self, node_features: torch.Tensor, edge_index: torch.Tensor

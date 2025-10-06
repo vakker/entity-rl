@@ -5,6 +5,7 @@ from typing import Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
+import torch
 from PIL import Image
 
 
@@ -49,7 +50,7 @@ class MOTDataLoader:
     def feature_data(self):
         return self._feature_data
 
-    def load_feature_data(self) -> Optional[Dict[str, Dict[int, np.ndarray]]]:
+    def load_feature_data(self) -> Optional[Dict[str, Dict[int, torch.Tensor]]]:
         """
         Load precomputed features from NPZ files.
 
@@ -71,7 +72,7 @@ class MOTDataLoader:
             for key in loaded.keys():
                 if key.startswith("frame_"):
                     frame_id = int(key.split("_")[1])
-                    frame_features[frame_id] = loaded[key]
+                    frame_features[frame_id] = torch.from_numpy(loaded[key]).float()
             feature_data[str(data_path)] = frame_features
             print(
                 f"Loaded features for {len(frame_features)} frames from {feature_file}"
@@ -79,7 +80,7 @@ class MOTDataLoader:
 
         return feature_data
 
-    def get_features(self, data_dir: str, frame_id: int) -> Optional[np.ndarray]:
+    def get_features(self, data_dir: str, frame_id: int) -> Optional[torch.Tensor]:
         """
         Get precomputed features for a specific frame.
 
