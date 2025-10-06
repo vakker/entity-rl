@@ -1,14 +1,18 @@
 import sys
 from abc import abstractmethod
-from typing import Optional
+from typing import Callable, Optional, Tuple, Union
 
 import torch
 import torch_geometric.nn as pyg_nn
+from pandas.core.computation.ops import Op
 from torch import Tensor, nn
 from torch_geometric.data import Batch
-from torch_geometric.nn import MLP, GATv2Conv, SAGPooling, TopKPooling, aggr
+from torch_geometric.nn import MLP, GATv2Conv, GraphConv, SAGPooling, TopKPooling, aggr
 from torch_geometric.nn.aggr import Aggregation
 from torch_geometric.nn.inits import reset
+from torch_geometric.nn.pool.connect import FilterEdges
+from torch_geometric.nn.pool.select import SelectTopK
+from torch_geometric.typing import OptTensor
 from torch_geometric.utils import softmax
 
 from entity_rl.utils import TicToc
@@ -40,7 +44,11 @@ def get_pooling_layer(in_channels, pooling_config):
 
     # Support any pooling class from torch_geometric.nn
     try:
-        pooling_class = getattr(pyg_nn, pooling_type)
+        if pooling_type == "SAGPooling":
+            pooling_class = CustomSAGPooling
+        else:
+            pooling_class = getattr(pyg_nn, pooling_type)
+
         return pooling_class(in_channels=in_channels, **pooling_params)
     except AttributeError:
         raise ValueError(
@@ -225,13 +233,16 @@ class GNNEncoder(BaseModule):
         self._n_input_size = in_channels
 
         # Add projection layer if configured
-        projection_dim = model_config.get("projection_dim", None)
-        if projection_dim:
-            self.projection = nn.Sequential(
-                nn.Linear(in_channels, projection_dim),
-                nn.LeakyReLU()
+        projection_conf = model_config.get("projection", None)
+        if projection_conf:
+            self.projection = MLP(
+                in_channels=in_channels,
+                num_layers=projection_conf["num_layers"],
+                hidden_channels=projection_conf["out_channels"],
+                out_channels=projection_conf["out_channels"],
+                act="leakyrelu",
             )
-            in_channels = projection_dim
+            in_channels = projection_conf["out_channels"]
         else:
             self.projection = None
 
@@ -457,3 +468,112 @@ class CustomAttentionalAggregation(aggr.AttentionalAggregation):
         gate = softmax(gate, index, ptr, dim_size, dim)
         self.attention_acts = gate.detach().cpu()
         return self.reduce(gate * x, index, ptr, dim_size, dim)
+
+
+class CustomSAGPooling(torch.nn.Module):
+    def __init__(
+        self,
+        in_channels: int,
+        ratio: Union[float, int] = 0.5,
+        gate_channels: Optional[list] = None,
+        proj_channels: Optional[list] = None,
+        min_score: Optional[float] = None,
+        multiplier: float = 1.0,
+        nonlinearity: Union[str, Callable] = "tanh",
+        **kwargs,
+    ):
+        super().__init__()
+
+        self.in_channels = in_channels
+        self.ratio = ratio
+        self.min_score = min_score
+        self.multiplier = multiplier
+
+        if gate_channels is None:
+            gate_channels = [in_channels, 1]
+
+        else:
+            gate_channels = [in_channels] + gate_channels + [1]
+
+        if proj_channels is not None:
+            proj_channels = [in_channels] + proj_channels + [in_channels]
+            self.mlp = MLP(channel_list=proj_channels, act="leakyrelu")
+
+        else:
+            self.mlp = None
+
+        self.gate = MLP(channel_list=gate_channels, act="leakyrelu")
+
+        self.select = SelectTopK(1, ratio, min_score, nonlinearity)
+        self.connect = FilterEdges()
+
+        self.attention_acts = None
+
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        r"""Resets all learnable parameters of the module."""
+        self.gate.reset_parameters()
+        self.select.reset_parameters()
+
+    def forward(
+        self,
+        x: Tensor,
+        edge_index: Tensor,
+        edge_attr: OptTensor = None,
+        batch: OptTensor = None,
+    ) -> Tuple[Tensor, Tensor, OptTensor, OptTensor, Tensor, Tensor]:
+        r"""Forward pass.
+
+        Args:
+            x (torch.Tensor): The node feature matrix.
+            edge_index (torch.Tensor): The edge indices.
+            edge_attr (torch.Tensor, optional): The edge features.
+                (default: :obj:`None`)
+            batch (torch.Tensor, optional): The batch vector
+                :math:`\mathbf{b} \in {\{ 0, \ldots, B-1\}}^N`, which assigns
+                each node to a specific example. (default: :obj:`None`)
+        """
+        if batch is None:
+            batch = edge_index.new_zeros(x.size(0))
+
+        attn = self.gate(x, batch=batch)
+
+
+        self.attention_acts = attn.detach().cpu()
+
+        select_out = self.select(attn, batch)
+
+        perm = select_out.node_index
+        score = select_out.weight
+        assert score is not None
+
+        x = x[perm]
+
+        if self.mlp is not None:
+            x = self.mlp(x, batch=batch)
+
+        x = x * score.view(-1, 1)
+        x = self.multiplier * x if self.multiplier != 1 else x
+
+        connect_out = self.connect(select_out, edge_index, edge_attr, batch)
+
+        return (
+            x,
+            connect_out.edge_index,
+            connect_out.edge_attr,
+            connect_out.batch,
+            perm,
+            score,
+        )
+
+    def __repr__(self) -> str:
+        if self.min_score is None:
+            ratio = f"ratio={self.ratio}"
+        else:
+            ratio = f"min_score={self.min_score}"
+
+        return (
+            f"{self.__class__.__name__}({self.gnn.__class__.__name__}, "
+            f"{self.in_channels}, {ratio}, multiplier={self.multiplier})"
+        )
