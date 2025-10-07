@@ -69,6 +69,7 @@ def main(args):
         connect_threshold=args.connect_threshold,
         max_samples=args.max_samples,
         visible_ann_filename=args.ann_filename,
+        gt_ann_filename=args.gt_ann_filename,
         include_agent_node=args.include_agent_node,
         use_precomputed_features=args.use_precomputed_features,
         feature_filename=args.feature_filename,
@@ -86,6 +87,7 @@ def main(args):
         connect_threshold=args.connect_threshold,
         max_samples=args.max_samples,
         visible_ann_filename=args.ann_filename,
+        gt_ann_filename=args.gt_ann_filename,
         include_agent_node=args.include_agent_node,
         use_precomputed_features=args.use_precomputed_features,
         feature_filename=args.feature_filename,
@@ -204,12 +206,23 @@ def main(args):
             timer.tic("data_to_gpu")
 
             agent_pos = agent_pos.to(device)
+            # __import__('ipdb').set_trace()
 
             # Move to device - obs_batch is always a dict
             # In image mode, it contains {"image": tensor, "x": ..., "edge_index": ...}
             # In graph mode, it contains {"x": ..., "edge_index": ..., "batch": ...}
             obs_batch = {k: v.to(device) for k, v in obs_batch.items()}
             reward_batch = reward_batch.to(device)
+
+            # Get mean and std for first 5 x
+            # print("Mean and std of first 5 x:")
+            # print(torch.mean(obs_batch["x"][:, :5]))
+            # print(torch.std(obs_batch["x"][:, :5]))
+
+            # Get mean and std for the rest of x
+            # print("Mean and std of the rest of x:")
+            # print(torch.mean(obs_batch["x"][:, 5:]))
+            # print(torch.std(obs_batch["x"][:, 5:]))
 
             timer.toc("data_to_gpu")
             timer.tic("forward_pass")

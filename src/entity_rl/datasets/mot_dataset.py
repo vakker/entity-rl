@@ -49,6 +49,7 @@ class MOTDataset(Dataset):
         connect_threshold: float = 50.0,
         include_agent_node: bool = True,
         visible_ann_filename: Optional[str] = None,
+        gt_ann_filename: Optional[str] = None,
         use_precomputed_features: bool = False,
         feature_filename: Optional[str] = None,
         # Prefetching parameters
@@ -88,8 +89,12 @@ class MOTDataset(Dataset):
         self.use_precomputed_features = use_precomputed_features
 
         # Always load GT data for reward calculation
+        if gt_ann_filename is None:
+            gt_ann_filename = "gt.txt"
         self.gt_data_loader = MOTDataLoader(
-            mot_data_dirs, ann_filename="gt.txt", max_samples=max_samples
+            mot_data_dirs,
+            ann_filename=gt_ann_filename,
+            max_samples=max_samples,
         )
         self.gt_data = self.gt_data_loader.mot_data()
 
