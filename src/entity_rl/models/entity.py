@@ -9,6 +9,8 @@ from mmengine import Config
 from mmengine.runner.checkpoint import _load_checkpoint, _load_checkpoint_to_model
 from torch_geometric.data import Batch, Data
 
+from entity_rl.models import faster_rcnn
+
 from .base import BaseModule
 from .gdino import GDino
 from .rpn import RPNENROS
@@ -366,6 +368,7 @@ class RPNEncoder(EntityEncoder):
         mean = self.mean  # .expand(1, stack_depth, -1, -1).reshape(1, -1, 1, 1)
         std = self.std  # .expand(1, stack_depth, -1, -1).reshape(1, -1, 1, 1)
 
+        inputs = inputs[:, [2, 1, 0], :, :]
         return (inputs - mean) / std
 
     def forward(self, inputs):
@@ -452,6 +455,218 @@ class RPNEncoder(EntityEncoder):
                 )
 
             # Remove zero-padded proposals (where all features are zero)
+            non_zero_mask = all_nodes.abs().sum(dim=1) > 1e-6
+            if non_zero_mask.any():
+                all_nodes = all_nodes[non_zero_mask]
+            else:
+                # Keep at least one node
+                all_nodes = all_nodes[:1]
+
+            # Create edges
+            n_nodes = all_nodes.shape[0]
+            if self.edge_index is not None and self.edge_index.shape[1] >= n_nodes**2:
+                # Use precomputed fully connected edges
+                edge_index = (
+                    self.edge_index[:, : n_nodes**2]
+                    .view(2, n_nodes, n_nodes)[:, :n_nodes, :n_nodes]
+                    .view(2, -1)
+                )
+            else:
+                # Create fully connected graph
+                sources = torch.arange(n_nodes, device=inputs.device).repeat(n_nodes)
+                targets = torch.arange(n_nodes, device=inputs.device).repeat_interleave(
+                    n_nodes
+                )
+                edge_index = torch.stack([sources, targets], dim=0)
+
+            g_batch.append(Data(x=all_nodes, edge_index=edge_index))
+
+        batch = Batch.from_data_list(g_batch)
+        return batch
+
+
+class FasterRCNNEncoder(EntityEncoder):
+    """Entity encoder using Faster R-CNN for refined object detection."""
+
+    def __init__(self, model_config, obs_space):
+        assert isinstance(obs_space, spaces.Box)
+        super().__init__(model_config, obs_space)
+
+        self._model_config = model_config
+
+        # Import FasterRCNNENROS
+        from .faster_rcnn import FasterRCNNENROS
+
+        current_dir = osp.dirname(osp.abspath(__file__))
+        frcnn_cfg_file = osp.join(current_dir, model_config["frcnn_cfg"])
+        assert osp.exists(frcnn_cfg_file)
+
+        from mmengine import Config
+
+        frcnn_config_full = Config.fromfile(frcnn_cfg_file)
+        if hasattr(frcnn_config_full, 'chkp') and frcnn_config_full.chkp:
+            frcnn_chkp_file = osp.join(current_dir, frcnn_config_full.chkp)
+        else:
+            frcnn_chkp_file = None
+
+        frcnn_config = frcnn_config_full.model
+
+        # Override config parameters
+        if "max_per_image" in model_config:
+            frcnn_config["test_cfg"]["rcnn"]["max_per_img"] = model_config["max_per_image"]
+        if "unfreeze_backbone" in model_config:
+            frcnn_config["unfreeze_backbone"] = model_config["unfreeze_backbone"]
+        if "unfreeze_roi_head" in model_config:
+            frcnn_config["unfreeze_roi_head"] = model_config["unfreeze_roi_head"]
+
+        # frcnn_config["type"] = "FasterRCNNENROS"
+        frcnn_config.pop("type")
+        self._model = FasterRCNNENROS(**copy.deepcopy(frcnn_config))
+
+        # Load checkpoint if available
+        if frcnn_chkp_file and osp.exists(frcnn_chkp_file):
+            chkp = _load_checkpoint(frcnn_chkp_file)["state_dict"]
+            self.frcnn_outputs = None
+
+            # Remove incompatible keys for RPN
+            to_remove = ["roi_head.mask_head."]  # Remove ROI head parts for pure RPN
+            for k in list(chkp.keys()):
+                for prefix in to_remove:
+                    if k.startswith(prefix):
+                        del chkp[k]
+
+            # Load full checkpoint (backbone, RPN, and RoI head)
+            _load_checkpoint_to_model(self._model, chkp)
+
+        else:
+            raise ValueError("Faster R-CNN checkpoint not found.")
+
+        # Set image normalization parameters
+        mean = torch.tensor([123.675, 116.28, 103.53], dtype=torch.float32)
+        std = torch.tensor([58.395, 57.12, 57.375], dtype=torch.float32)
+        self.register_buffer("mean", mean.reshape([1, 3, 1, 1]))
+        self.register_buffer("std", std.reshape([1, 3, 1, 1]))
+
+        # Add edges between all detected objects if specified
+        if model_config.get("add_edges", False):
+            stack_depth = obs_space.shape[2] // 3
+            max_objects = model_config.get("max_per_image", 100)
+            n_nodes = max_objects * stack_depth
+            edge_index = [[i, j] for i in range(n_nodes) for j in range(n_nodes)]
+            self.register_buffer(
+                "edge_index",
+                torch.tensor(edge_index, dtype=torch.long).t().contiguous(),
+            )
+        else:
+            self.edge_index = None
+
+        self.frcnn_outputs = None
+
+    @property
+    def out_channels(self):
+        # Feature dimension from RoI pooling: 256 channels
+        x_shape = 256
+        return {
+            "node_features": (x_shape,),
+            "edge_features": None,
+            "global_features": None,
+        }
+
+    def normalize(self, inputs):
+        """Normalize inputs to match ImageNet preprocessing.
+
+        Also converts RGB to BGR since the model was trained on BGR images.
+        """
+        stack_depth = inputs.shape[1] // 3
+        inputs = inputs.to(torch.float32)
+        assert stack_depth == 1
+
+        # Convert RGB to BGR (flip channels)
+        # Input is (B, 3, H, W) in RGB, convert to BGR
+        inputs = inputs[:, [2, 1, 0], :, :]
+
+        mean = self.mean
+        std = self.std
+
+        return (inputs - mean) / std
+
+    def forward(self, inputs):
+        """
+        Args:
+            inputs: (batch_size, height, width, channels*stack_depth)
+
+        Returns:
+            torch_geometric.data.Batch: Graph batch with detected objects as nodes
+        """
+        inputs = inputs.permute(0, 3, 1, 2)  # (B, C*stack, H, W)
+        assert inputs.shape[1] % 3 == 0
+
+        inputs = self.normalize(inputs)
+        stack_depth = inputs.shape[1] // 3
+        batch_size = inputs.shape[0]
+
+        all_node_features = []
+        all_detections = []
+
+        # Process each frame in the stack
+        for stack_idx in range(stack_depth):
+            frame = inputs[:, 3 * stack_idx : 3 * (stack_idx + 1)]  # (B, 3, H, W)
+
+            # Extract features using Faster R-CNN
+            outputs = self._model.forward(frame, mode="tensor")
+
+            features = outputs["features"]  # (B, max_detections, feature_dim)
+            bboxes = outputs["bboxes"]  # (B, max_detections, 4)
+            scores = outputs["scores"]  # (B, max_detections)
+            labels = outputs["labels"]  # (B, max_detections)
+            detections = outputs["detections"]
+
+            # Normalize bounding boxes to [0, 1]
+            h, w = frame.shape[2:]
+            norm_bboxes = bboxes.clone()
+            norm_bboxes[:, :, [0, 2]] /= w
+            norm_bboxes[:, :, [1, 3]] /= h
+
+            # Add frame indices
+            frame_ids = torch.full(
+                (batch_size, features.shape[1], 1),
+                stack_idx,
+                device=inputs.device,
+                dtype=torch.float32,
+            )
+
+            # Use RoI features directly (256-dim per detection)
+            node_features = features
+
+            all_node_features.append(node_features)
+            all_detections.extend(detections)
+
+        # Store for visualization/debugging
+        self.frcnn_outputs = {
+            "detections": all_detections,
+            "features": [f.detach().cpu() for f in all_node_features],
+            "bboxes": outputs["bboxes"],
+            "scores": outputs["scores"],
+            "labels": outputs["labels"],
+        }
+
+        # Create graph batch
+        g_batch = []
+        for batch_idx in range(batch_size):
+            # Collect all nodes for this batch item across all frames
+            batch_nodes = []
+            for stack_features in all_node_features:
+                batch_nodes.append(stack_features[batch_idx])  # (N, features)
+
+            if batch_nodes:
+                all_nodes = torch.cat(batch_nodes, dim=0)  # (total_objects, features)
+            else:
+                # Fallback: single dummy node
+                all_nodes = torch.zeros(
+                    1, self.out_channels["node_features"][0], device=inputs.device
+                )
+
+            # Remove zero-padded detections (where all features are zero)
             non_zero_mask = all_nodes.abs().sum(dim=1) > 1e-6
             if non_zero_mask.any():
                 all_nodes = all_nodes[non_zero_mask]
