@@ -15,7 +15,7 @@ class MOTDataLoader:
     def __init__(
         self,
         mot_data_dirs: List[str],
-        ann_filename: str = "gt.txt",
+        ann_filename: str = "gt.csv",
         max_samples: Optional[int] = None,
         feature_filename: Optional[str] = None,
     ):
@@ -26,7 +26,8 @@ class MOTDataLoader:
             mot_data_dirs: List of MOT data directories
             ann_filename: Annotation file path relative to sequence directory.
                 Examples:
-                - 'gt.txt' for ground-truth annotations (default)
+                - 'gt.csv' for ground-truth annotations (default)
+                - 'gt.txt' for ground-truth annotations (legacy)
                 - 'det.txt' for MOT detections
                 - 'prop.csv' for custom proposals
             max_samples: Maximum number of samples to load
@@ -176,12 +177,12 @@ class MOTDataLoader:
 
     def load_mot_data(
         self, max_rows: Optional[int] = None
-    ) -> Dict[str, Dict[int, List[Tuple[int, int, int, int, int]]]]:
+    ) -> Dict[str, Dict[int, List[Tuple[int, int, int, int, int, int]]]]:
         """
         Load MOT annotation data from all specified directories.
 
         Returns:
-            Dictionary mapping data_dir -> {frame_id: [(x, y, w, h, track_id), ...]}
+            Dictionary mapping data_dir -> {frame_id: [(x, y, w, h, track_id, class_id), ...]}
         """
         mot_data = {}
 
@@ -215,7 +216,7 @@ class MOTDataLoader:
 
     def _parse_mot_annotations(
         self, ann_file: Path, max_rows: Optional[int]
-    ) -> Dict[int, List[Tuple[float, float, float, float, int]]]:
+    ) -> Dict[int, List[Tuple[float, float, float, float, int, int]]]:
         """
         Parse MOT annotation file.
 
@@ -223,7 +224,7 @@ class MOTDataLoader:
             ann_file: Path to annotation file
 
         Returns:
-            Dictionary mapping frame_id to list of (x, y, w, h, track_id) tuples
+            Dictionary mapping frame_id to list of (x, y, w, h, track_id, class_id) tuples
         """
         frame_data = {}
 
@@ -249,10 +250,14 @@ class MOTDataLoader:
                     if w <= 0 or h <= 0:
                         continue
 
+                    # Read class_id from column 7 (0-indexed) if available
+                    # Default to 0 for backward compatibility
+                    class_id = int(row[7]) if len(row) > 7 else 0
+
                     if frame_id not in frame_data:
                         frame_data[frame_id] = []
 
-                    frame_data[frame_id].append((x, y, w, h, track_id))
+                    frame_data[frame_id].append((x, y, w, h, track_id, class_id))
 
         except Exception as e:
             print(f"Error reading {ann_file}: {e}")
@@ -320,18 +325,18 @@ class MOTDataLoader:
 
 
 def scale_bboxes(
-    bboxes: List[Tuple[int, int, int, int, int]],
+    bboxes: List[Tuple[int, int, int, int, int, int]],
     original_size: Tuple[int, int],
-) -> List[Tuple[float, float, float, float, int]]:
+) -> List[Tuple[float, float, float, float, int, int]]:
     """
     Scale bounding boxes to match target image size.
 
     Args:
-        bboxes: List of (x, y, w, h, track_id) tuples
+        bboxes: List of (x, y, w, h, track_id, class_id) tuples
         original_size: Original image size (width, height)
 
     Returns:
-        List of scaled (x, y, w, h, track_id) tuples
+        List of scaled (x, y, w, h, track_id, class_id) tuples
     """
     if not bboxes:
         return []
@@ -343,12 +348,15 @@ def scale_bboxes(
     scale_y = target_h / orig_h
 
     scaled_bboxes = []
-    for x, y, w, h, track_id in bboxes:
+    for bbox in bboxes:
+        x, y, w, h, track_id = bbox[:5]
+        class_id = bbox[5] if len(bbox) > 5 else 0
+
         scaled_x = x * scale_x
         scaled_y = y * scale_y
         scaled_w = w * scale_x
         scaled_h = h * scale_y
-        scaled_bboxes.append((scaled_x, scaled_y, scaled_w, scaled_h, track_id))
+        scaled_bboxes.append((scaled_x, scaled_y, scaled_w, scaled_h, track_id, class_id))
 
     return scaled_bboxes
 
@@ -357,7 +365,7 @@ def check_rectangle_overlap(
     agent_x: float,
     agent_y: float,
     agent_radius: float,
-    bboxes: List[Tuple[float, float, float, float, int]],
+    bboxes: List[Tuple[float, float, float, float, int, int]],
 ) -> bool:
     """
     Check if a rectangular agent overlaps with any bounding box.
@@ -365,7 +373,7 @@ def check_rectangle_overlap(
     Args:
         agent_x, agent_y: Center of the agent rectangle
         agent_radius: Half-width/height of the agent
-        bboxes: List of (x, y, w, h, track_id) tuples
+        bboxes: List of (x, y, w, h, track_id, class_id) tuples
 
     Returns:
         True if agent overlaps with any bounding box, False otherwise
@@ -376,13 +384,8 @@ def check_rectangle_overlap(
     agent_right = agent_x + agent_radius
     agent_bottom = agent_y + agent_radius
 
-    for x, y, w, h, _ in bboxes:
-        # NOTE: debuggin
-        # if agent_x < x:
-        #     return True
-        #
-        # else:
-        #     return False
+    for bbox in bboxes:
+        x, y, w, h = bbox[:4]
 
         # Check if rectangles overlap
         if (

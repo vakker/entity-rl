@@ -218,6 +218,7 @@ class MOTGraphTrainingConfig:
         ]
     )
     ann_filename: Optional[str] = None  # Annotation filename (None = GT)
+    gt_ann_filename: str = "gt.csv"  # GT annotation filename
     use_precomputed_features: bool = False  # Use precomputed RPN features
     feature_filename: Optional[str] = None  # Feature file path
     no_bar: bool = False  # Disable progress bars
@@ -244,6 +245,7 @@ class MOTGraphTrainingConfig:
     image_size: list[int] = field(default_factory=lambda: [500, 500])  # Image size
     include_agent_node: bool = False  # Include agent as graph node
     image_cache_size: int = 2000  # Image cache size (LRU cache for faster loading)
+    separate_obstacles: bool = False  # Separate obstacles (class 0) from others (class 2)
 
     # ===== Experiment Settings =====
     # There are a few more, commented out for now
@@ -285,6 +287,7 @@ class MOTGraphEvaluationConfig:
     image_size: list[int] = field(default_factory=lambda: [500, 500])  # Image size
     include_agent_node: bool = False  # Include agent node in graph
     task_type: str = "regression"  # Task type: regression or classification
+    separate_obstacles: bool = False  # Separate obstacles (class 0) from others (class 2)
 
     # ===== Detection Metrics =====
     compute_detection_metrics: bool = False  # Compute detection metrics

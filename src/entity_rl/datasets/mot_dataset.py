@@ -52,6 +52,8 @@ class MOTDataset(Dataset):
         gt_ann_filename: Optional[str] = None,
         use_precomputed_features: bool = False,
         feature_filename: Optional[str] = None,
+        # Obstacle separation
+        separate_obstacles: bool = False,
         # Prefetching parameters
         image_cache_size: int = 500,
     ):
@@ -72,6 +74,8 @@ class MOTDataset(Dataset):
             visible_ann_filename: Visible annotation filename relative to sequence
                 directory. If None or 'gt.txt', GT is visible; otherwise the
                 specified file is used.
+            separate_obstacles: Whether to separate obstacles (class 0) from other entities
+                (class 2) for collision detection. When True, only obstacles count for reward.
         """
 
         if task_type not in ["regression", "classification"]:
@@ -87,10 +91,11 @@ class MOTDataset(Dataset):
         self.connect_threshold = connect_threshold
         self.include_agent_node = include_agent_node
         self.use_precomputed_features = use_precomputed_features
+        self.separate_obstacles = separate_obstacles
 
         # Always load GT data for reward calculation
         if gt_ann_filename is None:
-            gt_ann_filename = "gt.txt"
+            gt_ann_filename = "gt.csv"
         self.gt_data_loader = MOTDataLoader(
             mot_data_dirs,
             ann_filename=gt_ann_filename,
@@ -109,7 +114,7 @@ class MOTDataset(Dataset):
         # Determine visible annotations for graph
         self.visible_data_loader = None
         self.visible_data = None
-        is_gt_visible = visible_ann_filename is None or visible_ann_filename == "gt.txt"
+        is_gt_visible = visible_ann_filename is None or visible_ann_filename in ["gt.txt", "gt.csv"]
 
         if is_gt_visible:
             self.visible_data_loader = None
@@ -234,14 +239,27 @@ class MOTDataset(Dataset):
         """
         Compute reward/label based on agent collision with bounding boxes.
 
+        When separate_obstacles=True, only obstacles (class_id=0) count as collisions.
+        When separate_obstacles=False, all entities count as collisions.
+
         Returns:
             - Regression: -1.0 (collision) or 1.0 (safe)
             - Classification: 0.0 (collision) or 1.0 (safe) for BCE loss
         """
         if len(scaled_bboxes) > 0:
-            has_collision = check_rectangle_overlap(
-                agent_x, agent_y, self.agent_radius, scaled_bboxes
-            )
+            # Filter to obstacles only if separate_obstacles is enabled
+            if self.separate_obstacles:
+                # Only count obstacles (class_id=0) for collision
+                obstacle_bboxes = [bbox for bbox in scaled_bboxes if bbox[5] == 0]
+                has_collision = check_rectangle_overlap(
+                    agent_x, agent_y, self.agent_radius, obstacle_bboxes
+                )
+            else:
+                # All entities count for collision
+                has_collision = check_rectangle_overlap(
+                    agent_x, agent_y, self.agent_radius, scaled_bboxes
+                )
+
             if self.task_type == "classification":
                 return 0.0 if has_collision else 1.0  # BCE targets (float)
             else:  # regression
@@ -491,10 +509,10 @@ class MOTDataset(Dataset):
         """
         Create node features relative to agent position (vectorized).
 
-        Node features format: [rel_x, rel_y, w, h, is_agent] + precomputed_features (if available)
+        Node features format: [rel_x, rel_y, w, h, is_agent, is_obstacle, is_other] + precomputed_features (if available)
 
         Args:
-            scaled_bboxes: Scaled bounding boxes
+            scaled_bboxes: Scaled bounding boxes (x, y, w, h, track_id, class_id)
             agent_x: Agent x position
             agent_y: Agent y position
             agent_radius: Agent radius
@@ -519,8 +537,8 @@ class MOTDataset(Dataset):
                 f"doesn't match bboxes length ({num_obstacles})"
             )
 
-        # Determine dimensions upfront
-        base_dim = 5
+        # Determine dimensions upfront - now 7 base features instead of 5
+        base_dim = 7
         feature_dim = base_dim
         if precomputed_features is not None:
             feature_dim += precomputed_features.shape[1]
@@ -538,19 +556,21 @@ class MOTDataset(Dataset):
             all_features[0, 2] = agent_radius  # w
             all_features[0, 3] = agent_radius  # h
             all_features[0, 4] = 1.0  # is_agent
+            # is_obstacle=0, is_other=0 for agent (already initialized)
             start_idx = 1
 
         # Fill obstacle nodes (if any)
         if num_obstacles > 0:
             self._timer.tic("process_bboxes")
             # Vectorize bbox processing
-            bboxes_array = np.array(scaled_bboxes, dtype=np.float32)  # (N, 5)
+            bboxes_array = np.array(scaled_bboxes, dtype=np.float32)  # (N, 6)
             x, y, w, h = (
                 bboxes_array[:, 0],
                 bboxes_array[:, 1],
                 bboxes_array[:, 2],
                 bboxes_array[:, 3],
             )
+            class_ids = bboxes_array[:, 5]  # Extract class_id
 
             # Calculate centers and relative positions (vectorized)
             obs_center_x = x + w / 2
@@ -564,6 +584,13 @@ class MOTDataset(Dataset):
             all_features[start_idx:, 2] = torch.from_numpy(w)
             all_features[start_idx:, 3] = torch.from_numpy(h)
             # is_agent=0 already set by zeros initialization
+
+            # Set one-hot encoding for obstacle/other
+            # is_obstacle (class_id == 0)
+            all_features[start_idx:, 5] = torch.from_numpy((class_ids == 0).astype(np.float32))
+            # is_other (class_id != 0, everything else)
+            all_features[start_idx:, 6] = torch.from_numpy((class_ids != 0).astype(np.float32))
+
             self._timer.toc("process_bboxes")
 
             # Copy precomputed features if available
@@ -580,7 +607,7 @@ class MOTDataset(Dataset):
         """Create PyTorch Geometric Data object."""
         # Handle empty graph case
         if len(node_features) == 0:
-            node_feature_dim = 5 + (12550 if self.use_precomputed_features else 0)
+            node_feature_dim = 7 + (12550 if self.use_precomputed_features else 0)
             return create_empty_graph(node_feature_dim=node_feature_dim)
 
         return Data(

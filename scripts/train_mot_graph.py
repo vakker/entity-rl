@@ -73,6 +73,7 @@ def main(args):
         include_agent_node=args.include_agent_node,
         use_precomputed_features=args.use_precomputed_features,
         feature_filename=args.feature_filename,
+        separate_obstacles=args.separate_obstacles,
         image_cache_size=args.image_cache_size,
     )
 
@@ -91,6 +92,7 @@ def main(args):
         include_agent_node=args.include_agent_node,
         use_precomputed_features=args.use_precomputed_features,
         feature_filename=args.feature_filename,
+        separate_obstacles=args.separate_obstacles,
         image_cache_size=args.image_cache_size,
     )
 
@@ -141,7 +143,7 @@ def main(args):
     else:
         # Graph encoder expects Dict space with node features
         print("Using graph encoder")
-        input_dim = 5
+        input_dim = 7  # Updated from 5 to 7: [rel_x, rel_y, w, h, is_agent, is_obstacle, is_other]
         if args.use_precomputed_features:
             input_dim += 256 * 7 * 7
 
@@ -213,6 +215,8 @@ def main(args):
             # In graph mode, it contains {"x": ..., "edge_index": ..., "batch": ...}
             obs_batch = {k: v.to(device) for k, v in obs_batch.items()}
             reward_batch = reward_batch.to(device)
+
+            # print(reward_batch)
 
             # Get mean and std for first 5 x
             # print("Mean and std of first 5 x:")
