@@ -11,13 +11,14 @@ from torch_geometric.nn import MLP, GATv2Conv, GraphConv, SAGPooling, TopKPoolin
 from torch_geometric.nn.aggr import Aggregation
 from torch_geometric.nn.inits import reset
 from torch_geometric.nn.pool.connect import FilterEdges
-from torch_geometric.nn.pool.select import SelectTopK
+from torch_geometric.nn.pool.select import Select, SelectOutput, SelectTopK
+from torch_geometric.nn.pool.select.topk import topk
 from torch_geometric.typing import OptTensor
 from torch_geometric.utils import softmax
 
 from entity_rl.utils import TicToc
 
-from .base import BaseModule
+from .base import BaseModule, hook_fn
 from .slot_attention import SlotAttention
 
 module = sys.modules[__name__]
@@ -241,6 +242,7 @@ class GNNEncoder(BaseModule):
                 hidden_channels=projection_conf["out_channels"],
                 out_channels=projection_conf["out_channels"],
                 act="leakyrelu",
+                norm=None,
             )
             in_channels = projection_conf["out_channels"]
         else:
@@ -477,8 +479,6 @@ class CustomSAGPooling(torch.nn.Module):
         ratio: Union[float, int] = 0.5,
         gate_channels: Optional[list] = None,
         proj_channels: Optional[list] = None,
-        min_score: Optional[float] = None,
-        multiplier: float = 1.0,
         nonlinearity: Union[str, Callable] = "tanh",
         **kwargs,
     ):
@@ -486,8 +486,6 @@ class CustomSAGPooling(torch.nn.Module):
 
         self.in_channels = in_channels
         self.ratio = ratio
-        self.min_score = min_score
-        self.multiplier = multiplier
 
         if gate_channels is None:
             gate_channels = [in_channels, 1]
@@ -497,14 +495,14 @@ class CustomSAGPooling(torch.nn.Module):
 
         if proj_channels is not None:
             proj_channels = [in_channels] + proj_channels + [in_channels]
-            self.mlp = MLP(channel_list=proj_channels, act="leakyrelu")
+            self.mlp = MLP(channel_list=proj_channels, act="relu", norm=None)
+            # self.mlp = MLP(channel_list=proj_channels, act="leakyrelu")
 
         else:
             self.mlp = None
 
-        self.gate = MLP(channel_list=gate_channels, act="leakyrelu")
-
-        self.select = SelectTopK(1, ratio, min_score, nonlinearity)
+        self.gate = MLP(channel_list=gate_channels, act="relu", norm=None)
+        # self.gate.register_backward_hook(hook_fn)
         self.connect = FilterEdges()
 
         self.attention_acts = None
@@ -514,7 +512,8 @@ class CustomSAGPooling(torch.nn.Module):
     def reset_parameters(self):
         r"""Resets all learnable parameters of the module."""
         self.gate.reset_parameters()
-        self.select.reset_parameters()
+        if self.mlp is not None:
+            self.mlp.reset_parameters()
 
     def forward(
         self,
@@ -522,6 +521,7 @@ class CustomSAGPooling(torch.nn.Module):
         edge_index: Tensor,
         edge_attr: OptTensor = None,
         batch: OptTensor = None,
+        dim_size: Optional[int] = None,
     ) -> Tuple[Tensor, Tensor, OptTensor, OptTensor, Tensor, Tensor]:
         r"""Forward pass.
 
@@ -537,12 +537,20 @@ class CustomSAGPooling(torch.nn.Module):
         if batch is None:
             batch = edge_index.new_zeros(x.size(0))
 
-        attn = self.gate(x, batch=batch)
+        gate = self.gate(x, batch=batch)
 
+        gate = softmax(gate, batch)
+        self.attention_acts = gate.detach().cpu()
 
-        self.attention_acts = attn.detach().cpu()
+        node_index = topk(gate, self.ratio, batch)
 
-        select_out = self.select(attn, batch)
+        select_out = SelectOutput(
+            node_index=node_index,
+            num_nodes=x.size(0),
+            cluster_index=torch.arange(node_index.size(0), device=x.device),
+            num_clusters=node_index.size(0),
+            weight=gate[node_index].squeeze(-1),
+        )
 
         perm = select_out.node_index
         score = select_out.weight
@@ -553,8 +561,8 @@ class CustomSAGPooling(torch.nn.Module):
         if self.mlp is not None:
             x = self.mlp(x, batch=batch)
 
-        x = x * score.view(-1, 1)
-        x = self.multiplier * x if self.multiplier != 1 else x
+        # We need this, otherwise we don't get gradients
+        x = x * gate[perm]
 
         connect_out = self.connect(select_out, edge_index, edge_attr, batch)
 

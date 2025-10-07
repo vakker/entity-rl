@@ -10,6 +10,25 @@ from ray.rllib.utils.typing import ModelConfigDict, TensorType
 from torch import nn
 
 
+def hook_fn(m, i, o):
+    print(m)
+    print("------------Input Grad------------")
+
+    for grad in i:
+        try:
+            print(grad.shape, grad.norm())
+        except AttributeError:
+            print("None found for Gradient")
+
+    print("------------Output Grad------------")
+    for grad in o:
+        try:
+            print(grad.shape, grad.norm())
+        except AttributeError:
+            print("None found for Gradient")
+    print("\n")
+
+
 def get_num_params(module):
     num_params = {
         "all": sum(p.numel() for p in module.parameters()),
@@ -46,6 +65,14 @@ class BaseModule(nn.Module, ABC):
         for name, param in self.named_parameters():
             if param.requires_grad:
                 print(f"{name}: {param.shape} ({param.numel()} params)")
+
+    def get_grad_norm(self):
+        all_grads = []
+        for p in self.parameters():
+            if p.grad is not None:
+                all_grads.append(torch.linalg.vector_norm(p.grad.detach(), 2.0))
+
+        return torch.linalg.vector_norm(torch.stack(all_grads), 2.0)
 
 
 class BasePolicy(TorchModelV2, BaseModule, ABC):
