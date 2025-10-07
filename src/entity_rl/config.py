@@ -299,50 +299,30 @@ class MOTGraphEvaluationConfig:
 
 
 @dataclass
-class MOTInferenceConfig:
+class MOTInferenceConfig(MOTGraphTrainingConfig):
     """Configuration for MOT inference and visualization.
+
+    Inherits training configuration and adds inference-specific parameters.
+    Training parameters (agent_radius, max_entities, etc.) are loaded from
+    the experiment's saved config file.
 
     Required parameters are marked with MISSING and must be provided
     via config file or CLI overrides.
     """
 
-    # ===== Required Parameters (MISSING) =====
+    # ===== Required Parameters (MISSING) - Inference Specific =====
     checkpoint_dir: str = MISSING  # Checkpoint directory (required)
-    mot_dir: str = MISSING  # MOT data directory (required)
+    mot_dir: str = MISSING  # MOT data directory for inference (required)
+
+    # Override output_dir to be required for inference
     output_dir: str = MISSING  # Output directory for videos (required)
 
-    # ===== Data Arguments =====
-    sequence: Optional[str] = None  # Specific sequence (None = all in mot_dir)
+    # ===== Inference-Specific Arguments =====
     max_frames: Optional[int] = None  # Max frames to process (None = all)
-    start_frame: int = 1  # Starting frame number
-    ann_filename: Optional[str] = None  # Annotation filename (None = GT)
-
-    # ===== Model Arguments =====
-    use_precomputed_features: bool = False  # Use precomputed RPN features
-    feature_filename: Optional[str] = None  # Feature file path
-    task_type: str = "regression"  # Task type: regression or classification
-
-    # ===== Visualization Arguments =====
     fps: int = 25  # Output video FPS
-    show_agent: bool = True  # Show agent position
-    show_value: bool = True  # Show value predictions
-    show_edges: bool = False  # Show graph edges
-    scale: float = 1.0  # Visualization scale factor
-    no_video: bool = False  # Skip video output, only process
-    show_gt: bool = True  # Show ground truth boxes
 
-    # ===== Dataset Parameters =====
-    agent_radius: float = 0.02  # Agent radius
-    max_entities: int = 100  # Max entities per sample
-    connect_threshold: float = 50.0  # Edge connection threshold
-    image_size: list[int] = field(default_factory=lambda: [500, 500])  # Image size
-    include_agent_node: bool = False  # Include agent as graph node
-
-    # ===== System =====
-    device: str = "cuda:0"  # Device for inference
-    batch_size: int = 1  # Batch size (usually 1 for inference)
-    num_workers: int = 0  # DataLoader workers (0 for inference)
-    seed: Optional[int] = None  # Random seed for reproducibility
+    # Override mot_dirs to use mot_dir for single sequence inference
+    mot_dirs: list[str] = field(default_factory=list)  # Will be set from mot_dir
 
 
 @dataclass

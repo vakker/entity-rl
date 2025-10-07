@@ -49,55 +49,31 @@ class ENROSMOTVisualizer:
         (0, 255, 255),  # Cyan
     ]
 
-    def __init__(
-        self,
-        checkpoint_dir: Path,
-        mot_dir: Path,
-        output_dir: Path,
-        device: str = "cuda",
-        fps: int = 25,
-        agent_radius: float = 0.02,
-        max_entities: int = 100,
-        connect_threshold: float = 50.0,
-        ann_filename: Optional[str] = None,
-        include_agent_node: bool = False,
-        task_type: str = "regression",
-        use_precomputed_features: bool = False,
-        feature_filename: str = "features.npz",
-    ):
+    def __init__(self, config: MOTInferenceConfig):
         """
         Initialize the ENROS MOT visualizer.
 
         Args:
-            checkpoint_dir: Path to experiment directory (will auto-detect config and best model)
-            mot_dir: MOT sequence directory
-            output_dir: Directory to save output videos
-            device: Device for inference ('cuda' or 'cpu')
-            fps: Frames per second for output video
-            agent_radius: Radius of synthetic agent
-            max_entities: Maximum number of entities to process
-            connect_threshold: Distance threshold for graph edges
-            ann_filename: Visible annotation filename relative to sequence (None or 'gt.txt' means GT)
-            include_agent_node: Whether to include agent node in graph
-            task_type: Task type ('regression' or 'classification')
-            use_precomputed_features: Whether to use precomputed RPN features
-            feature_filename: Precomputed features filename (default: "features.npz")
+            config: MOTInferenceConfig object containing all parameters
         """
-        self.checkpoint_dir = Path(checkpoint_dir)
-        self.mot_dir = Path(mot_dir)
-        self.output_dir = Path(output_dir)
-        self.device = torch.device(device)
-        self.fps = fps
+        self.config = config
+        self.checkpoint_dir = Path(config.checkpoint_dir)
+        self.mot_dir = Path(config.mot_dir)
+        self.output_dir = Path(config.output_dir)
+        self.device = torch.device(config.device)
+        self.fps = config.fps
 
-        # Dataset parameters
-        self.agent_radius = agent_radius
-        self.max_entities = max_entities
-        self.connect_threshold = connect_threshold
-        self.ann_filename = ann_filename
-        self.include_agent_node = include_agent_node
-        self.task_type = task_type
-        self.use_precomputed_features = use_precomputed_features
-        self.feature_filename = feature_filename
+        # Dataset parameters (inherited from training config)
+        self.agent_radius = config.agent_radius
+        self.max_entities = config.max_entities
+        self.connect_threshold = config.connect_threshold
+        self.ann_filename = config.ann_filename
+        self.gt_ann_filename = config.gt_ann_filename
+        self.include_agent_node = config.include_agent_node
+        self.task_type = config.task_type
+        self.use_precomputed_features = config.use_precomputed_features
+        self.feature_filename = config.feature_filename
+        self.separate_obstacles = config.separate_obstacles
 
         # Auto-detect config and checkpoint
         self.config_path = self._find_config()
@@ -112,22 +88,22 @@ class ENROSMOTVisualizer:
         self.model.eval()
 
         # Create dataset (reuse training dataset logic)
-        print(f"Creating dataset from {mot_dir}...")
+        print(f"Creating dataset from {self.mot_dir}...")
         self.dataset = MOTDataset(
-            mot_data_dirs=[str(mot_dir)],
-            agent_radius=agent_radius,
+            mot_data_dirs=[str(self.mot_dir)],
+            agent_radius=self.agent_radius,
             num_samples_per_epoch=1000,  # Not used for inference
-            image_size=(100, 100),  # Not used for inference
-            task_type=task_type,
-            max_entities=max_entities,
-            connect_threshold=connect_threshold,
-            max_samples=None,
-            visible_ann_filename=ann_filename,
-            gt_ann_filename="gt.csv",
-            include_agent_node=include_agent_node,
-            use_precomputed_features=use_precomputed_features,
-            feature_filename=feature_filename,
-            separate_obstacles=False,  # Can be added to config if needed
+            image_size=tuple(config.image_size),
+            task_type=self.task_type,
+            max_entities=self.max_entities,
+            connect_threshold=self.connect_threshold,
+            max_samples=config.max_samples,
+            visible_ann_filename=self.ann_filename,
+            gt_ann_filename=self.gt_ann_filename,
+            include_agent_node=self.include_agent_node,
+            use_precomputed_features=self.use_precomputed_features,
+            feature_filename=self.feature_filename,
+            separate_obstacles=self.separate_obstacles,
         )
 
         # Get frame info
@@ -151,6 +127,7 @@ class ENROSMOTVisualizer:
         """Find best model checkpoint in directory."""
         # Look for best metric checkpoints (saved by save_best_models)
         metric_priority = [
+            "best.pt",
             "latest.pt",
         ]
 
@@ -181,16 +158,17 @@ class ENROSMOTVisualizer:
             raise FileNotFoundError(f"MOT directory not found: {self.mot_dir}")
 
     def _load_model(self) -> ENROSPolicy:
-        """Load ENROS model from checkpoint."""
-        # Load config
+        """Load ENROS model from checkpoint using saved config."""
+        # Extract model config from the loaded config (already in self.config)
+        # The config was loaded from checkpoint_dir in main()
         with open(self.config_path) as f:
-            config = yaml.safe_load(f)
+            saved_config = yaml.safe_load(f)
 
         # Extract model config (handle both direct and nested structures)
-        if "base" in config:
-            model_config = config["base"]["model"]
+        if "base" in saved_config:
+            model_config = saved_config["base"]["model"]
         else:
-            model_config = config["model"]
+            model_config = saved_config["model"]
 
         use_precomputed_features = self.use_precomputed_features
         node_feature_dim = 256 * 7 * 7 + 7 if use_precomputed_features else 7
@@ -365,12 +343,16 @@ class ENROSMOTVisualizer:
             pw = int(bbox_w * w)
             ph = int(bbox_h * h)
 
-            # Determine border color based on obstacle status (class_id)
-            # Red for obstacles (class_id == 0), Green for non-obstacles (class_id != 0)
-            if class_id == 0:
-                border_color = (0, 0, 255)  # Red (BGR) for obstacles
+            # Determine border color based on separate_obstacles flag and class_id
+            if self.separate_obstacles:
+                # When separating: Red for obstacles (class 0), Green for others
+                if class_id == 0:
+                    border_color = (0, 0, 255)  # Red (BGR) for obstacles
+                else:
+                    border_color = (0, 255, 0)  # Green (BGR) for non-obstacles
             else:
-                border_color = (0, 255, 0)  # Green (BGR) for non-obstacles
+                # When NOT separating: Everything is red (all are potential obstacles)
+                border_color = (0, 0, 255)  # Red (BGR) for all entities
 
             # Add semi-transparent white fill based on attention weight
             if attention_weights is not None and bbox_idx + attention_offset < len(
@@ -783,11 +765,36 @@ Examples:
         args.overrides.append(f"mot_dir={args.mot_dir}")
         args.overrides.append(f"output_dir={args.output_dir}")
 
+        # Load experiment config from checkpoint directory
+        checkpoint_dir = Path(args.checkpoint_dir)
+        config_candidates = ["config.yaml", "conf.yaml"]
+        config_path = None
+        for config_name in config_candidates:
+            candidate = checkpoint_dir / config_name
+            if candidate.exists():
+                config_path = candidate
+                break
+
+        if config_path is None:
+            raise FileNotFoundError(
+                f"No config file found in {checkpoint_dir}. "
+                f"Looked for: {', '.join(config_candidates)}"
+            )
+
+        print(f"Loading experiment config from: {config_path}")
+
+        # Load config with MOTInferenceConfig schema (inherits from MOTGraphTrainingConfig)
+        # This loads training params from saved config and merges with inference overrides
         cfg = cfg_utils.load_structured_config(
             MOTInferenceConfig,
-            config_path=None,  # No config file for inference
+            config_path=str(config_path),
             overrides=args.overrides,
         )
+
+        # Set mot_dirs from mot_dir for compatibility with inherited config
+        if not cfg.mot_dirs:
+            cfg.mot_dirs = [cfg.mot_dir]
+
     except Exception as e:
         print(f"\n❌ Configuration Error: {e}\n")
         print("Required parameters:")
@@ -800,21 +807,7 @@ Examples:
     cfg_utils.print_config(cfg, "MOT Inference Configuration")
 
     # Create visualizer using structured config
-    visualizer = ENROSMOTVisualizer(
-        checkpoint_dir=Path(cfg.checkpoint_dir),
-        mot_dir=Path(cfg.mot_dir),
-        output_dir=Path(cfg.output_dir),
-        device=cfg.device,
-        fps=cfg.fps,
-        agent_radius=cfg.agent_radius,
-        max_entities=cfg.max_entities,
-        connect_threshold=cfg.connect_threshold,
-        ann_filename=cfg.ann_filename,
-        include_agent_node=cfg.include_agent_node,
-        task_type=cfg.task_type,
-        use_precomputed_features=cfg.use_precomputed_features,
-        feature_filename=cfg.feature_filename,
-    )
+    visualizer = ENROSMOTVisualizer(cfg)
 
     # Generate video
     output_path = visualizer.generate_video(
