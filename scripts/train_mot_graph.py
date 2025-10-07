@@ -243,8 +243,14 @@ def main(args):
             timer.toc("backward_pass")
             timer.tic("optimizer_step")
 
+            grad_norm = model.get_grad_norm()
+            writer.add_scalar("grad_norm_orig", grad_norm, global_step)
+
             if args.grad_clip > 0:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
+
+            grad_norm = model.get_grad_norm()
+            writer.add_scalar("grad_norm_clipped", grad_norm, global_step)
 
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
@@ -268,6 +274,10 @@ def main(args):
         # Log training metrics
         writer.add_scalar("loss/train", avg_tng_loss, epoch)
         writer.add_scalar("accuracy/train", avg_tng_acc, epoch)
+
+        tqdm.write(
+            f"Epoch {epoch+1} - TNG Loss: {avg_tng_loss:.4f}, TNG Acc: {avg_tng_acc:.4f}"
+        )
 
         # Print timing statistics for training
         timer.print_stats(title=f"Epoch {epoch+1} Training Timing")
@@ -405,9 +415,6 @@ def main(args):
             )
 
         # Print epoch summary
-        tqdm.write(
-            f"Epoch {epoch+1} - TNG Loss: {avg_tng_loss:.4f}, TNG Acc: {avg_tng_acc:.4f}"
-        )
         tqdm.write(
             f"Epoch {epoch+1} - VAL Loss: {avg_val_loss:.4f}, VAL Acc: {avg_val_acc:.4f}"
         )
