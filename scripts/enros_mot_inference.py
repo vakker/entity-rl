@@ -123,9 +123,11 @@ class ENROSMOTVisualizer:
             connect_threshold=connect_threshold,
             max_samples=None,
             visible_ann_filename=ann_filename,
+            gt_ann_filename="gt.csv",
             include_agent_node=include_agent_node,
             use_precomputed_features=use_precomputed_features,
             feature_filename=feature_filename,
+            separate_obstacles=False,  # Can be added to config if needed
         )
 
         # Get frame info
@@ -191,7 +193,7 @@ class ENROSMOTVisualizer:
             model_config = config["model"]
 
         use_precomputed_features = self.use_precomputed_features
-        node_feature_dim = 256 + 5 if use_precomputed_features else 5
+        node_feature_dim = 256 * 7 * 7 + 7 if use_precomputed_features else 7
 
         # Create observation space for graph data
         obs_space = create_graph_observation_space(node_feature_dim=node_feature_dim)
@@ -330,7 +332,7 @@ class ENROSMOTVisualizer:
         attention_offset = 1 if self.include_agent_node else 0
 
         # Draw GT bounding boxes in red (for reference when using non-GT sources)
-        is_gt_visible = self.ann_filename is None or self.ann_filename == "gt.txt"
+        is_gt_visible = self.ann_filename is None or self.ann_filename in ["gt.txt", "gt.csv"]
         if not is_gt_visible:
             for x, y, bbox_w, bbox_h, track_id in gt_bboxes:
                 # Convert normalized coords to pixels
@@ -352,32 +354,41 @@ class ENROSMOTVisualizer:
                 )
 
         # Draw visible bounding boxes (with attention if available)
-        for bbox_idx, (x, y, bbox_w, bbox_h, track_id) in enumerate(visible_bboxes):
+        for bbox_idx, bbox in enumerate(visible_bboxes):
+            # Extract bbox data - handle both old (5-element) and new (6-element) formats
+            x, y, bbox_w, bbox_h, track_id = bbox[:5]
+            class_id = bbox[5] if len(bbox) > 5 else 0
+
             # Convert normalized coords to pixels
             px = int(x * w)
             py = int(y * h)
             pw = int(bbox_w * w)
             ph = int(bbox_h * h)
 
-            # Color based on attention weight if available
+            # Determine border color based on obstacle status (class_id)
+            # Red for obstacles (class_id == 0), Green for non-obstacles (class_id != 0)
+            if class_id == 0:
+                border_color = (0, 0, 255)  # Red (BGR) for obstacles
+            else:
+                border_color = (0, 255, 0)  # Green (BGR) for non-obstacles
+
+            # Add semi-transparent white fill based on attention weight
             if attention_weights is not None and bbox_idx + attention_offset < len(
                 attention_weights
             ):
-                att_val = attention_weights[bbox_idx + attention_offset]
-                # Map attention to color: low attention = blue (cold), high = red (hot)
-                # Use matplotlib colormap for hot (0=black, 1=red)
-                intensity = np.clip(att_val, 0, 1)
-                # Hot colormap: interpolate from dark blue (low) to bright red (high)
-                color = (
-                    int(intensity * 255),  # Blue channel
-                    int(intensity * 255),  # Green channel
-                    int(intensity * 255),  # Red channel
-                )
-            else:
-                color = (200, 200, 200)  # Gray (default)
+                att_val = attention_weights[bbox_idx + attention_offset][0]
+                # Attention value maps to alpha (opacity) of white overlay
+                alpha = np.clip(att_val, 0, 1)
 
+                # Create white overlay with attention-based opacity
+                overlay = image.copy()
+                cv2.rectangle(overlay, (px, py), (px + pw, py + ph), (255, 255, 255), -1)
+                # Blend overlay with original image
+                cv2.addWeighted(overlay, alpha * 0.6, image, 1 - alpha * 0.6, 0, image)
+
+            # Draw border
             thickness = 3 if attention_weights is not None else 2
-            cv2.rectangle(image, (px, py), (px + pw, py + ph), color, thickness)
+            cv2.rectangle(image, (px, py), (px + pw, py + ph), border_color, thickness)
 
             # Draw attention value if available
             if attention_weights is not None and bbox_idx + attention_offset < len(
@@ -397,7 +408,7 @@ class ENROSMOTVisualizer:
                     (px, py - 5),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.4,
-                    color,
+                    border_color,
                     1,
                 )
             else:
@@ -413,7 +424,7 @@ class ENROSMOTVisualizer:
                     (px, py - 5),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.5,
-                    color,
+                    border_color,
                     1,
                 )
 

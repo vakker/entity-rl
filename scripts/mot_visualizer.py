@@ -179,11 +179,14 @@ class MOTVisualizer:
             conf_level = int((confidence / max_conf) * 5)
 
             # Get class label
-            class_id = int(detection[7]) if len(detection) > 7 else 1
+            class_id = int(detection[7]) if len(detection) > 7 else 0
 
-            # Select color based on track ID
-            color = self.colors[track_id % len(self.colors)]
-            color = tuple(int(c * 255) for c in color)
+            # Select color based on obstacle status (class_id)
+            # Red for obstacles (class_id == 0), Green for others (class_id != 0)
+            if class_id == 0:
+                color = (0, 0, 255)  # Red for obstacles
+            else:
+                color = (0, 255, 0)  # Green for non-obstacles
 
             pt1 = (x, y)
             pt2 = (x + width, y + height)
