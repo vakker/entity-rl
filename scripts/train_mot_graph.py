@@ -145,7 +145,7 @@ def main(args):
         print("Using graph encoder")
         input_dim = 7  # Updated from 5 to 7: [rel_x, rel_y, w, h, is_agent, is_obstacle, is_other]
         if args.use_precomputed_features:
-            input_dim += 256 * 7 * 7
+            input_dim += 256 #  * 7 * 7
 
         obs_space = create_graph_observation_space(node_feature_dim=input_dim)
         print(f"Observation space: Dict (graph) with node_dim={input_dim}")

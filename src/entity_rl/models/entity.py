@@ -866,6 +866,7 @@ class DINOEncoder(EntityEncoder):
                 )
 
             query_embeddings = self._model.hidden_state  # (B, num_queries, 256)
+            query_indices = self._model.query_indices  # List of indices per batch item
 
             # Process predictions for each batch item
             batch_features_list = []
@@ -898,12 +899,13 @@ class DINOEncoder(EntityEncoder):
                         pred_labels = pred_labels[top_k_indices]
                         n_dets = self._max_queries
 
-                # Get corresponding query features
-                # Note: predict() applies NMS and filtering, so we need to match
-                # For now, take the first n_dets queries (this is an approximation)
-                # A better approach would track query indices through the pipeline
+                # Get corresponding query features using captured indices
+                # query_indices[batch_idx] contains the exact query indices that produced the detections
                 if n_dets > 0:
-                    batch_query_feats = query_embeddings[batch_idx, :n_dets]  # (n_dets, 256)
+                    # Get the query indices for this batch item (on CPU)
+                    batch_indices = query_indices[batch_idx][:n_dets].to(frame.device)
+                    # Extract the corresponding query embeddings
+                    batch_query_feats = query_embeddings[batch_idx, batch_indices]  # (n_dets, 256)
                 else:
                     # No detections, create empty tensors
                     batch_query_feats = torch.zeros(
