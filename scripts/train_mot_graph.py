@@ -191,6 +191,7 @@ def main(args):
         tng_loss = 0
         num_batches = 0
         matches = 0
+        all_rewards = []  # Accumulate rewards for epoch summary
 
         timer.tic("data_loading")
 
@@ -216,9 +217,10 @@ def main(args):
             # In image mode, it contains {"image": tensor, "x": ..., "edge_index": ...}
             # In graph mode, it contains {"x": ..., "edge_index": ..., "batch": ...}
             obs_batch = {k: v.to(device) for k, v in obs_batch.items()}
+            # Accumulate rewards for epoch statistics
+            all_rewards.append(reward_batch)
             reward_batch = reward_batch.to(device)
 
-            # print(reward_batch)
 
             # Get mean and std for first 5 x
             # print("Mean and std of first 5 x:")
@@ -290,12 +292,20 @@ def main(args):
         avg_tng_loss = tng_loss / num_batches
         avg_tng_acc = matches / (num_batches * batch_size)
 
+        # Calculate reward statistics for epoch
+        all_rewards_tensor = torch.cat(all_rewards)
+        unique_values, counts = torch.unique(all_rewards_tensor, return_counts=True)
+        reward_ratios = counts.float() / len(all_rewards_tensor)
+
         # Log training metrics
         writer.add_scalar("loss/train", avg_tng_loss, epoch)
         writer.add_scalar("accuracy/train", avg_tng_acc, epoch)
 
         tqdm.write(
             f"Epoch {epoch+1} - TNG Loss: {avg_tng_loss:.4f}, TNG Acc: {avg_tng_acc:.4f}"
+        )
+        tqdm.write(
+            f"Epoch {epoch+1} - Reward distribution: {dict(zip(unique_values.tolist(), reward_ratios.tolist()))}"
         )
 
         # Print timing statistics for training
