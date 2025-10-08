@@ -236,14 +236,32 @@ class GNNEncoder(BaseModule):
         # Add projection layer if configured
         projection_conf = model_config.get("projection", None)
         if projection_conf:
-            self.projection = MLP(
+            layers = []
+
+            # MLP projection
+            mlp = MLP(
                 in_channels=in_channels,
                 num_layers=projection_conf["num_layers"],
                 hidden_channels=projection_conf["out_channels"],
                 out_channels=projection_conf["out_channels"],
                 act="leakyrelu",
-                norm=None,
+                norm=projection_conf.get("norm", None),
             )
+            layers.append(mlp)
+
+            # Post-normalization if specified
+            post_norm = projection_conf.get("post_norm", None)
+            if post_norm:
+                if post_norm == "batch_norm":
+                    layers.append(pyg_nn.BatchNorm(projection_conf["out_channels"]))
+                elif post_norm == "layer_norm":
+                    layers.append(pyg_nn.LayerNorm(projection_conf["out_channels"]))
+                elif post_norm == "instance_norm":
+                    layers.append(pyg_nn.InstanceNorm(projection_conf["out_channels"]))
+                else:
+                    raise ValueError(f"Unknown post_norm: {post_norm}")
+
+            self.projection = nn.Sequential(*layers)
             in_channels = projection_conf["out_channels"]
         else:
             self.projection = None
