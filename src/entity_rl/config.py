@@ -320,6 +320,7 @@ class MOTInferenceConfig(MOTGraphTrainingConfig):
     # ===== Inference-Specific Arguments =====
     max_frames: Optional[int] = None  # Max frames to process (None = all)
     fps: int = 25  # Output video FPS
+    attention_type: str = "aggregation"  # Which attention to visualize: pooling, aggregation, both
 
     # Override mot_dirs to use mot_dir for single sequence inference
     mot_dirs: list[str] = field(default_factory=list)  # Will be set from mot_dir

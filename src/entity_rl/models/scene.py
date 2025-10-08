@@ -506,6 +506,7 @@ class CustomSAGPooling(torch.nn.Module):
         self.connect = FilterEdges()
 
         self.attention_acts = None
+        self.perm = None
 
         self.reset_parameters()
 
@@ -553,6 +554,7 @@ class CustomSAGPooling(torch.nn.Module):
         )
 
         perm = select_out.node_index
+        self.perm = perm.detach().cpu()
         score = select_out.weight
         assert score is not None
 

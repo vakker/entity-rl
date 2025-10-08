@@ -17,7 +17,7 @@ import argparse
 import random
 import sys
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple
 
 import cv2
 import gymnasium as gym
@@ -74,6 +74,7 @@ class ENROSMOTVisualizer:
         self.use_precomputed_features = config.use_precomputed_features
         self.feature_filename = config.feature_filename
         self.separate_obstacles = config.separate_obstacles
+        self.attention_type = config.attention_type
 
         # Auto-detect config and checkpoint
         self.config_path = self._find_config()
@@ -236,45 +237,74 @@ class ENROSMOTVisualizer:
             _ = self.model(model_input)
             value = self.model.value_function()
 
-        # Extract attention weights from GNN aggregation layer if available
-        # Path: encoder._stages[1] (GNNEncoder) -> ._encoder[0] (GATFeatures) -> ._aggr (CustomAttentionalAggregation)
-        attention_weights = None
+        # Extract attention weights from both SAG pooling and final aggregation
+        pooling_attention = None
+        aggregation_attention = None
+        pooling_perm = None
         attention_stats = {}
-        try:
-            # Navigate to GNN encoder's aggregation layer
-            encoder = self.model._encoder
-            gnn_encoder = encoder._stages[1]  # Scene encoder (GNNEncoder)
-            gat_features = gnn_encoder._encoder[0]  # Conv layer (GATFeatures)
-            aggr_layer = (
-                gat_features._aggr
-            )  # Aggregation layer (CustomAttentionalAggregation)
 
-            raw_attention = aggr_layer.attention_acts.numpy()
+        # Navigate to GNN encoder
+        encoder = self.model._encoder
+        gnn_encoder = encoder._stages[1]  # Scene encoder (GNNEncoder)
+        # __import__('ipdb').set_trace()
 
-            # Debug: Check graph data structure to verify node order
-            # The nodes should be ordered as: [agent (if included), bbox1, bbox2, ...]
-            num_graph_nodes = graph_data.x.shape[0]
+        # Extract SAG pooling attention if pooling is enabled
+        if hasattr(gnn_encoder, "pooling") and gnn_encoder.pooling is not None:
+            pooling_layer = gnn_encoder.pooling
+            assert pooling_layer.attention_acts is not None
+            assert pooling_layer.perm is not None
 
-            # Store statistics for debugging
-            attention_stats = {
-                "raw_min": raw_attention.min(),
-                "raw_max": raw_attention.max(),
-                "raw_mean": raw_attention.mean(),
-                "raw_std": raw_attention.std(),
-                "num_nodes": len(raw_attention),
-                "num_graph_nodes": num_graph_nodes,
-            }
+            pooling_attention = pooling_layer.attention_acts.numpy()
+            pooling_perm = pooling_layer.perm.numpy()
 
-            # Normalize for visualization
-            attention_weights = raw_attention - raw_attention.min()
-            if attention_weights.max() > 0:
-                attention_weights = attention_weights / attention_weights.max()
+        # Extract final aggregation attention
+        gat_features = gnn_encoder._encoder[0]  # Conv layer (GATFeatures)
+        if hasattr(gat_features, "_aggr") and gat_features._aggr is not None:
+            aggr_layer = gat_features._aggr
+            assert aggr_layer.attention_acts is not None
 
-        except Exception as e:
-            print(f"Warning: Could not extract attention weights: {e}")
-            print("  Make sure the model uses 'aggr_layer: attn' in config")
+            aggregation_attention = aggr_layer.attention_acts.numpy()
 
-        return value.cpu(), attention_weights, attention_stats
+        # Debug: Check graph data structure
+        num_graph_nodes = graph_data.x.shape[0]
+
+        # Store statistics for debugging
+        attention_stats = {
+            "num_original_nodes": num_graph_nodes,
+            "has_pooling": pooling_attention is not None,
+            "has_aggregation": aggregation_attention is not None,
+        }
+
+        if pooling_attention is not None:
+            attention_stats.update(
+                {
+                    "pooling_min": pooling_attention.min(),
+                    "pooling_max": pooling_attention.max(),
+                    "pooling_mean": pooling_attention.mean(),
+                    "num_pooling_scores": len(pooling_attention),
+                    "num_pooled_nodes": len(pooling_perm)
+                    if pooling_perm is not None
+                    else None,
+                }
+            )
+
+        if aggregation_attention is not None:
+            attention_stats.update(
+                {
+                    "aggr_min": aggregation_attention.min(),
+                    "aggr_max": aggregation_attention.max(),
+                    "aggr_mean": aggregation_attention.mean(),
+                    "num_aggr_scores": len(aggregation_attention),
+                }
+            )
+
+        return (
+            value.cpu(),
+            pooling_attention,
+            aggregation_attention,
+            pooling_perm,
+            attention_stats,
+        )
 
     def _draw_predictions(
         self,
@@ -284,20 +314,23 @@ class ENROSMOTVisualizer:
         agent_pos: Tuple[float, float, float, float],
         value_pred: float,
         frame_id: int,
-        attention_weights: np.ndarray = None,
+        pooling_attention: np.ndarray = None,
+        aggregation_attention: np.ndarray = None,
+        pooling_perm: np.ndarray = None,
     ) -> np.ndarray:
         """
         Draw bounding boxes, agent, and predictions on image.
 
         Args:
             image: Input image
-            gt_bboxes: List of scaled GT bboxes (x, y, w, h, track_id) in normalized coords
-            prop_bboxes: List of scaled proposal bboxes (x, y, w, h, track_id) in normalized coords
-                        (same as gt_bboxes if not using proposals)
+            gt_bboxes: List of scaled GT bboxes (x, y, w, h, track_id, class_id) in normalized coords
+            visible_bboxes: List of scaled visible bboxes (x, y, w, h, track_id, class_id) in normalized coords
             agent_pos: Agent position (x, y, radius_x, radius_y) in normalized coords
             value_pred: Predicted value (classification: 0=collision, 1=safe)
             frame_id: Frame number
-            attention_weights: Optional attention weights per node
+            pooling_attention: Optional SAG pooling attention weights (for all original nodes)
+            aggregation_attention: Optional final aggregation attention weights (for pooled nodes)
+            pooling_perm: Optional permutation mapping from pooled nodes to original nodes
 
         Returns:
             Image with visualizations
@@ -309,10 +342,61 @@ class ENROSMOTVisualizer:
         # If include_agent_node is True, first node is agent, rest are bboxes
         attention_offset = 1 if self.include_agent_node else 0
 
+        # Select which attention to use for visualization based on config
+        attention_weights = None
+        if self.attention_type == "pooling" and pooling_attention is not None:
+            # Use SAG pooling attention directly (it has scores for all original nodes)
+            attention_weights = pooling_attention
+        elif self.attention_type == "aggregation" and aggregation_attention is not None:
+            # Map aggregation attention from pooled nodes back to original nodes
+            if pooling_perm is not None:
+                # Create array for all original nodes, initialized to 0
+                num_original_nodes = len(visible_bboxes) + attention_offset
+                attention_weights = np.zeros((num_original_nodes, 1))
+
+                # Map pooled attention back to original node indices using perm
+                for pooled_idx, original_idx in enumerate(pooling_perm):
+                    if pooled_idx < len(aggregation_attention):
+                        attention_weights[original_idx] = aggregation_attention[
+                            pooled_idx
+                        ]
+            else:
+                # No pooling, use aggregation attention directly
+                attention_weights = aggregation_attention
+        elif self.attention_type == "both":
+            # For "both" mode, we'll use pooling for now (could be extended to show both layers)
+            if pooling_attention is not None:
+                attention_weights = pooling_attention
+            elif aggregation_attention is not None:
+                # Fallback to aggregation if no pooling
+                if pooling_perm is not None:
+                    num_original_nodes = len(visible_bboxes) + attention_offset
+                    attention_weights = np.zeros((num_original_nodes, 1))
+                    for pooled_idx, original_idx in enumerate(pooling_perm):
+                        if pooled_idx < len(aggregation_attention):
+                            attention_weights[original_idx] = aggregation_attention[
+                                pooled_idx
+                            ]
+                else:
+                    attention_weights = aggregation_attention
+
+        # Normalize attention weights for visualization if available
+        if attention_weights is not None:
+            att_min = attention_weights.min()
+            att_max = attention_weights.max()
+            if att_max > att_min:
+                attention_weights = (attention_weights - att_min) / (att_max - att_min)
+
         # Draw GT bounding boxes in red (for reference when using non-GT sources)
-        is_gt_visible = self.ann_filename is None or self.ann_filename in ["gt.txt", "gt.csv"]
+        is_gt_visible = self.ann_filename is None or self.ann_filename in [
+            "gt.txt",
+            "gt.csv",
+        ]
         if not is_gt_visible:
-            for x, y, bbox_w, bbox_h, track_id in gt_bboxes:
+            for bbox in gt_bboxes:
+                # Extract bbox data - handle both old (5-element) and new (6-element) formats
+                x, y, bbox_w, bbox_h, track_id = bbox[:5]
+
                 # Convert normalized coords to pixels
                 px = int(x * w)
                 py = int(y * h)
@@ -331,6 +415,11 @@ class ENROSMOTVisualizer:
                     1,
                 )
 
+        # For pooling mode, create a set of kept node indices for fast lookup
+        pooling_kept_indices = None
+        if self.attention_type == "pooling" and pooling_perm is not None:
+            pooling_kept_indices = set(pooling_perm)
+
         # Draw visible bounding boxes (with attention if available)
         for bbox_idx, bbox in enumerate(visible_bboxes):
             # Extract bbox data - handle both old (5-element) and new (6-element) formats
@@ -343,6 +432,11 @@ class ENROSMOTVisualizer:
             pw = int(bbox_w * w)
             ph = int(bbox_h * h)
 
+            # Determine if this bbox was filtered out by pooling
+            node_idx = bbox_idx + attention_offset
+            is_filtered = (pooling_kept_indices is not None and
+                          node_idx not in pooling_kept_indices)
+
             # Determine border color based on separate_obstacles flag and class_id
             if self.separate_obstacles:
                 # When separating: Red for obstacles (class 0), Green for others
@@ -354,6 +448,12 @@ class ENROSMOTVisualizer:
                 # When NOT separating: Everything is red (all are potential obstacles)
                 border_color = (0, 0, 255)  # Red (BGR) for all entities
 
+            # Add blue channel for filtered-out bboxes in pooling mode
+            if is_filtered:
+                # Red (0,0,255) → Purple (255,0,255)
+                # Green (0,255,0) → Cyan (255,255,0)
+                border_color = (border_color[0] + 255, border_color[1], border_color[2])
+
             # Add semi-transparent white fill based on attention weight
             if attention_weights is not None and bbox_idx + attention_offset < len(
                 attention_weights
@@ -364,7 +464,9 @@ class ENROSMOTVisualizer:
 
                 # Create white overlay with attention-based opacity
                 overlay = image.copy()
-                cv2.rectangle(overlay, (px, py), (px + pw, py + ph), (255, 255, 255), -1)
+                cv2.rectangle(
+                    overlay, (px, py), (px + pw, py + ph), (255, 255, 255), -1
+                )
                 # Blend overlay with original image
                 cv2.addWeighted(overlay, alpha * 0.6, image, 1 - alpha * 0.6, 0, image)
 
@@ -379,8 +481,20 @@ class ENROSMOTVisualizer:
                 att_val = attention_weights[bbox_idx + attention_offset]
                 label = f"{att_val[0]:.3f}"
                 # Heuristic labels based on filename
-                mode = "P" if (self.ann_filename and (self.ann_filename.endswith('.csv') or 'prop' in self.ann_filename)) else (
-                    "D" if (self.ann_filename and 'det' in self.ann_filename) else "V"
+                mode = (
+                    "P"
+                    if (
+                        self.ann_filename
+                        and (
+                            self.ann_filename.endswith(".csv")
+                            or "prop" in self.ann_filename
+                        )
+                    )
+                    else (
+                        "D"
+                        if (self.ann_filename and "det" in self.ann_filename)
+                        else "V"
+                    )
                 )
                 if not is_gt_visible:
                     label = f"{mode}:{label}"
@@ -395,8 +509,20 @@ class ENROSMOTVisualizer:
                 )
             else:
                 label = f"ID:{int(track_id)}"
-                mode = "P" if (self.ann_filename and (self.ann_filename.endswith('.csv') or 'prop' in self.ann_filename)) else (
-                    "D" if (self.ann_filename and 'det' in self.ann_filename) else "V"
+                mode = (
+                    "P"
+                    if (
+                        self.ann_filename
+                        and (
+                            self.ann_filename.endswith(".csv")
+                            or "prop" in self.ann_filename
+                        )
+                    )
+                    else (
+                        "D"
+                        if (self.ann_filename and "det" in self.ann_filename)
+                        else "V"
+                    )
                 )
                 if not is_gt_visible:
                     label = f"{mode}:{int(track_id)}"
@@ -439,13 +565,21 @@ class ENROSMOTVisualizer:
             2,
         )
 
-        # Draw frame number
+        # Draw frame number and attention type
+        frame_text = f"Frame: {frame_id}"
+        if self.attention_type in ["pooling", "aggregation"]:
+            attention_label = (
+                "SAG Pooling"
+                if self.attention_type == "pooling"
+                else "Final Aggregation"
+            )
+            frame_text += f"  |  Attention: {attention_label}"
         cv2.putText(
             image,
-            f"Frame: {frame_id}",
+            frame_text,
             (10, 30),
             cv2.FONT_HERSHEY_SIMPLEX,
-            1,
+            0.8,
             (255, 255, 255),
             2,
         )
@@ -528,13 +662,17 @@ class ENROSMOTVisualizer:
         """
         Generate video with ENROS predictions.
 
+        When attention_type="both", generates two separate videos:
+        - {output_name}_pooling.mp4: SAG pooling attention visualization
+        - {output_name}_aggregation.mp4: Final aggregation attention visualization
+
         Args:
-            output_name: Name for output video file
+            output_name: Name for output video file (without extension)
             num_frames: Number of frames to process (None = all frames)
             verbose: Print detailed attention diagnostics
 
         Returns:
-            Path to generated video file
+            Path to generated video file (pooling video path if attention_type="both")
         """
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -551,14 +689,28 @@ class ENROSMOTVisualizer:
             self.data_dir, self.frame_ids[0]
         )
 
-        # Create video writer
-        output_path = self.output_dir / f"{output_name}.mp4"
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-        video_writer = cv2.VideoWriter(
-            str(output_path), fourcc, self.fps, (width, height)
-        )
-
-        print(f"Generating video: {output_path}")
+        # Create video writer(s) - two videos for "both" mode
+        if self.attention_type == "both":
+            output_path_pooling = self.output_dir / f"{output_name}_pooling.mp4"
+            output_path_aggregation = self.output_dir / f"{output_name}_aggregation.mp4"
+            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+            video_writer_pooling = cv2.VideoWriter(
+                str(output_path_pooling), fourcc, self.fps, (width, height)
+            )
+            video_writer_aggregation = cv2.VideoWriter(
+                str(output_path_aggregation), fourcc, self.fps, (width, height)
+            )
+            print(f"Generating two videos:")
+            print(f"  Pooling attention: {output_path_pooling}")
+            print(f"  Aggregation attention: {output_path_aggregation}")
+            output_path = output_path_pooling  # Return pooling path as main output
+        else:
+            output_path = self.output_dir / f"{output_name}.mp4"
+            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+            video_writer = cv2.VideoWriter(
+                str(output_path), fourcc, self.fps, (width, height)
+            )
+            print(f"Generating video: {output_path}")
 
         # Limit frames if specified
         frames_to_process = (
@@ -594,9 +746,13 @@ class ENROSMOTVisualizer:
             agent_pos = data_dict["agent_pos"]
 
             # Run inference and extract attention weights
-            value, attention_weights, attention_stats = self._run_inference(
-                graph_data, agent_pos
-            )
+            (
+                value,
+                pooling_attention,
+                aggregation_attention,
+                pooling_perm,
+                attention_stats,
+            ) = self._run_inference(graph_data, agent_pos)
 
             # Calculate accuracy using dataset method
             reward_tensor = torch.tensor([reward_gt])
@@ -615,8 +771,56 @@ class ENROSMOTVisualizer:
                 visible_bboxes = self.dataset.visible_data[self.data_dir][frame_id]
                 scaled_visible_bboxes = scale_bboxes(visible_bboxes, (orig_w, orig_h))
 
+            # Select attention for logging based on config (same logic as in _draw_predictions)
+            attention_weights_for_logging = None
+            if self.attention_type == "pooling" and pooling_attention is not None:
+                attention_weights_for_logging = pooling_attention
+            elif (
+                self.attention_type == "aggregation"
+                and aggregation_attention is not None
+            ):
+                if pooling_perm is not None:
+                    num_original_nodes = len(scaled_visible_bboxes) + (
+                        1 if self.include_agent_node else 0
+                    )
+                    attention_weights_for_logging = np.zeros((num_original_nodes, 1))
+                    for pooled_idx, original_idx in enumerate(pooling_perm):
+                        if pooled_idx < len(aggregation_attention):
+                            attention_weights_for_logging[original_idx] = (
+                                aggregation_attention[pooled_idx]
+                            )
+                else:
+                    attention_weights_for_logging = aggregation_attention
+            elif self.attention_type == "both":
+                if pooling_attention is not None:
+                    attention_weights_for_logging = pooling_attention
+                elif aggregation_attention is not None:
+                    if pooling_perm is not None:
+                        num_original_nodes = len(scaled_visible_bboxes) + (
+                            1 if self.include_agent_node else 0
+                        )
+                        attention_weights_for_logging = np.zeros(
+                            (num_original_nodes, 1)
+                        )
+                        for pooled_idx, original_idx in enumerate(pooling_perm):
+                            if pooled_idx < len(aggregation_attention):
+                                attention_weights_for_logging[original_idx] = (
+                                    aggregation_attention[pooled_idx]
+                                )
+                    else:
+                        attention_weights_for_logging = aggregation_attention
+
+            # Normalize for logging
+            if attention_weights_for_logging is not None:
+                att_min = attention_weights_for_logging.min()
+                att_max = attention_weights_for_logging.max()
+                if att_max > att_min:
+                    attention_weights_for_logging = (
+                        attention_weights_for_logging - att_min
+                    ) / (att_max - att_min)
+
             # Print attention diagnostics if verbose
-            if verbose and attention_weights is not None:
+            if verbose and attention_weights_for_logging is not None:
                 print(f"\n{'='*60}")
                 print(f"Frame {frame_id}:")
                 print(
@@ -627,14 +831,29 @@ class ENROSMOTVisualizer:
                 )
                 print(f"  Agent pos: ({agent_x:.3f}, {agent_y:.3f})")
                 print(f"  Num entities: {len(scaled_visible_bboxes)}")
+                print(f"  Attention type: {self.attention_type}")
+                print(f"  Has pooling: {attention_stats.get('has_pooling', False)}")
                 print(
-                    f"  Attention stats: min={attention_stats.get('raw_min', 0):.4f}, "
-                    f"max={attention_stats.get('raw_max', 0):.4f}, "
-                    f"mean={attention_stats.get('raw_mean', 0):.4f}, "
-                    f"std={attention_stats.get('raw_std', 0):.4f}"
+                    f"  Has aggregation: {attention_stats.get('has_aggregation', False)}"
                 )
-                print(f"  Num attention nodes: {attention_stats.get('num_nodes', 0)}")
-                print(f"  Num graph nodes: {attention_stats.get('num_graph_nodes', 0)}")
+                print(
+                    f"  Num original nodes: {attention_stats.get('num_original_nodes', 0)}"
+                )
+                if attention_stats.get("has_pooling"):
+                    print(
+                        f"  Pooling attention: min={attention_stats.get('pooling_min', 0):.4f}, "
+                        f"max={attention_stats.get('pooling_max', 0):.4f}, "
+                        f"mean={attention_stats.get('pooling_mean', 0):.4f}"
+                    )
+                    print(
+                        f"  Num pooled nodes: {attention_stats.get('num_pooled_nodes', 0)}"
+                    )
+                if attention_stats.get("has_aggregation"):
+                    print(
+                        f"  Aggregation attention: min={attention_stats.get('aggr_min', 0):.4f}, "
+                        f"max={attention_stats.get('aggr_max', 0):.4f}, "
+                        f"mean={attention_stats.get('aggr_mean', 0):.4f}"
+                    )
 
                 # Print graph node features to verify order
                 print(f"\n  Graph node features (first 2 columns = rel_x, rel_y):")
@@ -665,38 +884,84 @@ class ENROSMOTVisualizer:
                     )
 
                     att_idx = i + attention_offset
-                    if att_idx < len(attention_weights):
-                        att_val = attention_weights[att_idx][0]
-                        raw_att_val = attention_stats.get("raw_min", 0) + att_val * (
-                            attention_stats.get("raw_max", 0)
-                            - attention_stats.get("raw_min", 0)
-                        )
+                    if att_idx < len(attention_weights_for_logging):
+                        att_val = attention_weights_for_logging[att_idx][0]
                         print(
                             f"    Bbox {i} (ID={int(track_id)}): center=({bbox_center_x:.3f}, {bbox_center_y:.3f}), "
-                            f"dist={dist:.3f}, attn_norm={att_val:.4f}, attn_raw={raw_att_val:.4f}"
+                            f"dist={dist:.3f}, attn={att_val:.4f}"
                         )
                     else:
                         print(
                             f"    Bbox {i} (ID={int(track_id)}): center=({bbox_center_x:.3f}, {bbox_center_y:.3f}), "
-                            f"dist={dist:.3f}, attn=N/A (idx {att_idx} >= {len(attention_weights)})"
+                            f"dist={dist:.3f}, attn=N/A (idx {att_idx} >= {len(attention_weights_for_logging)})"
                         )
                 print(f"{'='*60}")
 
             # Draw visualizations with attention weights
-            frame = self._draw_predictions(
-                frame,
-                scaled_gt_bboxes,
-                scaled_visible_bboxes,
-                agent_pos.numpy(),
-                value.item(),
-                frame_id,
-                attention_weights,
-            )
+            if self.attention_type == "both":
+                # Generate two separate frames - one for pooling, one for aggregation
+                # Save original attention_type to restore later
+                original_attention_type = self.attention_type
 
-            video_writer.write(frame)
+                # Draw pooling attention frame
+                self.attention_type = "pooling"
+                frame_pooling = self._draw_predictions(
+                    frame.copy(),
+                    scaled_gt_bboxes,
+                    scaled_visible_bboxes,
+                    agent_pos.numpy(),
+                    value.item(),
+                    frame_id,
+                    pooling_attention,
+                    aggregation_attention,
+                    pooling_perm,
+                )
 
-        video_writer.release()
-        print(f"Video generation complete: {output_path}")
+                # Draw aggregation attention frame
+                self.attention_type = "aggregation"
+                frame_aggregation = self._draw_predictions(
+                    frame.copy(),
+                    scaled_gt_bboxes,
+                    scaled_visible_bboxes,
+                    agent_pos.numpy(),
+                    value.item(),
+                    frame_id,
+                    pooling_attention,
+                    aggregation_attention,
+                    pooling_perm,
+                )
+
+                # Restore original attention_type
+                self.attention_type = original_attention_type
+
+                # Write both frames
+                video_writer_pooling.write(frame_pooling)
+                video_writer_aggregation.write(frame_aggregation)
+            else:
+                # Single video mode
+                frame = self._draw_predictions(
+                    frame,
+                    scaled_gt_bboxes,
+                    scaled_visible_bboxes,
+                    agent_pos.numpy(),
+                    value.item(),
+                    frame_id,
+                    pooling_attention,
+                    aggregation_attention,
+                    pooling_perm,
+                )
+                video_writer.write(frame)
+
+        # Release video writer(s)
+        if self.attention_type == "both":
+            video_writer_pooling.release()
+            video_writer_aggregation.release()
+            print(f"Video generation complete:")
+            print(f"  Pooling: {output_path_pooling}")
+            print(f"  Aggregation: {output_path_aggregation}")
+        else:
+            video_writer.release()
+            print(f"Video generation complete: {output_path}")
 
         # Print accuracy summary
         accuracy = total_matches / num_samples if num_samples > 0 else 0.0
