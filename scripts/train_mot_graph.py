@@ -74,6 +74,7 @@ def main(args):
         use_precomputed_features=args.use_precomputed_features,
         feature_filename=args.feature_filename,
         separate_obstacles=args.separate_obstacles,
+        min_obstacles=args.min_obstacles,
         image_cache_size=args.image_cache_size,
     )
 
@@ -93,6 +94,7 @@ def main(args):
         use_precomputed_features=args.use_precomputed_features,
         feature_filename=args.feature_filename,
         separate_obstacles=args.separate_obstacles,
+        min_obstacles=args.min_obstacles,
         image_cache_size=args.image_cache_size,
     )
 

@@ -246,6 +246,7 @@ class MOTGraphTrainingConfig:
     include_agent_node: bool = False  # Include agent as graph node
     image_cache_size: int = 2000  # Image cache size (LRU cache for faster loading)
     separate_obstacles: bool = False  # Separate obstacles (class 0) from others (class 2)
+    min_obstacles: int = 0  # Minimum obstacle overlaps to trigger collision
 
     # ===== Experiment Settings =====
     # There are a few more, commented out for now

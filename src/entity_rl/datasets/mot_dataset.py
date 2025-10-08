@@ -54,6 +54,7 @@ class MOTDataset(Dataset):
         feature_filename: Optional[str] = None,
         # Obstacle separation
         separate_obstacles: bool = False,
+        min_obstacles: int = 0,
         # Prefetching parameters
         image_cache_size: int = 500,
     ):
@@ -76,6 +77,8 @@ class MOTDataset(Dataset):
                 specified file is used.
             separate_obstacles: Whether to separate obstacles (class 0) from other entities
                 (class 2) for collision detection. When True, only obstacles count for reward.
+            min_obstacles: Minimum number of obstacles for collision (default: 0).
+                Collision triggers when overlap count > min_obstacles.
         """
 
         if task_type not in ["regression", "classification"]:
@@ -92,6 +95,7 @@ class MOTDataset(Dataset):
         self.include_agent_node = include_agent_node
         self.use_precomputed_features = use_precomputed_features
         self.separate_obstacles = separate_obstacles
+        self.min_obstacles = min_obstacles
 
         # Always load GT data for reward calculation
         if gt_ann_filename is None:
@@ -242,6 +246,8 @@ class MOTDataset(Dataset):
         When separate_obstacles=True, only obstacles (class_id=0) count as collisions.
         When separate_obstacles=False, all entities count as collisions.
 
+        Collision is triggered when overlap count > min_obstacles.
+
         Returns:
             - Regression: -1.0 (collision) or 1.0 (safe)
             - Classification: 0.0 (collision) or 1.0 (safe) for BCE loss
@@ -251,14 +257,17 @@ class MOTDataset(Dataset):
             if self.separate_obstacles:
                 # Only count obstacles (class_id=0) for collision
                 obstacle_bboxes = [bbox for bbox in scaled_bboxes if bbox[5] == 0]
-                has_collision = check_rectangle_overlap(
+                overlap_count = check_rectangle_overlap(
                     agent_x, agent_y, self.agent_radius, obstacle_bboxes
                 )
             else:
                 # All entities count for collision
-                has_collision = check_rectangle_overlap(
+                overlap_count = check_rectangle_overlap(
                     agent_x, agent_y, self.agent_radius, scaled_bboxes
                 )
+
+            # Collision if overlap count > min_obstacles
+            has_collision = overlap_count > self.min_obstacles
 
             if self.task_type == "classification":
                 return 0.0 if has_collision else 1.0  # BCE targets (float)

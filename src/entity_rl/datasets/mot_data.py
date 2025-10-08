@@ -366,9 +366,9 @@ def check_rectangle_overlap(
     agent_y: float,
     agent_radius: float,
     bboxes: List[Tuple[float, float, float, float, int, int]],
-) -> bool:
+) -> int:
     """
-    Check if a rectangular agent overlaps with any bounding box.
+    Count how many bounding boxes overlap with the rectangular agent.
 
     Args:
         agent_x, agent_y: Center of the agent rectangle
@@ -376,7 +376,7 @@ def check_rectangle_overlap(
         bboxes: List of (x, y, w, h, track_id, class_id) tuples
 
     Returns:
-        True if agent overlaps with any bounding box, False otherwise
+        Number of bounding boxes that overlap with the agent
     """
     # Agent bounding box (centered at agent_x, agent_y)
     agent_left = agent_x - agent_radius
@@ -384,6 +384,7 @@ def check_rectangle_overlap(
     agent_right = agent_x + agent_radius
     agent_bottom = agent_y + agent_radius
 
+    overlap_count = 0
     for bbox in bboxes:
         x, y, w, h = bbox[:4]
 
@@ -394,9 +395,9 @@ def check_rectangle_overlap(
             and agent_top < y + h
             and agent_bottom > y
         ):
-            return True
+            overlap_count += 1
 
-    return False
+    return overlap_count
 
 
 def load_and_resize_image(
