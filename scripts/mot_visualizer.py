@@ -229,6 +229,8 @@ class MOTVisualizer:
         display_name: str = "mot_visualization",
         show_occluder: Optional[bool] = None,
         max_frames: Optional[int] = None,
+        save_frames: bool = False,
+        frames_dir: Optional[Union[str, Path]] = None,
     ) -> str:
         """
         Generate video with MOT visualizations.
@@ -238,6 +240,9 @@ class MOTVisualizer:
             display_name: Name for the output video file
             show_occluder: Override occluder display setting
             max_frames: Maximum number of frames to process (None = all frames)
+            save_frames: Also save annotated frames as images
+            frames_dir: Directory to save annotated frames (defaults to
+                output_dir/frames)
 
         Returns:
             Path to the generated video file
@@ -256,6 +261,15 @@ class MOTVisualizer:
 
         # Create output directory
         self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create frames output directory if requested
+        if save_frames:
+            frames_output_dir = (
+                Path(frames_dir)
+                if frames_dir is not None
+                else self.output_dir / "frames"
+            )
+            frames_output_dir.mkdir(parents=True, exist_ok=True)
 
         # Read first frame to get video dimensions
         first_frame = cv2.imread(str(frame_paths[0]))
@@ -301,6 +315,11 @@ class MOTVisualizer:
 
             # Write frame to video
             video_writer.write(frame)
+
+            # Optionally save annotated frame as an image
+            if save_frames:
+                frame_filename = f"{frame_id:06d}.jpg"
+                cv2.imwrite(str(frames_output_dir / frame_filename), frame)
 
             # Progress indicator
             if (i + 1) % 100 == 0:
@@ -418,6 +437,22 @@ Examples:
         help="Maximum number of frames to process (default: all frames)",
     )
 
+    parser.add_argument(
+        "--save_frames",
+        action="store_true",
+        help=(
+            "Also save annotated frames as images to --frames_dir "
+            "(default: output_dir/frames)"
+        ),
+    )
+
+    parser.add_argument(
+        "--frames_dir",
+        type=str,
+        default=None,
+        help="Directory to save annotated frames (default: output_dir/frames)",
+    )
+
     args = parser.parse_args()
 
     try:
@@ -437,6 +472,8 @@ Examples:
             display_time=args.display_time,
             display_name=args.display_name,
             max_frames=args.max_frames,
+            save_frames=args.save_frames,
+            frames_dir=args.frames_dir,
         )
 
         print(f"Success! Video saved to: {output_path}")
@@ -450,4 +487,3 @@ Examples:
 
 if __name__ == "__main__":
     exit(main())
-
