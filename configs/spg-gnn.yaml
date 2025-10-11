@@ -19,7 +19,8 @@ base:
         scene:
           name: GNNEncoder
           config:
-            conv:
+            conv_name: GATFeatures
+            conv_config:
               activation: ELU
               dims:
                 - [8, 8]

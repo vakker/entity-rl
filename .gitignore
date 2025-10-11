@@ -1,5 +1,9 @@
+debug
+*_output
+samples
 logs
 data
+data-sync
 .aim
 mlruns
 backup

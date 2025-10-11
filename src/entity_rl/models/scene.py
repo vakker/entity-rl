@@ -1,20 +1,69 @@
 import sys
 from abc import abstractmethod
+from typing import Callable, Optional, Tuple, Union
 
+import torch
 import torch_geometric.nn as pyg_nn
-from torch import nn
+from pandas.core.computation.ops import Op
+from torch import Tensor, nn
 from torch_geometric.data import Batch
-from torch_geometric.nn import MLP, GATv2Conv, aggr
+from torch_geometric.nn import MLP, GATv2Conv, GraphConv, SAGPooling, TopKPooling, aggr
+from torch_geometric.nn.aggr import Aggregation
+from torch_geometric.nn.inits import reset
+from torch_geometric.nn.pool.connect import FilterEdges
+from torch_geometric.nn.pool.select import Select, SelectOutput, SelectTopK
+from torch_geometric.nn.pool.select.topk import topk
+from torch_geometric.typing import OptTensor
+from torch_geometric.utils import softmax
 
-from .base import BaseModule
+from entity_rl.utils import TicToc
+
+from .base import BaseModule, hook_fn
 from .slot_attention import SlotAttention
 
 module = sys.modules[__name__]
 
 
 def get_conv_layer(in_channels, config):
-    layer_class = getattr(module, config["conv_name"])
-    return layer_class(n_input_features=in_channels, **config["conv_config"])
+    conv_name = config.get("conv_name", "GATFeatures")
+    if "conv_config" in config:
+        conv_config = config["conv_config"]
+    elif "conv" in config:
+        conv_config = config["conv"]
+    else:
+        raise ValueError()
+
+    layer_class = getattr(module, conv_name)
+    return layer_class(n_input_features=in_channels, **conv_config)
+
+
+def get_pooling_layer(in_channels, pooling_config):
+    """
+    Create pooling layer based on configuration.
+
+    Args:
+        in_channels: Number of input channels
+        pooling_config: Dict with 'type' and optional 'params'
+
+    Returns:
+        Pooling layer instance
+    """
+    pooling_type = pooling_config["type"]
+    pooling_params = pooling_config.get("params", {})
+
+    # Support any pooling class from torch_geometric.nn
+    try:
+        if pooling_type == "SAGPooling":
+            pooling_class = CustomSAGPooling
+        else:
+            pooling_class = getattr(pyg_nn, pooling_type)
+
+        return pooling_class(in_channels=in_channels, **pooling_params)
+    except AttributeError:
+        raise ValueError(
+            f"Unknown pooling type: {pooling_type}. "
+            f"Must be a class from torch_geometric.nn"
+        )
 
 
 # def get_aggr_layer(config):
@@ -36,6 +85,22 @@ class SceneEncoder(BaseModule):
     @abstractmethod
     def forward(self, inputs):
         pass
+
+
+class NoOpSceneEncoder(BaseModule):
+    def __init__(self, model_config, input_space):
+        super().__init__()
+
+        self._out_channels = input_space["node_features"][0]
+
+    @property
+    def out_channels(self):
+        return self._out_channels
+
+    def forward(self, inputs):
+        # For no-op, just return the input features unchanged
+        # inputs should be the entity features from the entity encoder
+        return inputs
 
 
 class GATFeatures(BaseModule):
@@ -93,7 +158,7 @@ class GATFeatures(BaseModule):
             # TODO: change act to LeakyReLU
             gate_nn = MLP([in_channels, 1])
             feat_nn = MLP([in_channels, in_channels])
-            self._aggr = aggr.AttentionalAggregation(gate_nn, feat_nn)
+            self._aggr = CustomAttentionalAggregation(gate_nn, feat_nn)
 
         elif aggr_layer == "mean":
             self._aggr = aggr.MeanAggregation()
@@ -107,12 +172,18 @@ class GATFeatures(BaseModule):
 
     def forward(self, inputs):
         x, edge_index, batch = inputs
+        timer = TicToc(enabled=False)
         for conv, norm in zip(self._convs, self._norms):
+            timer.tic("conv")
             x = self.act(norm(conv(x, edge_index)))
+            timer.toc("conv")
 
         if self._aggr is not None:
+            timer.tic("aggr")
             x = self._aggr(x, batch)
+            timer.toc("aggr")
 
+        timer.print_stats(title="GAT forward")
         return x
 
 
@@ -170,6 +241,46 @@ class GNNEncoder(BaseModule):
 
         self._n_input_size = in_channels
 
+        # Add projection layer if configured
+        projection_conf = model_config.get("projection", None)
+        if projection_conf:
+            layers = []
+
+            # MLP projection
+            mlp = MLP(
+                in_channels=in_channels,
+                num_layers=projection_conf["num_layers"],
+                hidden_channels=projection_conf["out_channels"],
+                out_channels=projection_conf["out_channels"],
+                act="leakyrelu",
+                norm=projection_conf.get("norm", None),
+            )
+            layers.append(mlp)
+
+            # Post-normalization if specified
+            post_norm = projection_conf.get("post_norm", None)
+            if post_norm:
+                if post_norm == "batch_norm":
+                    layers.append(pyg_nn.BatchNorm(projection_conf["out_channels"]))
+                elif post_norm == "layer_norm":
+                    layers.append(pyg_nn.LayerNorm(projection_conf["out_channels"]))
+                elif post_norm == "instance_norm":
+                    layers.append(pyg_nn.InstanceNorm(projection_conf["out_channels"]))
+                else:
+                    raise ValueError(f"Unknown post_norm: {post_norm}")
+
+            self.projection = nn.Sequential(*layers)
+            in_channels = projection_conf["out_channels"]
+        else:
+            self.projection = None
+
+        # Add pooling layer if configured
+        pooling_config = model_config.get("pooling", None)
+        if pooling_config:
+            self.pooling = get_pooling_layer(in_channels, pooling_config)
+        else:
+            self.pooling = None
+
         conv_layer = get_conv_layer(in_channels, model_config)
 
         self._encoder = nn.Sequential(conv_layer, nn.Flatten())
@@ -182,7 +293,27 @@ class GNNEncoder(BaseModule):
     def forward(self, inputs):
         assert isinstance(inputs, Batch)
 
-        features = self._encoder((inputs.x, inputs.edge_index, inputs.batch))
+        x, edge_index, batch = inputs.x, inputs.edge_index, inputs.batch
+        timer = TicToc(enabled=False)
+
+        # Apply projection if configured
+        if self.projection:
+            timer.tic("projection")
+            x = self.projection(x)
+            timer.toc("projection")
+
+        # Apply pooling before conv layers if configured
+        if self.pooling:
+            timer.tic("pooling")
+            x, edge_index, _, batch, _, _ = self.pooling(x, edge_index, batch=batch)
+            timer.toc("pooling")
+
+        # Apply conv layers with potentially reduced graph
+        timer.tic("conv")
+        features = self._encoder((x, edge_index, batch))
+        timer.toc("conv")
+
+        timer.print_stats(title="GNNEncoder forward")
         return features
 
     # def _hidden_layers(self, input_dict):
@@ -332,3 +463,153 @@ class SlotAttnDecoder(BaseModule):
 
         features = self._encoder((inputs.x, inputs.edge_index, inputs.batch))
         return features
+
+
+class CustomAttentionalAggregation(aggr.AttentionalAggregation):
+    def __init__(
+        self,
+        gate_nn: torch.nn.Module,
+        nn: Optional[torch.nn.Module] = None,
+    ):
+        super().__init__(gate_nn, nn)
+
+        self.attention_acts = None
+
+    def forward(
+        self,
+        x: Tensor,
+        index: Optional[Tensor] = None,
+        ptr: Optional[Tensor] = None,
+        dim_size: Optional[int] = None,
+        dim: int = -2,
+    ) -> Tensor:
+        if self.gate_mlp is not None:
+            gate = self.gate_mlp(x, batch=index, batch_size=dim_size)
+        else:
+            gate = self.gate_nn(x)
+
+        if self.mlp is not None:
+            x = self.mlp(x, batch=index, batch_size=dim_size)
+        elif self.nn is not None:
+            x = self.nn(x)
+
+        gate = softmax(gate, index, ptr, dim_size, dim)
+        self.attention_acts = gate.detach().cpu()
+        return self.reduce(gate * x, index, ptr, dim_size, dim)
+
+
+class CustomSAGPooling(torch.nn.Module):
+    def __init__(
+        self,
+        in_channels: int,
+        ratio: Union[float, int] = 0.5,
+        gate_channels: Optional[list] = None,
+        proj_channels: Optional[list] = None,
+        nonlinearity: Union[str, Callable] = "tanh",
+        **kwargs,
+    ):
+        super().__init__()
+
+        self.in_channels = in_channels
+        self.ratio = ratio
+
+        if gate_channels is None:
+            gate_channels = [in_channels, 1]
+
+        else:
+            gate_channels = [in_channels] + gate_channels + [1]
+
+        if proj_channels is not None:
+            proj_channels = [in_channels] + proj_channels + [in_channels]
+            self.mlp = MLP(channel_list=proj_channels, act="relu", norm=None)
+            # self.mlp = MLP(channel_list=proj_channels, act="leakyrelu")
+
+        else:
+            self.mlp = None
+
+        self.gate = MLP(channel_list=gate_channels, act="relu", norm=None)
+        # self.gate.register_backward_hook(hook_fn)
+        self.connect = FilterEdges()
+
+        self.attention_acts = None
+        self.perm = None
+
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        r"""Resets all learnable parameters of the module."""
+        self.gate.reset_parameters()
+        if self.mlp is not None:
+            self.mlp.reset_parameters()
+
+    def forward(
+        self,
+        x: Tensor,
+        edge_index: Tensor,
+        edge_attr: OptTensor = None,
+        batch: OptTensor = None,
+        dim_size: Optional[int] = None,
+    ) -> Tuple[Tensor, Tensor, OptTensor, OptTensor, Tensor, Tensor]:
+        r"""Forward pass.
+
+        Args:
+            x (torch.Tensor): The node feature matrix.
+            edge_index (torch.Tensor): The edge indices.
+            edge_attr (torch.Tensor, optional): The edge features.
+                (default: :obj:`None`)
+            batch (torch.Tensor, optional): The batch vector
+                :math:`\mathbf{b} \in {\{ 0, \ldots, B-1\}}^N`, which assigns
+                each node to a specific example. (default: :obj:`None`)
+        """
+        if batch is None:
+            batch = edge_index.new_zeros(x.size(0))
+
+        gate = self.gate(x, batch=batch)
+
+        gate = softmax(gate, batch)
+        self.attention_acts = gate.detach().cpu()
+
+        node_index = topk(gate, self.ratio, batch)
+
+        select_out = SelectOutput(
+            node_index=node_index,
+            num_nodes=x.size(0),
+            cluster_index=torch.arange(node_index.size(0), device=x.device),
+            num_clusters=node_index.size(0),
+            weight=gate[node_index].squeeze(-1),
+        )
+
+        perm = select_out.node_index
+        self.perm = perm.detach().cpu()
+        score = select_out.weight
+        assert score is not None
+
+        x = x[perm]
+
+        if self.mlp is not None:
+            x = self.mlp(x, batch=batch)
+
+        # We need this, otherwise we don't get gradients
+        x = x * gate[perm]
+
+        connect_out = self.connect(select_out, edge_index, edge_attr, batch)
+
+        return (
+            x,
+            connect_out.edge_index,
+            connect_out.edge_attr,
+            connect_out.batch,
+            perm,
+            score,
+        )
+
+    def __repr__(self) -> str:
+        if self.min_score is None:
+            ratio = f"ratio={self.ratio}"
+        else:
+            ratio = f"min_score={self.min_score}"
+
+        return (
+            f"{self.__class__.__name__}({self.gnn.__class__.__name__}, "
+            f"{self.in_channels}, {ratio}, multiplier={self.multiplier})"
+        )

@@ -4,7 +4,8 @@
 from setuptools import find_packages, setup
 
 install_requires = [
-    "numpy",
+    "numpy<2.0",
+    "pyarrow<21.0",
     "matplotlib",
     "pandas",
     "scikit-image",

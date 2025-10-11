@@ -26,6 +26,8 @@ from mmdet.utils import ConfigType
 from mmengine.registry import DefaultScope
 from torch import Tensor
 
+from .base import freeze, unfreeze
+
 # This is needed for MM to handle the registry properly
 _ = DefaultScope.get_instance("EXPERIMENT", scope_name="mmdet")
 
@@ -61,6 +63,7 @@ class GDino(DINO):
     @staticmethod
     def freeze(model: nn.Module):
         """Freeze the model."""
+        raise NotImplementedError
         model.eval()
         for param in model.parameters():
             param.requires_grad = False
@@ -68,6 +71,7 @@ class GDino(DINO):
     @staticmethod
     def unfreeze(model: nn.Module):
         """Freeze the model."""
+        raise NotImplementedError
         model.train()
         for param in model.parameters():
             param.requires_grad = True
@@ -106,10 +110,10 @@ class GDino(DINO):
 
         # Freeze everything, then only unfreeze the text_embed params
         # This way there's nothing missed (in theory)
-        self.freeze(self)
-        self.unfreeze(self.text_embed)
+        freeze(self)
+        unfreeze(self.text_embed)
         if self.unfreeze_backbone:
-            self.unfreeze(self.backbone)
+            unfreeze(self.backbone)
 
     def init_weights(self) -> None:
         """Initialize weights for Transformer and other components."""
@@ -454,14 +458,18 @@ class GDino(DINO):
 
         # NOTE: the actual number of proposals can be lower than the
         # number of queries for small images, so we need to select
-        query = []
-        for i in range(bs):
-            query.append(self.query_embedding.weight[topk_indices[i]])
+        #
+        # NOTE: WHY???
+        #
+        # query = []
+        # for i in range(bs):
+        #     __import__('ipdb').set_trace()
+        #     query.append(self.query_embedding.weight[topk_indices[i]])
+        #
+        # query = torch.stack(query, dim=0)
 
-        query = torch.stack(query, dim=0)
-
-        # query = self.query_embedding.weight[:, None, :]
-        # query = query.repeat(1, bs, 1).transpose(0, 1)
+        query = self.query_embedding.weight[:, None, :]
+        query = query.repeat(1, bs, 1).transpose(0, 1)
 
         # We don't need the DN queries for ENROS
         # TODO: clean this up
@@ -507,91 +515,9 @@ class GDino(DINO):
     def loss(
         self, batch_inputs: Tensor, batch_data_samples: SampleList
     ) -> Union[dict, list]:
-        text_prompts = [data_samples.text for data_samples in batch_data_samples]
-
-        gt_labels = [
-            data_samples.gt_instances.labels for data_samples in batch_data_samples
-        ]
-
-        if "tokens_positive" in batch_data_samples[0]:
-            tokens_positive = [
-                data_samples.tokens_positive for data_samples in batch_data_samples
-            ]
-            positive_maps = []
-            for token_positive, text_prompt, gt_label in zip(
-                tokens_positive, text_prompts, gt_labels
-            ):
-                tokenized = self.language_model.tokenizer(
-                    [text_prompt],
-                    padding=(
-                        "max_length" if self.language_model.pad_to_max else "longest"
-                    ),
-                    return_tensors="pt",
-                )
-                new_tokens_positive = [
-                    token_positive[label.item()] for label in gt_label
-                ]
-                _, positive_map = self.get_positive_map(tokenized, new_tokens_positive)
-                positive_maps.append(positive_map)
-            new_text_prompts = text_prompts
-        else:
-            new_text_prompts = []
-            positive_maps = []
-            if len(set(text_prompts)) == 1:
-                # All the text prompts are the same,
-                # so there is no need to calculate them multiple times.
-                (
-                    tokenized,
-                    caption_string,
-                    tokens_positive,
-                    _,
-                ) = self.get_tokens_and_prompts(text_prompts[0], True)
-                new_text_prompts = [caption_string] * len(batch_inputs)
-                for gt_label in gt_labels:
-                    new_tokens_positive = [tokens_positive[label] for label in gt_label]
-                    _, positive_map = self.get_positive_map(
-                        tokenized, new_tokens_positive
-                    )
-                    positive_maps.append(positive_map)
-            else:
-                for text_prompt, gt_label in zip(text_prompts, gt_labels):
-                    (
-                        tokenized,
-                        caption_string,
-                        tokens_positive,
-                        _,
-                    ) = self.get_tokens_and_prompts(text_prompt, True)
-                    new_tokens_positive = [tokens_positive[label] for label in gt_label]
-                    _, positive_map = self.get_positive_map(
-                        tokenized, new_tokens_positive
-                    )
-                    positive_maps.append(positive_map)
-                    new_text_prompts.append(caption_string)
-
-        text_dict = self.language_model(new_text_prompts)
-        if self.text_feat_map is not None:
-            text_dict["embedded"] = self.text_feat_map(text_dict["embedded"])
-
-        for i, data_samples in enumerate(batch_data_samples):
-            positive_map = positive_maps[i].to(batch_inputs.device).bool().float()
-            text_token_mask = text_dict["text_token_mask"][i]
-            data_samples.gt_instances.positive_maps = positive_map
-            data_samples.gt_instances.text_token_mask = text_token_mask.unsqueeze(
-                0
-            ).repeat(len(positive_map), 1)
-        if self.use_autocast:
-            with autocast(enabled=True):
-                visual_features = self.extract_feat(batch_inputs)
-        else:
-            visual_features = self.extract_feat(batch_inputs)
-        head_inputs_dict = self.forward_transformer(
-            visual_features, text_dict, batch_data_samples
-        )
-
-        losses = self.bbox_head.loss(
-            **head_inputs_dict, batch_data_samples=batch_data_samples
-        )
-        return losses
+        # TODO: Adapt loss for ENROS learned embeddings
+        # For now, raise error to indicate it's not implemented
+        raise NotImplementedError("Loss computation for ENROS not implemented yet. Use standard GroundingDINO loss or implement custom logic.")
 
     def predict(self, batch_inputs, batch_data_samples, rescale: bool = True):
         text_prompts = []

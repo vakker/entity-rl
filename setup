@@ -12,7 +12,7 @@ pip install transformers nltk
 
 pip install openmim
 mim install mmengine
-mim install "mmcv>=2.0.0"
+mim install "mmcv>=2.0.0,<2.2.0"
 mim install mmdet
 
 pip install pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv \

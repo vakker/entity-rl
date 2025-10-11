@@ -1,0 +1,557 @@
+import argparse
+import os
+
+import gymnasium as gym
+import numpy as np
+import torch
+from omegaconf import OmegaConf
+from torch.utils.data import DataLoader
+from tqdm import tqdm, trange
+
+from entity_rl import config as cfg_utils
+from entity_rl import utils
+from entity_rl.config import MOTGraphTrainingConfig
+from entity_rl.datasets import MOTDataset
+from entity_rl.datasets.graph_utils import (
+    collate_graph_batch,
+    create_graph_observation_space,
+)
+from entity_rl.models.enros import ENROSPolicy
+from entity_rl.training import (
+    create_loss_function,
+    create_optimizer,
+    evaluate_detection_batch,
+    extract_detection_data_from_mot_sample,
+    save_best_models,
+    setup_experiment_logging,
+)
+from entity_rl.utils import TicToc
+
+TIMERS_ENABLED = False
+
+
+def main(args):
+    """Main training function.
+
+    Args:
+        args: OmegaConf structured
+    """
+    # Convert to regular dict for attribute access
+
+    print(f"Using MOT directories: {args.mot_dirs}")
+    print(f"Output directory: {args.output_dir}")
+
+    tng_dirs = args.mot_dirs[: len(args.mot_dirs) // 2]
+    val_dirs = args.mot_dirs[len(args.mot_dirs) // 2 :]
+
+    assert len(tng_dirs) > 0
+    assert len(val_dirs) > 0
+
+    # Determine if we need image output based on encoder type
+    conf = args.base
+    encoder_config = conf["model"]["custom_model_config"]["encoder"]
+    use_image_mode = (
+        "entity" in encoder_config
+        and encoder_config["entity"]["name"] != "EntityPassThrough"
+    )
+
+    print(f"Dataset mode: {'image' if use_image_mode else 'graph'}")
+
+    # Create datasets
+    train_dataset = MOTDataset(
+        mot_data_dirs=tng_dirs,
+        return_image=use_image_mode,
+        agent_radius=args.agent_radius,
+        num_samples_per_epoch=args.num_samples,
+        image_size=tuple(args.image_size),
+        task_type=args.task_type,
+        max_entities=args.max_entities,
+        connect_threshold=args.connect_threshold,
+        max_samples=args.max_samples,
+        visible_ann_filename=args.ann_filename,
+        gt_ann_filename=args.gt_ann_filename,
+        include_agent_node=args.include_agent_node,
+        use_precomputed_features=args.use_precomputed_features,
+        feature_filename=args.feature_filename,
+        separate_obstacles=args.separate_obstacles,
+        min_obstacles=args.min_obstacles,
+        image_cache_size=args.image_cache_size,
+    )
+
+    val_dataset = MOTDataset(
+        mot_data_dirs=val_dirs,
+        return_image=use_image_mode,
+        agent_radius=args.agent_radius,
+        num_samples_per_epoch=args.num_samples,
+        image_size=tuple(args.image_size),
+        task_type=args.task_type,
+        max_entities=args.max_entities,
+        connect_threshold=args.connect_threshold,
+        max_samples=args.max_samples,
+        visible_ann_filename=args.ann_filename,
+        gt_ann_filename=args.gt_ann_filename,
+        include_agent_node=args.include_agent_node,
+        use_precomputed_features=args.use_precomputed_features,
+        feature_filename=args.feature_filename,
+        separate_obstacles=args.separate_obstacles,
+        min_obstacles=args.min_obstacles,
+        image_cache_size=args.image_cache_size,
+    )
+
+    print(f"Train samples: {len(train_dataset)}, Val samples: {len(val_dataset)}")
+    print(f"Task type: {args.task_type}")
+
+    batch_size = min(args.batch_size, len(train_dataset))
+
+    # Always use graph collate - it handles both image+graph and graph-only modes
+    # Create data loaders
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        drop_last=True,
+        num_workers=args.num_workers,
+        collate_fn=collate_graph_batch,
+        pin_memory=True,
+    )
+
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        drop_last=True,
+        num_workers=args.num_workers,
+        collate_fn=collate_graph_batch,
+        pin_memory=True,
+    )
+    assert len(train_loader)
+
+    # Determine observation space based on encoder type
+    conf = args.base
+    encoder_config = conf["model"]["custom_model_config"]["encoder"]
+
+    # Check if using entity encoder (RPN/Faster R-CNN) or graph encoder
+    if use_image_mode:
+        # Entity encoder (RPN/Faster R-CNN) expects Box space (images)
+        encoder_name = encoder_config["entity"]["name"]
+        print(f"Using entity encoder: {encoder_name}")
+
+        # Create Box observation space for images
+        img_h, img_w = tuple(args.image_size)
+        obs_space = gym.spaces.Box(
+            low=0, high=255, shape=(3, img_h, img_w), dtype=np.uint8
+        )
+        print(f"Observation space: Box({obs_space.shape})")
+    else:
+        # Graph encoder expects Dict space with node features
+        print("Using graph encoder")
+        input_dim = 7  # Updated from 5 to 7: [rel_x, rel_y, w, h, is_agent, is_obstacle, is_other]
+        if args.use_precomputed_features:
+            input_dim += 256 #  * 7 * 7
+
+        obs_space = create_graph_observation_space(node_feature_dim=input_dim)
+        print(f"Observation space: Dict (graph) with node_dim={input_dim}")
+
+    action_space = gym.spaces.MultiDiscrete([3, 3])
+
+    model = ENROSPolicy(
+        obs_space,
+        action_space,
+        num_outputs=6,
+        model_config=conf["model"],
+        name="enros_gnn",
+    )
+
+    print(f"Model created: {sum(p.numel() for p in model.parameters())} parameters")
+
+    # Set up training
+    device = torch.device(args.device)
+    print(f"Using device: {device}")
+
+    model.to(device)
+    optimizer = create_optimizer(model, args.lr)
+    loss_fn = create_loss_function(device, args.task_type)
+
+    # Setup experiment logging with timestamped directory
+    output_dir, writer = setup_experiment_logging(args.output_dir, "mot_graph", cfg)
+
+    # Training loop
+    global_step = 0
+    best_metrics = {}
+
+    timer = TicToc(enabled=TIMERS_ENABLED)
+
+    for epoch in trange(args.epochs, desc="Training epochs", disable=args.no_bar):
+        timer.reset()
+
+        # Training
+        timer.tic("tng")
+        model.train()
+        timer.toc("tng")
+        tng_loss = 0
+        num_batches = 0
+        matches = 0
+        all_rewards = []  # Accumulate rewards for epoch summary
+
+        timer.tic("data_loading")
+
+        for batch_data in tqdm(
+            train_loader,
+            desc=f"Epoch {epoch+1} TNG",
+            leave=False,
+            disable=args.no_bar,
+        ):
+            assert (
+                len(batch_data) == 3
+            ), f"Expected 3 elements in batch_data, got {len(batch_data)}"
+            obs_batch, reward_batch, agent_pos = batch_data
+
+            timer.toc("data_loading")
+
+            timer.tic("data_to_gpu")
+
+            agent_pos = agent_pos.to(device)
+            # __import__('ipdb').set_trace()
+
+            # Move to device - obs_batch is always a dict
+            # In image mode, it contains {"image": tensor, "x": ..., "edge_index": ...}
+            # In graph mode, it contains {"x": ..., "edge_index": ..., "batch": ...}
+            obs_batch = {k: v.to(device) for k, v in obs_batch.items()}
+            # Accumulate rewards for epoch statistics
+            all_rewards.append(reward_batch)
+            reward_batch = reward_batch.to(device)
+
+
+            # Get mean and std for first 5 x
+            # print("Mean and std of first 5 x:")
+            # print(torch.mean(obs_batch["x"][:, :5]))
+            # print(torch.std(obs_batch["x"][:, :5]))
+
+            # Get mean and std for the rest of x
+            # print("Mean and std of the rest of x:")
+            # print(torch.mean(obs_batch["x"][:, 5:]))
+            # print(torch.std(obs_batch["x"][:, 5:]))
+
+            timer.toc("data_to_gpu")
+            timer.tic("forward_pass")
+
+            # Forward pass
+            if use_image_mode:
+                # Image mode: extract image from obs_batch
+                model_input = {"obs": obs_batch["image"]}
+            else:
+                # Graph mode: use entire obs_batch with agent position
+                model_input = {"obs": obs_batch, "agent_pos": agent_pos}
+
+            _ = model(model_input)
+            reward_pred = model.value_function()
+
+            timer.toc("forward_pass")
+            timer.tic("loss_compute")
+
+            # Calculate accuracy using dataset method
+            match = train_dataset.calculate_accuracy(reward_pred, reward_batch)
+            matches += match
+
+            # Backward pass
+            loss = loss_fn(reward_pred, reward_batch)
+
+            timer.toc("loss_compute")
+            timer.tic("backward_pass")
+
+            loss.backward()
+
+            timer.toc("backward_pass")
+            timer.tic("optimizer_step")
+
+            grad_norm = model.get_grad_norm()
+            writer.add_scalar("grad_norm_orig", grad_norm, global_step)
+
+            if args.grad_clip > 0:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
+
+            grad_norm = model.get_grad_norm()
+            writer.add_scalar("grad_norm_clipped", grad_norm, global_step)
+
+            optimizer.step()
+            optimizer.zero_grad(set_to_none=True)
+
+            timer.toc("optimizer_step")
+
+            # Logging
+            tng_loss += loss.item()
+            num_batches += 1
+            global_step += 1
+
+            # if global_step % args.log_interval == 0:
+            #     writer.add_scalar("train_loss", loss.item(), global_step)
+
+            # For the next data loading
+            timer.tic("data_loading")
+
+        avg_tng_loss = tng_loss / num_batches
+        avg_tng_acc = matches / (num_batches * batch_size)
+
+        # Calculate reward statistics for epoch
+        all_rewards_tensor = torch.cat(all_rewards)
+        unique_values, counts = torch.unique(all_rewards_tensor, return_counts=True)
+        reward_ratios = counts.float() / len(all_rewards_tensor)
+
+        # Log training metrics
+        writer.add_scalar("loss/train", avg_tng_loss, epoch)
+        writer.add_scalar("accuracy/train", avg_tng_acc, epoch)
+
+        tqdm.write(
+            f"Epoch {epoch+1} - TNG Loss: {avg_tng_loss:.4f}, TNG Acc: {avg_tng_acc:.4f}"
+        )
+        tqdm.write(
+            f"Epoch {epoch+1} - Reward distribution: {dict(zip(unique_values.tolist(), reward_ratios.tolist()))}"
+        )
+
+        # Print timing statistics for training
+        timer.print_stats(title=f"Epoch {epoch+1} Training Timing")
+
+        if not epoch % args.val_int == 0:
+            continue
+
+        # Validation
+        model.eval()
+        val_loss = 0
+        num_batches = 0
+        matches = 0
+
+        # For detection metrics
+        pred_boxes_batch = []
+        pred_scores_batch = []
+        gt_boxes_batch = []
+
+        timer.reset()
+
+        with torch.no_grad():
+            for batch_data in tqdm(
+                val_loader,
+                desc=f"Epoch {epoch+1} VAL",
+                leave=False,
+                disable=args.no_bar,
+            ):
+                timer.tic("val_data_loading")
+
+                assert (
+                    len(batch_data) == 3
+                ), f"Expected 3 elements in batch_data, got {len(batch_data)}"
+                obs_batch, reward_batch, agent_pos = batch_data
+
+                timer.toc("val_data_loading")
+                timer.tic("val_data_to_gpu")
+
+                agent_pos = agent_pos.to(device)
+
+                # Move to device - obs_batch is always a dict
+                obs_batch = {k: v.to(device) for k, v in obs_batch.items()}
+                reward_batch = reward_batch.to(device)
+
+                timer.toc("val_data_to_gpu")
+                timer.tic("val_forward_pass")
+
+                # Forward pass
+                if use_image_mode:
+                    # Image mode: extract image from obs_batch
+                    model_input = {"obs": obs_batch["image"]}
+                else:
+                    # Graph mode: use entire obs_batch with agent position
+                    model_input = {"obs": obs_batch, "agent_pos": agent_pos}
+
+                _ = model(model_input)
+                reward_pred = model.value_function()
+
+                timer.toc("val_forward_pass")
+                timer.tic("val_metrics")
+
+                # Calculate accuracy using dataset method
+                match = val_dataset.calculate_accuracy(reward_pred, reward_batch)
+                matches += match
+
+                loss = loss_fn(reward_pred, reward_batch)
+                val_loss += loss.item()
+                num_batches += 1
+
+                timer.toc("val_metrics")
+
+                # FIXME
+                # Extract detection data for metrics (sample a few batches)
+                # if (
+                #     len(pred_boxes_batch) < 5
+                # ):  # Only process first few batches for efficiency
+                #     # Get graph data from the original dataset
+                #     for i in range(min(batch_size, len(val_dataset))):
+                #         sample_idx = (num_batches - 1) * batch_size + i
+                #         if sample_idx < len(val_dataset):
+                #             graph_data, sample_reward, sample_agent_pos = val_dataset[
+                #                 sample_idx
+                #             ]
+                #
+                #             # Extract detection data
+                #             boxes, scores = extract_detection_data_from_mot_sample(
+                #                 graph_data,
+                #                 sample_reward,
+                #                 sample_agent_pos,
+                #                 tuple(args.image_size),
+                #             )
+                #
+                #             if len(boxes) > 0:
+                #                 pred_boxes_batch.append(boxes)
+                #                 pred_scores_batch.append(scores)
+                #                 # For this demo, use the same boxes as ground truth
+                #                 # In practice, you'd load actual ground truth
+                #                 gt_boxes_batch.append(boxes)
+
+        # Calculate validation metrics
+        avg_val_loss = val_loss / num_batches if num_batches > 0 else 0.0
+        avg_val_acc = matches / (num_batches * batch_size) if num_batches > 0 else 0.0
+
+        # Calculate detection metrics if we have data
+        detection_metrics = {}
+        if len(pred_boxes_batch) > 0:
+            try:
+                detection_metrics = evaluate_detection_batch(
+                    pred_boxes_batch,
+                    pred_scores_batch,
+                    gt_boxes_batch,
+                    iou_threshold=0.5,
+                )
+            except Exception as e:
+                tqdm.write(f"Warning: Could not calculate detection metrics: {e}")
+
+        # Log all metrics
+        writer.add_scalar("loss/validation", avg_val_loss, epoch)
+        writer.add_scalar("accuracy/validation", avg_val_acc, epoch)
+
+        # Print timing statistics for validation
+        timer.print_stats(title=f"Epoch {epoch+1} Validation Timing")
+
+        if detection_metrics:
+            writer.add_scalar(
+                "detection/precision", detection_metrics.get("mean_precision", 0), epoch
+            )
+            writer.add_scalar(
+                "detection/recall", detection_metrics.get("mean_recall", 0), epoch
+            )
+            writer.add_scalar(
+                "detection/F1", detection_metrics.get("mean_f1_score", 0), epoch
+            )
+            writer.add_scalar(
+                "detection/mAP", detection_metrics.get("mean_ap", 0), epoch
+            )
+
+        # Print epoch summary
+        tqdm.write(
+            f"Epoch {epoch+1} - VAL Loss: {avg_val_loss:.4f}, VAL Acc: {avg_val_acc:.4f}"
+        )
+
+        if detection_metrics:
+            tqdm.write(
+                f"Epoch {epoch+1} - Detection P/R/F1: {detection_metrics.get('mean_precision', 0):.3f}/{detection_metrics.get('mean_recall', 0):.3f}/{detection_metrics.get('mean_f1_score', 0):.3f}"
+            )
+
+        # Collect current metrics for model saving
+        current_metrics = {
+            "val_loss": avg_val_loss,
+            "val_accuracy": avg_val_acc,
+            "train_loss": avg_tng_loss,
+            "train_accuracy": avg_tng_acc,
+        }
+
+        # Add detection metrics if available
+        if detection_metrics:
+            current_metrics.update(
+                {
+                    "val_precision": detection_metrics.get("mean_precision", 0),
+                    "val_recall": detection_metrics.get("mean_recall", 0),
+                    "val_f1_score": detection_metrics.get("mean_f1_score", 0),
+                    "val_map": detection_metrics.get("mean_ap", 0),
+                }
+            )
+
+        # Save best models based on different metrics
+        best_metrics = save_best_models(
+            model, optimizer, epoch, current_metrics, best_metrics, output_dir
+        )
+
+    writer.close()
+    print("Training completed!")
+
+    # Print cache statistics if using images
+    if use_image_mode:
+        print("\n=== Training Dataset Cache Stats ===")
+        train_dataset.print_cache_stats()
+        print("\n=== Validation Dataset Cache Stats ===")
+        val_dataset.print_cache_stats()
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Train GNN component of ENROS on MOT ground truth",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Basic training with config
+  python scripts/train_mot_graph.py --cfg configs/mot-gnn.yaml --output-dir experiments/mot_001
+
+  # With CLI overrides
+  python scripts/train_mot_graph.py --cfg configs/mot-gnn.yaml --output-dir experiments/mot_001 \\
+      lr=0.001 batch_size=64 epochs=50
+
+  # Use precomputed features
+  python scripts/train_mot_graph.py --cfg configs/mot-gnn.yaml --output-dir experiments/mot_001 \\
+      use_precomputed_features=true feature_filename=rpn_features.npz
+        """,
+    )
+
+    # Required arguments
+    parser.add_argument(
+        "--cfg",
+        required=True,
+        help="Base config file path (YAML)",
+    )
+    parser.add_argument(
+        "--output-dir",
+        required=True,
+        help="Output directory for experiments",
+    )
+
+    # Optional overrides
+    parser.add_argument(
+        "overrides",
+        nargs="*",
+        help="Config overrides in dotlist format (e.g., lr=0.001 batch_size=64)",
+    )
+
+    args = parser.parse_args()
+
+    # Load structured config with type safety and validation
+    # Required fields (mot_dirs, cfg, output_dir) must be provided via config or overrides
+    try:
+        args.overrides.append(f"output_dir={args.output_dir}")
+        cfg = cfg_utils.load_structured_config(
+            MOTGraphTrainingConfig,
+            config_path=args.cfg,
+            overrides=args.overrides,
+        )
+    except Exception as e:
+        print(f"\n❌ Configuration Error: {e}\n")
+        print("Required parameters:")
+        print("  - mot_dirs: List of MOT data directories")
+        print("  - cfg: Model config file path")
+        print("  - output_dir: Output directory for experiments")
+        print("\nProvide these via config file or CLI overrides:")
+        print(
+            "  Example: mot_dirs=[data/MOT16/train/MOT16-02,data/MOT16/train/MOT16-04]"
+        )
+        raise
+
+    # Save merged config to output directory
+    cfg_utils.save_config(cfg, cfg.output_dir)
+
+    # Print config
+    cfg_utils.print_config(cfg, "MOT Graph Training Configuration")
+    main(cfg)
