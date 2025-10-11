@@ -25,8 +25,16 @@ module = sys.modules[__name__]
 
 
 def get_conv_layer(in_channels, config):
-    layer_class = getattr(module, config["conv_name"])
-    return layer_class(n_input_features=in_channels, **config["conv_config"])
+    conv_name = config.get("conv_name", "GATFeatures")
+    if "conv_config" in config:
+        conv_config = config["conv_config"]
+    elif "conv" in config:
+        conv_config = config["conv"]
+    else:
+        raise ValueError()
+
+    layer_class = getattr(module, conv_name)
+    return layer_class(n_input_features=in_channels, **conv_config)
 
 
 def get_pooling_layer(in_channels, pooling_config):
